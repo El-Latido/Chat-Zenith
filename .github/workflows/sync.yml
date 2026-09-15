@@ -1,0 +1,19 @@
+name: Sync to Hugging Face
+on:
+  push:
+    branches:
+      - main
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Push to HF Space
+        run: |
+          git config --global user.email "bot@example.com"
+          git config --global user.name "Sincronizador HF"
+          # Reemplaza TU_USUARIO_HF y TU_SPACE_HF con tus datos reales de Hugging Face
+          git remote add hf https://TU_USUARIO_HF:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/TU_USUARIO_HF/TU_SPACE_HF
+          git push -f hf main
