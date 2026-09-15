@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Configurar permisos para Hugging Face (requiere que la app corra con permisos seguros, no root)
 RUN mkdir -p /app && chown -R node:node /app
@@ -23,4 +23,4 @@ ENV PORT=7860
 EXPOSE 7860
 
 # Iniciar aplicación
-CMD ["npm", "start"]
+CMD ["node", "dist/server.cjs"]
