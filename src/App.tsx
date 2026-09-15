@@ -6,7 +6,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star } from "lucide-react";
+import { Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
 import {
   collection,
   onSnapshot,
@@ -1559,6 +1559,17 @@ function MainApp() {
     }
     return (
       <>
+        <div className="fixed top-4 right-4 z-[9999]">
+          <button 
+             onClick={() => {
+                setUser({...user, username: "Invitado_Diseño", role: "user"});
+                setIsLoggedIn(true);
+             }}
+             className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg border border-white/20"
+          >
+             Omitir Login (Ver Diseño)
+          </button>
+        </div>
         <Login
           handleGoogleLogin={handleGoogleLogin}
           user={user}
@@ -1597,7 +1608,7 @@ function MainApp() {
         position: "fixed",
         top: 0,
         left: 0,
-        backgroundColor: "#030014", // Cyberpunk Dark
+        backgroundColor: "#18181b", // Cyberpunk Dark
         "--neon-color": isRainbowNeon ? undefined : neonColor,
       } as React.CSSProperties}
     >
@@ -1637,279 +1648,32 @@ function MainApp() {
         `}</style>
       )}
       
-      {/* Cyberpunk Animated Glowing Accents */}
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] blur-[130px] rounded-full pointer-events-none mix-blend-screen animate-pulse" style={{ backgroundColor: 'var(--neon-color, #00f3ff)', opacity: 0.15 }}></div>
-      <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] blur-[150px] rounded-full pointer-events-none mix-blend-screen animate-pulse" style={{ animationDelay: '1.5s', backgroundColor: 'var(--neon-color, #ff00ff)', opacity: 0.15 }}></div>
-      
-      {/* Cyberpunk Grid Background */}
-      <div className="absolute inset-0 pointer-events-none z-0" style={{
-        backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)
-        `,
-        backgroundSize: '30px 30px',
-        transform: 'perspective(500px) rotateX(60deg) scale(2) translateY(-100px)',
-        transformOrigin: 'top',
-        opacity: 0.3
-      }}></div>
-      
-      {/* Glassmorphism background filter overlay */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] pointer-events-none z-0"></div>
-
-
       {/* Top Navigation Bar */}
-      <nav
-        className={`flex items-center justify-between px-4 py-2.5 shrink-0 z-[100] relative w-full border-b backdrop-blur-xl transition-colors ${
-          activeTheme === "mecha_celestial"
-            ? "border-[#94a3b8]/30 bg-[#090d1a]/90 shadow-[0_4px_25px_rgba(0,0,0,0.8)]"
-            : "border-white/5 bg-black/40 shadow-[0_4px_30px_rgba(0,0,0,0.5)]"
-        }`}
-        style={{ borderBottomColor: activeTheme === "mecha_celestial" ? "rgba(244,114,182,0.3)" : "var(--neon-color, #00f3ff)22" }}
-      >
-        <div className="flex-1 flex items-center justify-start gap-2">
-          {activeTheme === "mecha_celestial" ? (
-            <div className="md:hidden">
-              <MechaMenuButton
-                onClick={() => {
-                  closeAllModals();
-                  setIsSidebarOpen(!isSidebarOpen);
-                }}
-              />
-            </div>
-          ) : (
-            <button
-              onClick={() => {
-                closeAllModals();
-                setIsSidebarOpen(!isSidebarOpen);
-              }}
-              className="md:hidden text-white/80 hover:text-white p-2 rounded-full hover:bg-white/5 transition-colors"
-            >
-              <Menu size={24} strokeWidth={1.5} />
-            </button>
-          )}
-
-          {/* Quick Theme Switcher Pill */}
-          <button
-            onClick={() => {
-              const nextTheme = activeTheme === "mecha_celestial" ? "default" : "mecha_celestial";
-              setActiveTheme(nextTheme);
-              localStorage.setItem("chatliz_theme", nextTheme);
-              window.dispatchEvent(new CustomEvent("chatliz_theme_changed", { detail: nextTheme }));
-            }}
-            className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-              activeTheme === "mecha_celestial"
-                ? "bg-gradient-to-r from-[#f472b6]/20 via-[#ec4899]/20 to-[#38bdf8]/20 border border-[#f472b6]/40 text-[#fbcfe8] hover:text-white shadow-[0_0_12px_rgba(244,114,182,0.25)]"
-                : "bg-white/5 border border-white/10 text-cyan-300 hover:text-white hover:bg-white/10"
-            }`}
-            title="Alternar entre Mecha Celestial y Cyberpunk Neón"
+      <nav className="flex items-center justify-between px-4 py-3 shrink-0 z-[100] relative w-full bg-[#18181b] border-b border-[#27272a]">
+        <div className="flex-1 flex items-center justify-start gap-4">
+          <button 
+             onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+             className="relative p-1 text-gray-300 hover:text-white transition-colors"
           >
-            <span>{activeTheme === "mecha_celestial" ? "✨ Mecha Celestial" : "⚡ Neón Clásico"}</span>
+             <Menu size={26} strokeWidth={2.5} />
+             <div className="absolute top-1 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#18181b]" />
           </button>
         </div>
 
-        <div className="flex-1 flex justify-center">
-           {/* Empty space for balance */}
-        </div>
+        <div className="flex-1 flex justify-center"></div>
 
-        {/* Right: Actions and Settings */}
-        <div className="flex-1 flex items-center justify-end gap-2 sm:gap-3">
-          
-          {/* LizGram Button */}
-          {activeTheme === "mecha_celestial" ? (
-            <MechaNavButton
-              onClick={() => {
-                closeAllModals();
-                setIsSidebarOpen(false);
-                setActiveChat("lizgram");
-              }}
-              title="LizGram"
-              active={activeChat === "lizgram"}
-            >
-              <ImageIcon size={20} strokeWidth={1.8} />
-            </MechaNavButton>
-          ) : (
-            <button
-              onClick={() => {
-                closeAllModals();
-                setIsSidebarOpen(false);
-                setActiveChat("lizgram");
-              }}
-              className={`p-2 rounded-full transition-colors relative ${activeChat === "lizgram" ? "text-white shadow-[0_0_15px_rgba(236,72,153,0.4)]" : "text-white/80 hover:bg-white/5"}`}
-              style={{ backgroundColor: activeChat === "lizgram" ? "var(--neon-color, #00f3ff)33" : "transparent" }}
-              title="LizGram"
-            >
-              <ImageIcon size={24} strokeWidth={1.5} />
-            </button>
-          )}
-
-          {/* Buzón (Private messages/Friends) */}
-          {activeTheme === "mecha_celestial" ? (
-            <MechaNavButton
-              onClick={() => {
-                closeAllModals();
-                setIsFriendsSidebarOpen(!isFriendsSidebarOpen);
-              }}
-              title="Buzón"
-              active={isFriendsSidebarOpen}
-              badge={
-                Object.values(unreadPMs).some((v) => v) ? (
-                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#00f0ff] border border-black shadow-[0_0_8px_#00f0ff]"></span>
-                ) : undefined
-              }
-            >
-              <MessageSquare size={20} strokeWidth={1.8} />
-            </MechaNavButton>
-          ) : (
-            <button
-              onClick={() => {
-                closeAllModals();
-                setIsFriendsSidebarOpen(!isFriendsSidebarOpen);
-              }}
-              className={`p-2 rounded-full transition-colors relative ${isFriendsSidebarOpen ? "text-white shadow-[0_0_15px_rgba(236,72,153,0.4)]" : "text-white/80 hover:bg-white/5"}`}
-              style={{ backgroundColor: isFriendsSidebarOpen ? "var(--neon-color, #00f3ff)33" : "transparent" }}
-              title="Buzón"
-            >
-              <MessageSquare size={24} strokeWidth={1.5} />
-              {Object.values(unreadPMs).some((v) => v) && (
-                <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full border border-[#0B1220]" style={{ backgroundColor: "var(--neon-color, #00f3ff)" }}></span>
-              )}
-            </button>
-          )}
-
-          <div className="relative">
-            {activeTheme === "mecha_celestial" ? (
-              <MechaNavButton
-                onClick={() => setShowNotifications(!showNotifications)}
-                title="Notificaciones"
-                badge={
-                  notifications.length > 0 ? (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold shadow-md">
-                      {notifications.length}
-                    </span>
-                  ) : undefined
-                }
-              >
-                <Bell size={20} strokeWidth={1.8} />
-              </MechaNavButton>
-            ) : (
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2 rounded-full text-white/80 hover:bg-white/5 transition-colors relative"
-              >
-                <Bell size={24} strokeWidth={1.5} />
-                {notifications.length > 0 && (
-                  <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
-                    {notifications.length}
-                  </span>
-                )}
-              </button>
-            )}
-            {showNotifications && (
-              <div className="absolute right-0 mt-2 w-72 bg-[#0a0a0c]/90 backdrop-blur-2xl border-r border-white/10 shadow-[0_0_30px_rgba(0,0,0,0.8)] border border-white/5 rounded-2xl overflow-hidden z-50">
-                <div className="p-3 border-b border-white/5 flex justify-between items-center" style={{ borderBottomColor: "var(--neon-color, #00f3ff)44" }}>
-                  <h3 className="text-white font-bold" style={{ color: "var(--neon-color, #00f3ff)" }}>Notificaciones</h3>
-                  {notifications.length > 0 && (
-                    <button 
-                       onClick={async () => {
-                        const firestoreNotifs = notifications.filter(n => n.id && n.id.length > 13);
-                        setNotifications([]);
-                        for (const n of firestoreNotifs) { 
-                           try {
-                               await deleteDoc(doc(db, "notifications", n.id));
-                           } catch(e) {}
-                        }
-                      }}
-                      className="text-xs text-gray-400 hover:text-white"
-                    >
-                      Limpiar
-                    </button>
-                  )}
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="p-6 text-center text-gray-500 text-sm">
-                      No hay notificaciones
-                    </div>
-                  ) : (
-                    notifications.map((n, i) => {
-                      const isString = typeof n === 'string';
-                      const text = isString ? n : n.text || 'Notificación';
-                      const fromUser = !isString ? (n.fromUser || n.senderName) : null;
-                      const type = !isString ? (n.type === 'MESSAGE' ? 'private_message' : (n.type === 'LIKE' ? 'like' : n.type)) : 'system';
-                      
-                      const fromUserObj = fromUser ? (usersOnline.find(u => u.username === fromUser) || userCache[fromUser]) : null;
-                      const avatarSrc = fromUserObj?.profilePic || (fromUser ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${fromUser}` : undefined);
-                      return (
-                      <div 
-                         key={isString ? i : n.id || i} 
-                         onClick={async () => {
-                            if (n.id && n.id.length > 13) {
-                               setNotifications(prev => prev.filter(x => x.id !== n.id));
-                               try { await deleteDoc(doc(db, "notifications", n.id)); } catch(e) {}
-                            }
-                            if (type === 'private_message' && fromUser) {
-                               setActiveChat(fromUser);
-                               if (window.innerWidth < 768) setIsSidebarOpen(false);
-                            }
-                         }}
-                         className="p-3 hover:bg-white/5 border-b border-white/5 cursor-pointer transition-colors flex items-start gap-3 group"
-                      >
-                         {avatarSrc ? (
-                            <Avatar src={avatarSrc} frameId={fromUserObj?.frameId} alt={fromUser} className="w-8 h-8 rounded-full border border-white/10" />
-                         ) : (
-                            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                              <Bell size={14} className="text-white/50" />
-                            </div>
-                         )}
-                         <div className="flex flex-col min-w-0">
-                           <span className="text-white/90 text-sm break-words group-hover:text-white">{text}</span>
-                           <span className="text-white/40 text-xs mt-0.5">{type === 'system' ? 'Sistema' : fromUser}</span>
-                         </div>
-                      </div>
-                    )})
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="relative group/profile ml-1">
-            {activeTheme === "mecha_celestial" ? (
-              <button
-                onClick={() => {
-                  closeAllModals();
-                  setIsConfigOpen(true);
-                }}
-                className="transition-transform hover:scale-105"
-                title="Mi Perfil y Ajustes"
-              >
-                <MechaAvatarMedallion className="w-9 h-9">
-                  <Avatar
-                    src={user.profilePic || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`}
-                    frameId={user.frameId}
-                    alt="Profile"
-                    className="w-full h-full object-cover"
-                  />
-                </MechaAvatarMedallion>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  closeAllModals();
-                  setIsConfigOpen(true);
-                }}
-                className="w-8 h-8 rounded-full border-2 transition-transform hover:scale-105 shadow-[0_0_10px_rgba(0,0,0,0.5)]"
-                style={{ borderColor: "var(--neon-color, #00f3ff)" }}
-              >
-                <Avatar
-                  src={user.profilePic || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`}
-                  frameId={user.frameId}
-                  alt="Profile"
-                  className="w-full h-full"
-                />
-              </button>
-            )}
-          </div>
+        <div className="flex-1 flex items-center justify-end gap-5 text-gray-300">
+           <button className="hover:text-white transition-colors"><Calendar size={22} /></button>
+           <button className="hover:text-white transition-colors"><MessageSquare size={22} /></button>
+           <button className="hover:text-white transition-colors"><UserPlus size={22} /></button>
+           <button className="hover:text-white transition-colors"><Bell size={22} /></button>
+           <button onClick={() => setIsProfileConfigOpen(true)} className="relative hover:opacity-80 transition-opacity">
+             <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center overflow-hidden border border-white/10">
+               {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : <User size={18} />}
+             </div>
+             <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-yellow-500 rounded-full border-2 border-[#18181b] flex items-center justify-center">
+             </div>
+           </button>
         </div>
       </nav>
 
@@ -2668,340 +2432,62 @@ function MainApp() {
                 </div>
 
                 {/* Input Area */}
-                <div className="px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))] shrink-0 bg-white/[0.03] backdrop-blur-2xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] relative z-10 max-w-5xl w-full mx-auto flex flex-col gap-2">
-                  {/* Typing Indicator (Moved out of scroll area to prevent bouncing) */}
-                  {typingUsers[activeChat] &&
-                    typingUsers[activeChat].length > 0 && (
-                      <div className="flex flex-col gap-1 px-4 -mt-2">
-                        {typingUsers[activeChat].includes("Elizabeth") && (
-                          <div className="text-white/80 text-sm font-medium italic flex items-center">
-                            ELIZABETH está escribiendo
-                            <span className="ml-1 flex gap-1">
-                              <span className="animate-bounce">.</span>
-                              <span className="animate-bounce" style={{ animationDelay: "0.2s" }}>.</span>
-                              <span className="animate-bounce" style={{ animationDelay: "0.4s" }}>.</span>
-                            </span>
-                          </div>
-                        )}
-                        {typingUsers[activeChat].filter(u => u !== "Elizabeth").length > 0 && (
-                          <div className="text-white/50 text-sm font-medium italic">
-                            {typingUsers[activeChat].filter((u) => u !== "Elizabeth").join(", ")}{" "}
-                            {typingUsers[activeChat].filter((u) => u !== "Elizabeth").length > 1 ? "están" : "está"}{" "}
-                            escribiendo...
-                          </div>
-                        )}
-                      </div>
-                    )}
-
+                <div className="px-4 py-3 shrink-0 bg-[#18181b] relative z-10 w-full flex flex-col gap-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+                  {typingUsers[activeChat] && typingUsers[activeChat].length > 0 && (
+                     <div className="text-gray-400 text-xs italic px-2">Alguien está escribiendo...</div>
+                  )}
                   {replyingTo && (
-                    <div className="bg-[#0F1012]/80 border border-white/10 rounded-xl p-2 flex items-center justify-between shadow-lg mx-2">
-                      <div className="flex flex-col">
-                        <span className="text-white/80 text-xs font-bold flex items-center gap-1">
-                          <MessageCircle size={12} /> Respondiendo a{" "}
-                          {replyingTo.sender}
-                        </span>
-                        <span className="text-gray-300 text-sm truncate max-w-[200px] sm:max-w-[400px]">
-                          {replyingTo.text ||
-                            (replyingTo.image ? "Imagen adjunta" : "Audio")}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => setReplyingTo(null)}
-                        className="text-gray-400 hover:text-white p-1 bg-white/5 rounded-full"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
+                     <div className="bg-[#27272a] rounded p-2 flex items-center justify-between text-xs text-gray-300 mx-2">
+                       <span>Respondiendo a {replyingTo.sender}</span>
+                       <button onClick={() => setReplyingTo(null)} className="hover:text-white transition-colors"><X size={14} /></button>
+                     </div>
                   )}
-
                   {(selectedImage || audioUrl || selectedGif) && (
-                    <div className="flex gap-4 mb-1 mx-2">
-                      {selectedImage && (
-                        <div className="relative inline-block animate-in fade-in slide-in-from-bottom-2">
-                          <img
-                            referrerPolicy="no-referrer"
-                            src={selectedImage}
-                            alt="Preview"
-                            className="h-16 w-16 rounded-xl border-2 border-[#D4AF37] object-cover shadow-lg"
-                          />
-                          <button
-                            onClick={() => setSelectedImage(null)}
-                            className="absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 transition-colors text-white rounded-full p-1.5 shadow-xl"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      )}
-                      {selectedGif && (
-                        <div className="relative inline-block animate-in fade-in slide-in-from-bottom-2">
-                          <img
-                            referrerPolicy="no-referrer"
-                            src={selectedGif}
-                            alt="GIF Preview"
-                            className="h-16 w-16 rounded-xl border-2 border-[#D4AF37] object-cover shadow-lg"
-                          />
-                          <button
-                            onClick={() => setSelectedGif(null)}
-                            className="absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 transition-colors text-white rounded-full p-1.5 shadow-xl"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      )}
-                      {audioUrl && (
-                        <div className="relative inline-block animate-in fade-in slide-in-from-bottom-2">
-                          <PremiumAudioPlayer src={audioUrl} />
-                          <button
-                            onClick={() => setAudioUrl(null)}
-                            className="absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 transition-colors text-white rounded-full p-1.5 shadow-xl"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                     <div className="text-xs text-yellow-500 px-2 flex justify-between">
+                       <span>Archivo adjunto listo para enviar</span>
+                       <button onClick={() => { setSelectedImage(null); setAudioUrl(null); setSelectedGif(null); }}><X size={14} /></button>
+                     </div>
                   )}
-
-                  <div className="flex items-center gap-2 relative">
-                    <InlineRadio theme={activeTheme} />
-                    {user.role === "dj" && (
-                      <button
-                        onClick={() => {
-                          closeAllModals();
-                          setIsDjPanelOpen(true);
+                  
+                  {/* Top Row: Input field and surrounding icons */}
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <button className="text-gray-400 hover:text-white transition-colors hidden sm:block"><Plus size={24} /></button>
+                    <button onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-white transition-colors"><Paperclip size={22} /></button>
+                    <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="text-gray-400 hover:text-white transition-colors"><Smile size={24} /></button>
+                    <button className="text-gray-400 hover:text-white transition-colors hidden sm:block"><Volume2 size={24} /></button>
+                    
+                    <div className="flex-1 flex items-center bg-[#27272a] rounded-full px-4 py-2 relative">
+                      <input
+                        value={inputValue}
+                        onChange={handleInputChange}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSendMessage();
                         }}
-                        className="fixed bottom-36 left-4 z-[105] bg-[#D4AF37]/20 hover:bg-[#D4AF37]/40 text-white/80 p-3 rounded-full shadow-[0_0_15px_rgba(212,175,55,0.3)] transition-all"
-                        title="Panel de DJ"
-                      >
-                        <Mic size={20} />
-                      </button>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      ref={fileInputRef}
-                      onChange={handleImageSelect}
-                    />
-
-                    {activeTheme === "mecha_celestial" ? (
-                      /* Mecha Celestial Sculpted Armor Capsule */
-                      <div className="flex-1 h-[50px] sm:h-[52px] rounded-full bg-gradient-to-b from-[#f8fafc] via-[#cbd5e1] to-[#94a3b8] p-[2.5px] shadow-[0_6px_22px_rgba(0,0,0,0.7),inset_0_1px_2px_rgba(255,255,255,0.9)] relative flex items-center min-w-0">
-                        {/* Gold decorative brackets at corners */}
-                        <div className="absolute top-1 left-5 w-4 h-1 bg-[#d4af37] rounded-xs opacity-90 shadow-xs pointer-events-none" />
-                        <div className="absolute top-1 right-5 w-4 h-1 bg-[#d4af37] rounded-xs opacity-90 shadow-xs pointer-events-none" />
-                        <div className="absolute bottom-1 left-5 w-4 h-1 bg-[#d4af37] rounded-xs opacity-90 shadow-xs pointer-events-none" />
-                        <div className="absolute bottom-1 right-5 w-4 h-1 bg-[#d4af37] rounded-xs opacity-90 shadow-xs pointer-events-none" />
-
-                        {/* Recessed silver/metallic slot */}
-                        <div className="w-full h-[43px] sm:h-[45px] rounded-full bg-[#9aa9ba] shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)] border border-[#6b7d90] px-3.5 sm:px-4 flex items-center gap-2 relative">
-                          {isRecording ? (
-                            <div className="w-full h-full">
-                              <PremiumAudioVisualizer stream={recordingStream} />
-                            </div>
-                          ) : (
-                            <>
-                              <input
-                                value={inputValue}
-                                onChange={handleInputChange}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") handleSendMessage();
-                                }}
-                                className="flex-1 min-w-0 py-2 h-full bg-transparent outline-none text-[#0f172a] placeholder-[#334155] font-medium text-[14px] sm:text-[15px]"
-                                id="chat-input-field"
-                                autoComplete="off"
-                                spellCheck="false"
-                                placeholder="Escribe tu mensaje... @Elizabeth"
-                              />
-
-                              {/* 4 Crystal Tool Buttons */}
-                              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                                <button
-                                  onClick={() => {
-                                    closeAllModals();
-                                    setIsSongRequestOpen(true);
-                                  }}
-                                  className="p-1 sm:p-1.5 rounded-lg bg-gradient-to-b from-[#f472b6] to-[#db2777] text-white hover:scale-105 active:scale-95 transition-transform shadow-[0_1px_4px_rgba(0,0,0,0.35)] border border-white/60 cursor-pointer"
-                                  title="Pedir Canción"
-                                >
-                                  <Music size={15} strokeWidth={2} />
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    closeAllModals();
-                                    setIsGamesMenuOpen(true);
-                                  }}
-                                  className="p-1 sm:p-1.5 rounded-lg bg-gradient-to-b from-[#38bdf8] to-[#0284c7] text-white hover:scale-105 active:scale-95 transition-transform shadow-[0_1px_4px_rgba(0,0,0,0.35)] border border-white/60 cursor-pointer"
-                                  title="Juegos"
-                                >
-                                  <Gamepad2 size={15} strokeWidth={2} />
-                                </button>
-                                <button
-                                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                  className="p-1 sm:p-1.5 rounded-lg bg-gradient-to-b from-[#f472b6] to-[#db2777] text-white hover:scale-105 active:scale-95 transition-transform shadow-[0_1px_4px_rgba(0,0,0,0.35)] border border-white/60 cursor-pointer"
-                                  title="Emojis y GIFs"
-                                >
-                                  <Smile size={15} strokeWidth={2} />
-                                </button>
-                                <button
-                                  onClick={() => fileInputRef.current?.click()}
-                                  className="p-1 sm:p-1.5 rounded-lg bg-gradient-to-b from-[#38bdf8] to-[#0284c7] text-white hover:scale-105 active:scale-95 transition-transform shadow-[0_1px_4px_rgba(0,0,0,0.35)] border border-white/60 cursor-pointer"
-                                  title="Adjuntar Archivo o Imagen"
-                                >
-                                  <Paperclip size={15} strokeWidth={2} />
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      /* Classic Neon Input Capsule */
-                      <div className="flex-1 bg-white/5 border border-white/10 rounded-full flex items-center px-4 relative shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)] focus-within:bg-white/10 focus-within:border-cyan-500/50 focus-within:shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all overflow-hidden h-[50px]">
-                        {isRecording ? (
-                          <div className="w-full h-full">
-                            <PremiumAudioVisualizer stream={recordingStream} />
-                          </div>
-                        ) : (
-                          <>
-                            <input
-                              value={inputValue}
-                              onChange={handleInputChange}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") handleSendMessage();
-                              }}
-                              className="flex-1 min-w-0 py-2 h-full bg-transparent outline-none text-white placeholder-white/40 text-[15px]"
-                              id="chat-input-field"
-                              autoComplete="off"
-                              spellCheck="false"
-                              placeholder="Escribe tu mensaje... @Elizabeth"
-                            />
-                            <div className="flex items-center gap-0.5 text-white/80 shrink-0 ml-1">
-                              <button
-                                onClick={() => {
-                                  closeAllModals();
-                                  setIsSongRequestOpen(true);
-                                }}
-                                className="flex items-center justify-center hover:text-pink-400 p-1 transition-colors"
-                                title="Pedir Canción"
-                              >
-                                <Music size={18} strokeWidth={1.5} />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  closeAllModals();
-                                  setIsGamesMenuOpen(true);
-                                }}
-                                className="flex items-center justify-center hover:text-white/80 p-1 transition-colors"
-                                title="Juegos"
-                              >
-                                <Gamepad2 size={18} strokeWidth={1.5} />
-                              </button>
-                              <button
-                                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                className="flex items-center justify-center hover:text-white/80 p-1 transition-colors"
-                                title="Emojis y GIFs"
-                              >
-                                <Smile size={18} strokeWidth={1.5} />
-                              </button>
-                              <button
-                                onClick={() => fileInputRef.current?.click()}
-                                className="flex items-center justify-center hover:text-white/80 p-1 transition-colors"
-                                title="Adjuntar Imagen"
-                              >
-                                <Paperclip size={18} strokeWidth={1.5} />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {showEmojiPicker && (
-                      <EmojiGifPicker
-                        onSelect={(type, val) => {
-                          if (type === "emoji") setInputValue((prev) => prev + val);
-                          if (type === "gif") setSelectedGif(val);
-                        }}
-                        onClose={() => setShowEmojiPicker(false)}
+                        className="flex-1 bg-transparent outline-none text-white placeholder-gray-500 text-sm"
+                        placeholder="Type here..."
+                        id="chat-input-field"
+                        autoComplete="off"
+                        spellCheck="false"
                       />
-                    )}
+                      <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
+                    </div>
+                    
+                    <button onClick={toggleRecording} className="text-gray-400 hover:text-white transition-colors"><Mic size={24} /></button>
+                    <button onClick={handleSendMessage} className="text-gray-400 hover:text-white transition-colors"><Send size={24} /></button>
+                  </div>
 
-                    {/* Action Buttons (Mic + Send) */}
-                    {activeTheme === "mecha_celestial" ? (
-                      /* Mecha Celestial Crystal Pill Buttons */
-                      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                        {/* Pink Gemstone Mic Button */}
-                        <button
-                          onClick={toggleRecording}
-                          className={`w-[48px] h-[50px] sm:w-[52px] sm:h-[52px] rounded-[18px] transition-all flex items-center justify-center shrink-0 border-2 border-[#f8fafc] active:scale-95 shadow-[0_4px_16px_rgba(236,72,153,0.5),inset_0_2px_3px_rgba(255,255,255,0.7)] cursor-pointer ${
-                            isRecording
-                              ? "bg-gradient-to-b from-red-500 to-rose-700 animate-pulse text-white"
-                              : "bg-gradient-to-b from-[#f472b6] via-[#ec4899] to-[#be185d] text-[#0f172a] hover:text-white"
-                          }`}
-                          title={isRecording ? "Detener grabación" : "Grabar audio"}
-                        >
-                          {isRecording ? (
-                            <StopCircle size={20} strokeWidth={2} className="text-white" />
-                          ) : (
-                            <Mic size={20} strokeWidth={2} className="text-[#0f172a]" />
-                          )}
-                        </button>
-
-                        {/* Pink Gemstone Send Button with Cyan Plane */}
-                        <button
-                          onClick={handleSendMessage}
-                          disabled={
-                            !inputValue.trim() &&
-                            !selectedImage &&
-                            !audioUrl &&
-                            !selectedGif
-                          }
-                          className="w-[48px] h-[50px] sm:w-[52px] sm:h-[52px] rounded-[18px] bg-gradient-to-b from-[#f472b6] via-[#ec4899] to-[#be185d] border-2 border-[#f8fafc] shadow-[0_4px_16px_rgba(236,72,153,0.5),inset_0_2px_3px_rgba(255,255,255,0.7)] flex items-center justify-center text-[#38bdf8] hover:text-cyan-200 transition-all shrink-0 disabled:opacity-50 disabled:shadow-none active:scale-95 group cursor-pointer"
-                          title="Enviar mensaje"
-                        >
-                          <Send
-                            size={20}
-                            className="ml-0.5 text-[#38bdf8] drop-shadow-[0_0_6px_#38bdf8] group-hover:scale-110 transition-transform"
-                            strokeWidth={2}
-                          />
-                        </button>
-                      </div>
-                    ) : (
-                      /* Classic Neon Buttons */
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={toggleRecording}
-                          className={`w-[46px] h-[46px] flex items-center justify-center rounded-[16px] transition-colors shrink-0 ${
-                            isRecording
-                              ? "bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.4)] animate-pulse"
-                              : "bg-[#0F1012]/80 border border-white/10 text-white/80 hover:text-white hover:bg-[#D4AF37]/20 shadow-[0_0_15px_rgba(212,175,55,0.2)]"
-                          }`}
-                        >
-                          {isRecording ? (
-                            <StopCircle size={20} strokeWidth={1.5} />
-                          ) : (
-                            <Mic size={20} strokeWidth={1.5} />
-                          )}
-                        </button>
-                        <button
-                          onClick={handleSendMessage}
-                          disabled={
-                            !inputValue.trim() &&
-                            !selectedImage &&
-                            !audioUrl &&
-                            !selectedGif
-                          }
-                          className="w-[46px] h-[46px] rounded-[16px] bg-[#0F1012]/80 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/80 hover:text-white hover:bg-[#D4AF37]/20 transition-all shadow-[0_0_15px_rgba(212,175,55,0.2)] shrink-0 disabled:opacity-50 disabled:shadow-none"
-                        >
-                          <Send
-                            size={20}
-                            className="ml-0.5"
-                            strokeWidth={1.5}
-                          />
-                        </button>
-                      </div>
-                    )}
+                  {/* Bottom Row: Toolbar */}
+                  <div className="flex items-center justify-between text-gray-400 mt-1 px-1">
+                    <div className="flex items-center gap-5 sm:gap-6">
+                      <button className="hover:text-white transition-colors"><Gift size={22} /></button>
+                      <button className="hover:text-white transition-colors"><Play size={22} /></button>
+                      <button className="hover:text-white transition-colors"><RotateCcw size={22} /></button>
+                    </div>
+                    
+                    <div className="flex items-center gap-5 sm:gap-6">
+                      <button className="hover:text-white transition-colors"><Repeat size={22} /></button>
+                      <button className="hover:text-white transition-colors"><List size={22} /></button>
+                    </div>
                   </div>
                 </div>
               </>

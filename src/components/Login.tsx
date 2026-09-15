@@ -87,6 +87,16 @@ export function Login({ user, setUser, handleLogin, setRecoveryModalOpen, handle
             >
               {isRegisterMode ? 'Registrarse' : 'Entrar'}
             </button>
+            
+            <button
+              onClick={() => {
+                 setUser({...user, username: "Invitado", password: "123"});
+                 setTimeout(() => handleLogin(), 100);
+              }}
+              className="w-full bg-transparent border border-white/20 text-white/70 font-bold rounded-2xl py-3.5 mt-4 hover:bg-white/10 transition-all text-sm"
+            >
+              Entrar rápido para ver el diseño (Invitado)
+            </button>
           </div>
 
           <div className="mt-6 flex items-center justify-center gap-4">
