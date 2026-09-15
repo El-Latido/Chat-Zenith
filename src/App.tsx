@@ -511,7 +511,10 @@ function MainApp() {
           });
           return;
         }
-      } catch (e) {}
+            } catch (e) {}
+    } else {
+       setUser(prev => ({ ...prev, username: "Invitado_" + Math.floor(Math.random() * 10000), role: "user" }));
+       setIsLoggedIn(true);
     }
     setIsAuthChecking(false);
   }, []);
@@ -1559,17 +1562,7 @@ function MainApp() {
     }
     return (
       <>
-        <div className="fixed top-4 right-4 z-[9999]">
-          <button 
-             onClick={() => {
-                setUser({...user, username: "Invitado_Diseño", role: "user"});
-                setIsLoggedIn(true);
-             }}
-             className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg border border-white/20"
-          >
-             Omitir Login (Ver Diseño)
-          </button>
-        </div>
+        
         <Login
           handleGoogleLogin={handleGoogleLogin}
           user={user}
