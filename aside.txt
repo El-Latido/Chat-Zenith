@@ -1,0 +1,286 @@
+              setIsConfigOpen(true);
+            }}
+          >
+            <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-[#D4AF37]/50 shadow-[0_0_10px_rgba(212,175,55,0.3)] group-hover:border-[#D4AF37] transition-all">
+              <img
+                referrerPolicy="no-referrer"
+                src={
+                  user.profilePic ||
+                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`
+                }
+                alt={user.username}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            {user.activeDecoration && (
+              <div className="absolute inset-0 pointer-events-none scale-125 z-10 flex items-center justify-center">
+                <img
+                  referrerPolicy="no-referrer"
+                  src={user.activeDecoration}
+                  alt="marco"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            )}
+            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#0B1220]"></div>
+          </div>
+        </div>
+      </nav>
+
+      <div className="flex flex-1 h-0 relative">
+        {/* Sidebar Principal */}
+        <aside
+          className={`w-[280px] shrink-0 border-r border-[#D4AF37]/30 bg-[#121B2A]/95 backdrop-blur-xl absolute md:relative z-40 h-full flex flex-col transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+        >
+          <div className="p-4 flex flex-col items-center border-b border-[#D4AF37]/30">
+            <div
+              className="relative mb-3 group cursor-pointer"
+              onClick={() => {
+                closeAllModals();
+                setIsConfigOpen(true);
+              }}
+            >
+              <div className="w-20 h-20 rounded-full overflow-hidden border-[3px] border-[#D4AF37] shadow-[0_0_15px_rgba(212,175,55,0.4)]">
+                <img
+                  referrerPolicy="no-referrer"
+                  src={
+                    user.profilePic ||
+                    `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`
+                  }
+                  alt={user.username}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              {user.activeDecoration && (
+                <div className="absolute inset-0 pointer-events-none scale-125 z-10 flex items-center justify-center">
+                  <img
+                    referrerPolicy="no-referrer"
+                    src={user.activeDecoration}
+                    alt="marco"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              )}
+              <div className="absolute bottom-1 right-1 w-5 h-5 bg-green-500 rounded-full border-[3px] border-[#121B2A]"></div>
+            </div>
+            <h2 className="text-[#E8D9B0] font-bold text-lg flex items-center gap-1.5">
+              {user.username}{" "}
+              {user?.username?.toUpperCase() === "AXISS" && (
+                <span className="bg-red-500/20 text-red-400 text-[10px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                  Admin
+                </span>
+              )}
+            </h2>
+            <p className="text-[#8B98B0] text-xs">Conectado(a)</p>
+          </div>
+
+
+          <div className="px-4 mt-2">
+            <button
+              className={`w-full flex items-center justify-center gap-2 text-cyan-400 bg-cyan-500/10 border ${isFriendReqOpen ? "border-cyan-500/50" : "border-cyan-500/20"} px-3 py-2 rounded-2xl hover:bg-cyan-500/20 transition-all text-sm font-medium`}
+              onClick={() => {
+                closeAllModals();
+                setIsFriendReqOpen(!isFriendReqOpen);
+              }}
+            >
+              <UserPlus size={16} strokeWidth={1.5} />
+              Solicitudes de Amistad
+              {(user?.friend_requests && user.friend_requests.length > 0) && (
+                <span className="bg-cyan-500 text-black text-xs font-bold px-2 py-0.5 rounded-full ml-1">{user.friend_requests.length}</span>
+              )}
+            </button>
+          </div>
+
+          {(user?.role === "admin" || user?.username?.toUpperCase() === "AXISS") && (
+            <>
+            <div className="px-4 mt-2 grid grid-cols-2 gap-2">
+              <button
+                className={`flex items-center justify-center gap-2 text-red-400 bg-red-500/10 border ${isBannedListOpen ? "border-red-500/50" : "border-red-500/20"} px-3 py-2 rounded-2xl hover:bg-red-500/20 transition-all text-sm font-medium`}
+                onClick={() => {
+                  closeAllModals();
+                  socket.emit("get_banned_users", (list: any) => setBannedList(list));
+                  setIsBannedListOpen(!isBannedListOpen);
+                }}
+              >
+                <ShieldAlert size={16} strokeWidth={1.5} />
+                Baneados
+              </button>
+              <button
+                className={`flex items-center justify-center gap-2 text-orange-400 bg-orange-500/10 border ${isReportsListOpen ? "border-orange-500/50" : "border-orange-500/20"} px-3 py-2 rounded-2xl hover:bg-orange-500/20 transition-all text-sm font-medium`}
+                onClick={() => {
+                  closeAllModals();
+                  socket.emit("get_reports", (list: any) => setReportsList(list));
+                  setIsReportsListOpen(!isReportsListOpen);
+                }}
+              >
+                <AlertTriangle size={16} strokeWidth={1.5} />
+                Reportes
+              </button>
+            </div>
+            <div className="px-4 mt-2">
+              <button
+                className={`w-full flex items-center justify-center gap-2 text-green-400 bg-green-500/10 border ${isMonetizationOpen ? "border-green-500/50" : "border-green-500/20"} px-3 py-2 rounded-2xl hover:bg-green-500/20 transition-all text-sm font-medium`}
+                onClick={() => {
+                  closeAllModals();
+                  socket.emit("get_monetization_stats", (stats: any) => setMonetizationStats(stats));
+                  setIsMonetizationOpen(!isMonetizationOpen);
+                }}
+              >
+                <DollarSign size={16} strokeWidth={1.5} />
+                Ingresos SDK
+              </button>
+            </div>
+            </>
+          )}
+
+          <div className="w-full h-px bg-white/5 my-2"></div>
+
+          {/* Salas */}
+          <div className="px-4 py-2 flex flex-col gap-2">
+            <button
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "global" ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" : "bg-white/5 text-gray-300 hover:bg-white/10"}`}
+              onClick={() => {
+                closeAllModals();
+                setIsSidebarOpen(false);
+                setActiveChat("global");
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Globe size={18} className={activeChat === "global" ? "animate-pulse" : ""} />
+                Sala Global
+              </div>
+            </button>
+            <button
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "friends_webcam" ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "bg-white/5 text-gray-300 hover:bg-white/10"}`}
+              onClick={() => {
+                closeAllModals();
+                setIsSidebarOpen(false);
+                setActiveChat("friends_webcam");
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Webcam size={18} className={activeChat === "friends_webcam" ? "animate-pulse" : ""} />
+                Friends Webcam
+              </div>
+            </button>
+            <button
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "custom_rooms" ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-white/5 text-gray-300 hover:bg-white/10"}`}
+              onClick={() => {
+                closeAllModals();
+                setIsSidebarOpen(false);
+                setActiveChat("custom_rooms");
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Hash size={18} />
+                Crear Sala
+              </div>
+            </button>
+          </div>
+
+
+          {/* AI Characters Button */}
+          <div className="px-4 py-2">
+            <button
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white px-3 py-2.5 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
+              onClick={() => {
+                closeAllModals();
+                setIsAiSelectorOpen(true);
+              }}
+            >
+              <Bot size={18} />
+              Personajes IA
+            </button>
+          </div>
+          {/* User Search */}
+          <div className="px-4 py-2">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = (e.target as any).elements.searchQuery.value.trim();
+                if (q) {
+                  socket.emit("search_user", q, (res: any) => {
+                    if (res.success) {
+                      setSelectedUserModal(res.user);
+                    } else {
+                      alert("Usuario no encontrado");
+                    }
+                  });
+                }
+              }}
+              className="relative"
+            >
+              <input
+                name="searchQuery"
+                type="text"
+                placeholder="Buscar por UID o Nombre..."
+                className="w-full bg-[#12141c] text-sm text-white px-3 py-2 pl-8 rounded-xl border border-white/10 focus:border-[#D4AF37] focus:outline-none placeholder-gray-500"
+              />
+              <Search
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                size={14}
+              />
+            </form>
+          </div>
+
+          {/* Users List */}
+          <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 scrollbar-thin">
+            {usersOnline.map((u) => {
+              if (
+                ["Elizabeth", "Sensei", "Shadow", "Neko"].includes(u.username)
+              )
+                return null;
+              return (
+                <div
+                  key={u.username}
+                  className="bg-[#1A2639]/80 border border-[#D4AF37]/30 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden group cursor-pointer hover:bg-white/5 transition-colors"
+                  onClick={() => {
+                    closeAllModals();
+                    setSelectedUserModal(u as any);
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full overflow-hidden border border-[#D4AF37]/50 relative flex-shrink-0">
+                      <img
+                        referrerPolicy="no-referrer"
+                        src={
+                          u.profilePic ||
+                          `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`
+                        }
+                        alt={u.username}
+                        className="w-full h-full object-cover"
+                      />
+                      {u.activeDecoration && (
+                        <div className="absolute inset-0 pointer-events-none scale-125 z-10 flex items-center justify-center">
+                          <img
+                            referrerPolicy="no-referrer"
+                            src={u.activeDecoration}
+                            alt="marco"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#E8D9B0] font-bold text-sm truncate flex items-center gap-1.5">
+                        {u.username}{" "}
+                        {u.username.toUpperCase() === "AXISS" && (
+                          <span className="bg-red-500/20 text-red-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                            Admin
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[#8B98B0] text-xs truncate">
+                        En línea
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          </div>
+        </aside>
+
+        {/* Main Chat Container */}
+        <main

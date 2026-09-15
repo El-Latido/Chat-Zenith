@@ -1,0 +1,251 @@
+                      );
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 text-white bg-white/5 hover:bg-white/10 p-3 rounded-xl font-medium transition-colors border border-white/10"
+                  >
+                    <MessageCircle size={18} />
+                    Chat Privado
+                  </button>
+                  <button
+                    onClick={() => {
+                      socket.emit("like_user", selectedUserModal.username);
+                      setSelectedUserModal((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              profileLikes: (prev.profileLikes || 0) + 1,
+                            }
+                          : null,
+                      );
+                      notifyOwner(
+                        selectedUserModal.username,
+                        "LIKE",
+                        user.username,
+                      );
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 text-pink-400 bg-pink-500/10 hover:bg-pink-500/20 p-3 rounded-xl font-medium transition-colors border border-pink-500/20"
+                  >
+                    <Heart size={18} />
+                    Dar Like
+                  </button>
+                </div>
+                {/* Comentarios de perfil */}
+                <div className="mt-4 bg-[#0a0a16] border border-white/5 p-4 rounded-2xl">
+                  <h4 className="text-sm font-bold text-gray-400 mb-3 border-b border-white/5 pb-2">Comentarios</h4>
+                  <div className="max-h-40 overflow-y-auto flex flex-col gap-2 mb-3">
+                    {(!selectedUserModal.profileComments || selectedUserModal.profileComments.length === 0) ? (
+                      <p className="text-xs text-gray-500 italic">No hay comentarios aún.</p>
+                    ) : (
+                      selectedUserModal.profileComments.map((c: any, i: number) => (
+                        <div key={i} className="bg-white/5 p-2 rounded-lg text-sm">
+                          <span className="font-bold text-cyan-400 mr-2">{c.author}:</span>
+                          <span className="text-gray-300">{c.text}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement;
+                    if (input.value.trim()) {
+                      socket.emit("add_profile_comment", { targetUser: selectedUserModal.username, comment: input.value });
+                      // Optimistic UI update
+                      setSelectedUserModal(prev => prev ? {
+                        ...prev,
+                        profileComments: [...(prev.profileComments || []), { author: user.username, text: input.value, timestamp: Date.now() }]
+                      } : null);
+                      input.value = '';
+                    }
+                  }} className="flex gap-2">
+                    <input name="comment" type="text" placeholder="Escribe un comentario..." className="flex-1 bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500/50" />
+                    <button type="submit" className="bg-cyan-500/20 text-cyan-400 px-3 py-2 rounded-xl text-sm font-bold hover:bg-cyan-500 hover:text-white transition-colors">Enviar</button>
+                  </form>
+                </div>
+
+                {selectedUserModal.username !== "Elizabeth" && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (
+                          user.friends_list?.includes(
+                            selectedUserModal.username,
+                          )
+                        ) {
+                          import("firebase/firestore").then(
+                            ({ doc, updateDoc, arrayRemove }) => {
+                              updateDoc(doc(db, "users", user.username), {
+                                friends_list: arrayRemove(
+                                  selectedUserModal.username,
+                                ),
+                              });
+                              updateDoc(
+                                doc(db, "users", selectedUserModal.username),
+                                { friends_list: arrayRemove(user.username) },
+                              );
+                            },
+                          );
+                          setUser((prev) => ({
+                            ...prev,
+                            friends_list: prev.friends_list?.filter(
+                              (f) => f !== selectedUserModal.username,
+                            ),
+                          }));
+                          setSelectedUserModal(null);
+                        } else {
+                          import("firebase/firestore").then(
+                            ({ addDoc, collection }) => {
+                              addDoc(collection(db, "friendRequests"), {
+                                from: user.username,
+                                to: selectedUserModal.username,
+                                status: "pending",
+                                timestamp: Date.now(),
+                                createdAt: Date.now(),
+                              }).then((docRef) => {
+                                notifyOwner(
+                                  selectedUserModal.username,
+                                  "REQUEST",
+                                  user.username,
+                                  {
+                                    frData: {
+                                      from: user.username,
+                                      docId: docRef.id,
+                                    },
+                                  },
+                                );
+                              });
+                            },
+                          );
+                          setSelectedUserModal(null);
+                          alert("Solicitud enviada");
+                        }
+                      }}
+                      className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl font-medium transition-colors border ${user.friends_list?.includes(selectedUserModal.username) ? "text-green-400 bg-green-500/10 border-green-500/20 hover:bg-green-500/20" : "text-cyan-400 bg-cyan-500/10 border-cyan-500/20 hover:bg-cyan-500/20"}`}
+                    >
+                      <UserPlus size={18} />
+                      {user.friends_list?.includes(selectedUserModal.username)
+                        ? "Quitar Amigo"
+                        : "Enviar Solicitud"}
+                    </button>
+                    {selectedUserModal.role !== "admin" && (
+                      <button
+                        onClick={() => {
+                          socket.emit(
+                            "iniciar_llamada",
+                            selectedUserModal.username,
+                          );
+                          setOutgoingCall({
+                            username: selectedUserModal.username,
+                            profilePic: selectedUserModal.profilePic || "",
+                          });
+                          setSelectedUserModal(null);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl font-medium transition-colors border text-cyan-400 bg-cyan-500/10 border-cyan-500/20 hover:bg-cyan-500/20"
+                      >
+                        <PhoneCall size={18} />
+                        Llamar
+                      </button>
+                    )}
+                  </div>
+                )}
+                
+                {selectedUserModal.username !== user.username && (
+                    <button
+                      onClick={() => setReportTarget(selectedUserModal.username)}
+                      className="w-full mt-3 flex items-center justify-center gap-2 p-3 rounded-xl font-medium transition-colors border text-red-400 bg-red-500/10 border-red-500/20 hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.1)]"
+                    >
+                      <ShieldAlert size={18} />
+                      Reportar Infracción
+                    </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Friends Sidebar (Inbox) */}
+      {isFriendsSidebarOpen && (
+        <div className="fixed inset-y-0 right-0 w-80 bg-[#0f111a] backdrop-blur-xl border-l border-white/10 shadow-2xl z-[105] flex flex-col transform transition-transform animate-in slide-in-from-right">
+          <div className="p-6 border-b border-white/5 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <MessageSquare size={24} className="text-cyan-400" />
+              Buzón de Mensajes
+            </h2>
+            <button
+              onClick={() => setIsFriendsSidebarOpen(false)}
+              className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {chatList.length === 0 ? (
+              <p className="text-gray-500 text-center text-sm mt-10">
+                Tu buzón está vacío. ¡Empieza a chatear!
+              </p>
+            ) : (
+              chatList.map((chatInfo) => {
+                const friendUsername = chatInfo.withUser;
+                const isOnline = usersOnline.some(
+                  (u) => u.username === friendUsername,
+                );
+                const friendInfo =
+                  usersOnline.find((u) => u.username === friendUsername) ||
+                  userCache[friendUsername];
+
+                return (
+                  <div
+                    key={friendUsername}
+                    className="flex items-center gap-2 group p-2 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/5"
+                  >
+                    <div
+                      onClick={() => {
+                        setActiveChat(friendUsername);
+                        setUnreadPMs((prev) => ({
+                          ...prev,
+                          [friendUsername]: false,
+                        }));
+                        setIsFriendsSidebarOpen(false);
+                      }}
+                      className="flex-1 flex items-center gap-3 cursor-pointer min-w-0"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 border border-[#D4AF37]/30 overflow-hidden relative flex-shrink-0">
+                        <img
+                          referrerPolicy="no-referrer"
+                          src={
+                            friendInfo?.profilePic ||
+                            `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendUsername}`
+                          }
+                          className="w-full h-full object-cover"
+                        />
+                        <div
+                          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0f111a] ${isOnline ? "bg-green-500" : "bg-gray-500"}`}
+                        ></div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center">
+                          <p className="text-white font-medium text-sm truncate">
+                            {friendUsername}
+                          </p>
+                          {unreadPMs[friendUsername] && (
+                            <div className="w-2 h-2 rounded-full bg-cyan-500 ml-2"></div>
+                          )}
+                        </div>
+                        <p className={`text-sm truncate ${unreadPMs[friendUsername] ? "text-white font-semibold" : "text-gray-400"}`}>
+                          {chatInfo.lastMessage || "Conversación"}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (
+                          window.confirm(
+                            "¿Eliminar esta conversación de tu buzón?",
+                          )
+                        ) {
+                          import("firebase/firestore").then(
+                            ({ deleteDoc, doc }) => {
+                              deleteDoc(
+                                doc(
+                                  db,
+                                  "userChats",

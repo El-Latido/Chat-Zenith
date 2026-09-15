@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-chatliz-19b8032a-22a9-4b1d-9b50-b3d4b9771a26",
+      "rules": "firestore.rules"
+    }
+  ]
+}

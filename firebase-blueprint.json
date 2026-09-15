@@ -1,42 +1,21 @@
 {
   "entities": {
-    "Message": {
-      "title": "Message",
-      "description": "A chat message in the global channel.",
+    "World": {
+      "title": "World",
+      "description": "A 3D world configuration",
       "type": "object",
       "properties": {
-        "channelId": {
-          "type": "string",
-          "description": "The ID of the channel this message belongs to."
-        },
-        "text": {
-          "type": "string",
-          "maxLength": 1000,
-          "description": "The message content."
-        },
-        "sender": {
-          "type": "string",
-          "maxLength": 100,
-          "description": "The display name of the user who sent the message."
-        },
-        "userId": {
-          "type": "string",
-          "description": "The UID of the user who sent the message."
-        },
-        "createdAt": {
-          "type": "timestamp",
-          "description": "The time the message was sent."
-        }
-      },
-      "required": ["channelId", "text", "sender", "userId", "createdAt"]
+        "id": { "type": "string" },
+        "terrainHeights": { "type": "array" },
+        "placedItems": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
-    "messages/{messageId}": {
-      "schema": {
-        "$ref": "#/entities/Message"
-      },
-      "description": "The collection of global chat messages."
+    "/worlds/{worldId}": {
+      "schema": { "$ref": "#/entities/World" },
+      "description": "Worlds collection"
     }
   }
 }

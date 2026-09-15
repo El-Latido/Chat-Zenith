@@ -1,11 +1,6 @@
 {
-  "name": "Remix Chat-Liz",
+  "name": "Chat-Liz",
   "description": "Un chat masivo y en tiempo real con canales globales y privados, donde Elizabeth, una IA carismática, interactúa con los usuarios. Soporta inicio de sesión, envío de imágenes y estados de usuario.",
-  "requestFramePermissions": [
-    "microphone",
-    "camera"
-  ],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
