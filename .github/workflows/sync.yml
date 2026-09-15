@@ -4,16 +4,42 @@ on:
     branches:
       - main
 jobs:
-  sync:
+  build-and-sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          fetch-depth: 0
-      - name: Push to HF Space
+          node-version: 20
+          
+      - name: Install Dependencies
+        run: npm install
+        
+      - name: Build Application
+        run: npm run build
+        
+      - name: Deploy to Hugging Face
         run: |
+          cd dist
+          
+          # Crear el README requerido por Hugging Face para Spaces Estáticos
+          cat << 'EOF' > README.md
+          ---
+          title: Chat Zenith
+          emoji: 💬
+          colorFrom: blue
+          colorTo: indigo
+          sdk: static
+          pinned: false
+          ---
+          EOF
+          
+          git init
           git config --global user.email "bot@example.com"
           git config --global user.name "Sincronizador HF"
-          # Reemplaza TU_USUARIO_HF y TU_SPACE_HF con tus datos reales de Hugging Face
-          git remote add hf https://chatliz-online:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/chatliz-online/Chat-Zenith
-          git push -f hf main
+          git checkout -b main
+          git add .
+          git commit -m "Deploy from GitHub Actions"
+          git push -f https://chatliz-online:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/chatliz-online/Chat-Zenith main
