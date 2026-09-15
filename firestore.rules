@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Primitives
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+
+    // Validation Blueprint for Message
+    function isValidMessage(data) {
+      return data.keys().hasAll(['channelId', 'text', 'sender', 'userId', 'createdAt'])
+        && data.keys().size() == 5
+        && data.channelId is string && data.channelId.size() <= 128
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 1000
+        && data.sender is string && data.sender.size() <= 100
+        && data.userId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    match /messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) && resource.data.channelId is string;
+      allow list: if isSignedIn() && resource.data.channelId is string; // Explicitly evaluate resource.data
+      
+      allow create: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming());
+      allow update: if false; // Append-only chat log
+      allow delete: if false;
+    }
+  }
+}
