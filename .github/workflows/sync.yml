@@ -15,5 +15,5 @@ jobs:
           git config --global user.email "bot@example.com"
           git config --global user.name "Sincronizador HF"
           # Reemplaza TU_USUARIO_HF y TU_SPACE_HF con tus datos reales de Hugging Face
-          git remote add hf https://TU_USUARIO_HF:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/TU_USUARIO_HF/TU_SPACE_HF
+          git remote add hf https://chatliz-online:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/chatliz-online/Chat-Zenith
           git push -f hf main
