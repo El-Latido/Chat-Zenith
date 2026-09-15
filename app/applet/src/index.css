@@ -1,0 +1,125 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Outfit:wght@100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --animate-slideDown: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #0B0B0C;
+  color: #fff;
+}
+
+/* Scroll e Historial Dinámico de Radio */
+.song-history-container {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 10px;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.song-history-container::-webkit-scrollbar {
+  width: 8px;
+}
+.song-history-container::-webkit-scrollbar-thumb {
+  background-color: #888;
+  border-radius: 4px;
+}
+@keyframes progress {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+/* Shader Effects */
+.shader-crt::before {
+    content: " ";
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    z-index: 100;
+    background-size: 100% 2px, 3px 100%;
+    pointer-events: none;
+}
+.shader-scanlines {
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.15),
+        rgba(0,0,0,0.15) 1px,
+        transparent 1px,
+        transparent 2px
+    );
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 99;
+}
+.shader-vignette {
+    box-shadow: inset 0 0 150px rgba(0,0,0,0.9);
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 98;
+}
+.shader-glow * {
+    text-shadow: 0 0 5px currentColor !important;
+    box-shadow: 0 0 5px currentColor !important;
+}
+.shader-chromatic {
+    animation: chromatic 2s infinite alternate;
+}
+@keyframes chromatic {
+    0% { text-shadow: -2px 0 red, 2px 0 cyan; }
+    50% { text-shadow: 2px 0 red, -2px 0 cyan; }
+    100% { text-shadow: -1px 0 red, 1px 0 cyan; }
+}
+.shader-pixelate {
+    image-rendering: pixelated;
+    filter: contrast(1.2) saturate(1.5);
+}
+
+.animate-in { animation-duration: 300ms; animation-fill-mode: both; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+.fade-in { animation-name: fadeIn; }
+.zoom-in-95 { animation-name: zoomIn95; }
+.slide-in-from-right-4 { animation-name: slideInRight4; }
+.slide-in-from-bottom-2 { animation-name: slideInBottom2; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zoomIn95 { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+@keyframes slideInRight4 { from { opacity: 0; transform: translateX(1rem); } to { opacity: 1; transform: translateX(0); } }
+@keyframes slideInBottom2 { from { opacity: 0; transform: translateY(0.5rem); } to { opacity: 1; transform: translateY(0); } }
+
+/* Global minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
