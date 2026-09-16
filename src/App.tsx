@@ -6,7 +6,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
 import {
   collection,
   onSnapshot,
@@ -539,7 +539,7 @@ function MainApp() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
 
-  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
 
   const [usersOnline, setUsersOnline] = useState<UserObj[]>([
@@ -593,7 +593,8 @@ function MainApp() {
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedGif, setSelectedGif] = useState<string | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<{name: string, type: string, url: string} | null>(null);
+const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStream, setRecordingStream] = useState<MediaStream | null>(
     null,
@@ -609,6 +610,7 @@ function MainApp() {
   const [isDjPanelOpen, setIsDjPanelOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const generalFileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioChunks = useRef<BlobPart[]>([]);
@@ -648,8 +650,7 @@ function MainApp() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value);
-
+    
     socket.emit("typing", { username: user.username, chat: activeChat });
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -686,7 +687,7 @@ function MainApp() {
             is_friends_public: res.is_friends_public,
             friends_list: res.friends_list || [],
             blocked_list: res.blocked_list || [],
-            gender: res.gender,
+            gender: res.gender, age: res.age,
             mood: res.mood,
           });
           localStorage.setItem("chatliz_user", JSON.stringify(payload));
@@ -716,12 +717,12 @@ function MainApp() {
     }
   };
 
-  const handleLogin = (e?: React.FormEvent) => {
+  const handleLogin = (e?: React.FormEvent, extraData: any = {}) => {
     e?.preventDefault();
     if (!user.username || !user.password) return;
 
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const loginPayload = { ...user, timezone };
+    const loginPayload = { ...user, ...extraData, timezone };
 
     socket.emit("register_or_login", loginPayload, (res: any) => {
       if (res.success) {
@@ -735,7 +736,7 @@ function MainApp() {
           is_friends_public: res.is_friends_public,
           friends_list: res.friends_list || [],
           blocked_list: res.blocked_list || [],
-          gender: res.gender,
+          gender: res.gender, age: res.age,
           mood: res.mood,
           preferred_background: res.preferred_background,
         });
@@ -1375,14 +1376,22 @@ function MainApp() {
     }
   };
   const handleSendMessage = () => {
-    if (!inputValue.trim() && !selectedImage && !audioUrl && !selectedGif)
+    const inputValue = inputRef.current?.value || "";
+    if (!inputValue.trim() && !selectedImage && !audioUrl && !selectedGif && !selectedFile)
       return;
 
     const msgId =
       Date.now().toString() + Math.random().toString(36).substr(2, 5);
     const payload: any = { text: inputValue, id: msgId };
     if (selectedImage) payload.image = selectedImage;
-    if (selectedGif) payload.image = selectedGif;
+        if (selectedGif) payload.image = selectedGif;
+    if (selectedFile) {
+      if (selectedFile.type.startsWith('video/')) {
+        payload.video = selectedFile.url;
+      } else {
+        payload.file = selectedFile;
+      }
+    }
     if (audioUrl) payload.audio = audioUrl;
     if (replyingTo) {
       payload.replyTo = {
@@ -1441,12 +1450,32 @@ function MainApp() {
     setRecordingStream(null);
 
     // Limpieza inmediata del input para evitar sensación de "congelamiento"
-    setInputValue("");
+    if (inputRef.current) inputRef.current.value = "";
     setSelectedImage(null);
     setSelectedGif(null);
     setAudioUrl(null);
     setShowEmojiPicker(false);
     setReplyingTo(null);
+  };
+
+  
+  const handleGeneralFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("El archivo es demasiado grande (máx 5MB).");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelectedFile({
+          name: file.name,
+          type: file.type,
+          url: event.target?.result as string
+        });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2228,7 +2257,7 @@ function MainApp() {
                                       {!isMe && (
                                         <span
                                           className="font-bold text-[#f472b6] text-[13px] mb-1 cursor-pointer hover:text-white transition-colors tracking-wide block"
-                                          onClick={() => setInputValue((prev) => prev + `@${m.sender} `)}
+                                          onClick={() => { if (inputRef.current) inputRef.current.value += `@${m.sender} `; }}
                                         >
                                           {m.sender}
                                         </span>
@@ -2273,6 +2302,20 @@ function MainApp() {
                                           />
                                         </div>
                                       )}
+                                      {m.video && (
+                                        <div className="mt-2">
+                                          <video src={m.video} controls className="rounded-xl border border-white/20 max-w-full shadow-md h-auto max-h-48 object-contain" />
+                                        </div>
+                                      )}
+                                      {m.file && (
+                                        <div className="mt-2 flex">
+                                          <a href={m.file.url} download={m.file.name} className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/80 transition-colors text-sm">
+                                            <FileIcon size={18} className="text-cyan-400" />
+                                            <span className="truncate max-w-[200px]">{m.file.name}</span>
+                                          </a>
+                                        </div>
+                                      )}
+
                                       {(m.type === "audio" || m.audio) && (
                                         <div className="w-full mt-2">
                                           <PremiumAudioPlayer src={m.audio} styleType={user?.audioVisualizerStyle} color1={user?.audioVisualizerColor1} color2={user?.audioVisualizerColor2} />
@@ -2344,7 +2387,7 @@ function MainApp() {
                                     {!isMe && (
                                       <span
                                         className={`font-semibold ${nameColor} text-[13px] mb-0.5 cursor-pointer hover:text-white transition-colors tracking-wide`}
-                                        onClick={() => setInputValue((prev) => prev + `@${m.sender} `)}
+                                        onClick={() => { if (inputRef.current) inputRef.current.value += `@${m.sender} `; }}
                                       >
                                         {m.sender}
                                       </span>
@@ -2387,6 +2430,20 @@ function MainApp() {
                                         />
                                       </div>
                                     )}
+                                      {m.video && (
+                                        <div className="mt-2">
+                                          <video src={m.video} controls className="rounded-xl border border-white/20 max-w-full shadow-md h-auto max-h-48 object-contain" />
+                                        </div>
+                                      )}
+                                      {m.file && (
+                                        <div className="mt-2 flex">
+                                          <a href={m.file.url} download={m.file.name} className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/80 transition-colors text-sm">
+                                            <FileIcon size={18} className="text-cyan-400" />
+                                            <span className="truncate max-w-[200px]">{m.file.name}</span>
+                                          </a>
+                                        </div>
+                                      )}
+
                                     {(m.type === "audio" || m.audio) && (
                                       <div className="w-full mt-1.5">
                                         <PremiumAudioPlayer src={m.audio} styleType={user?.audioVisualizerStyle} color1={user?.audioVisualizerColor1} color2={user?.audioVisualizerColor2} />
@@ -2438,7 +2495,7 @@ function MainApp() {
                   {(selectedImage || audioUrl || selectedGif) && (
                      <div className="text-xs text-yellow-500 px-2 flex justify-between">
                        <span>Archivo adjunto listo para enviar</span>
-                       <button onClick={() => { setSelectedImage(null); setAudioUrl(null); setSelectedGif(null); }}><X size={14} /></button>
+                       <button onClick={() => { setSelectedImage(null); setAudioUrl(null); setSelectedGif(null); setSelectedFile(null); }}><X size={14} /></button>
                      </div>
                   )}
                   
@@ -2451,7 +2508,7 @@ function MainApp() {
                     
                     <div className="flex-1 flex items-center bg-[#27272a] rounded-full px-4 py-2 relative">
                       <input
-                        value={inputValue}
+                        ref={inputRef}
                         onChange={handleInputChange}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") handleSendMessage();
@@ -2463,6 +2520,7 @@ function MainApp() {
                         spellCheck="false"
                       />
                       <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
+                      <input type="file" accept="*" className="hidden" ref={generalFileInputRef} onChange={handleGeneralFileSelect} />
                     </div>
                     
                     <button onClick={toggleRecording} className="text-gray-400 hover:text-white transition-colors"><Mic size={24} /></button>

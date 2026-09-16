@@ -1,0 +1,35 @@
+node_modules/@firebase/firestore/dist/index.d.ts(3635,31): error TS2503: Cannot find namespace 'Temporal'.
+node_modules/@firebase/firestore/dist/index.d.ts(3680,16): error TS2503: Cannot find namespace 'Temporal'.
+node_modules/hls-video-element/dist/hls-video-element.d.ts(36,3): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+src/App.tsx(2,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/ActiveCallModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/AdminConfigAiModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/AdminShadersModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/AiSelectorModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/Avatar.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/Avatar.tsx(50,9): error TS2322: Type 'string' is not assignable to type 'HTMLAttributeReferrerPolicy'.
+src/components/CallModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/ChessBotModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/ChessGameModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/CustomRooms.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/DjControlPanelModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/EmojiGifPicker.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/FirstTimeSetupModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/FriendsWebcam.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/GamesMenuModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/InlineRadio.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/Login.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/OutgoingCallModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/PremiumAudioPlayer.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/PremiumAudioVisualizer.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/ProfileConfigModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/RecoveryModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/SongRequestModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/StoreModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/TranslatedText.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/social/CreatePostModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/social/PostCard.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/social/SocialFeed.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/social/StoryBar.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/social/UserProfileModal.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/theme/MechaCelestialTheme.tsx(1,8): error TS1259: Module '"/app/applet/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag

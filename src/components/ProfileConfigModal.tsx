@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare } from 'lucide-react';
+import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar } from 'lucide-react';
 import { socket } from '../socket';
 import { UserObj } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
@@ -217,7 +217,13 @@ export function ProfileConfigModal({
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       />
                    </div>
-                   <h3 className="text-2xl font-bold text-white">{user.username}</h3>
+                                      <h3 className="text-2xl font-bold text-white">{user.username}</h3>
+                   
+                   <div className="flex gap-4 text-white/70 text-sm font-medium bg-white/5 px-4 py-2 rounded-full border border-white/10 shadow-inner">
+                      {user.gender && <div className="flex items-center gap-1"><Users size={14} className="text-cyan-400"/> {user.gender}</div>}
+                      {user.age !== undefined && <div className="flex items-center gap-1"><Calendar size={14} className="text-pink-400"/> {user.age} años</div>}
+                   </div>
+
                 </div>
 
                 <div className="space-y-3">

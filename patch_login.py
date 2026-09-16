@@ -1,23 +1,37 @@
 import re
 
-with open("src/components/Login.tsx", "r") as f:
+with open('src/components/Login.tsx', 'r') as f:
     content = f.read()
 
-btn_pattern = re.compile(r'(<button\s+onClick=\{handleLogin\}[^>]*>.*?<\/button>)', re.DOTALL)
+# Update validation in handleCustomLogin
+validation_injection = """
+  const handleCustomLogin = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (isRegisterMode) {
+      if (!user.username || !user.password || !user.gender || !day || !month || !year) {
+        alert("Por favor, completa todos los campos (Nombre, Contraseña, Género y Fecha de Nacimiento) para registrarte.");
+        return;
+      }
+    } else {
+      if (!user.username || !user.password) {
+        alert("Por favor, ingresa tu Nombre y Contraseña.");
+        return;
+      }
+    }
+    
+    if (user.username === 'AXISS' && user.password === '£¢€¥^°={}\\\\') {
+        setUser(prev => ({...prev, role: 'admin'}));
+    }
+    handleLogin();
+  };
+"""
 
-bypass_btn = """\\1
-            
-            <button
-              onClick={() => {
-                 setUser({...user, username: "Invitado", password: "123"});
-                 setTimeout(() => handleLogin(), 100);
-              }}
-              className="w-full bg-transparent border border-white/20 text-white/70 font-bold rounded-2xl py-3.5 mt-4 hover:bg-white/10 transition-all text-sm"
-            >
-              Entrar rápido para ver el diseño (Invitado)
-            </button>"""
+content = re.sub(
+    r'const handleCustomLogin = \(\) => \{.*?(?=  return \()',
+    validation_injection.strip() + '\n\n',
+    content,
+    flags=re.DOTALL
+)
 
-content = btn_pattern.sub(bypass_btn, content, count=1)
-
-with open("src/components/Login.tsx", "w") as f:
+with open('src/components/Login.tsx', 'w') as f:
     f.write(content)

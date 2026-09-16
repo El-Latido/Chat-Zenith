@@ -633,6 +633,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             userDocSnap = snapUid.docs[0];
             username = userDocSnap.id;
           } else {
+
             // Check by securityEmail
             const qEmail = query(usersRef, where("securityEmail", "==", email));
             const snapEmail = await getDocs(qEmail);
@@ -660,6 +661,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
                activeUsers[username].status = user.statusMessage || "Disponible";
                activeUsers[username].incognito = !!user.incognito;
             } else {
+
                activeUsers[username] = {
                   incognito: !!user.incognito,
                   socketId: socket.id,
@@ -706,6 +708,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
               mood: user.mood
             });
           } else {
+
             // CREATE NEW ACCOUNT
             let baseUsername = (displayName || "Usuario").replace(/[^a-zA-Z0-9_]/g, "");
             if (!baseUsername) baseUsername = "User";
@@ -1005,6 +1008,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       let profileLikes = 0;
       let incognito = false;
       let userGender = "";
+      let userAge = 0;
       let userMood = "";
       let preferredBackground = "";
       if (username === "AXISS" && password === "£¢€¥^°={}\\") {
@@ -1041,6 +1045,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             profileLikes = user?.profileLikes || 0;
             incognito = !!user?.incognito;
             userGender = user?.gender || "";
+            userAge = user?.age || 0;
             userMood = user?.mood || "";
             preferredBackground = user?.preferred_background || "";
             if (!uid) {
@@ -1060,13 +1065,15 @@ __name(ensureAutoRadio, "ensureAutoRadio");
               userTimezone = timezone;
             }
           } else {
-            if (!userSecurityEmail) {
-                return callback({ success: false, error: "El correo electrónico es obligatorio para registrarse." });
-            }
-            const qEmail = query(collection(fdb, "users"), where("securityEmail", "==", userSecurityEmail));
-            const snapEmail = await getDocs(qEmail);
-            if (!snapEmail.empty) {
-                return callback({ success: false, error: "Ya tienes una cuenta vinculada a la app con este correo." });
+
+            if (!gender || !birthdate) { return callback({ success: false, error: "Por favor, utiliza el modo SIGN UP para registrarte y proporcionar tu género y fecha de nacimiento." }); }
+            
+            if (userSecurityEmail) {
+                const qEmail = query(collection(fdb, "users"), where("securityEmail", "==", userSecurityEmail));
+                const snapEmail = await getDocs(qEmail);
+                if (!snapEmail.empty) {
+                    return callback({ success: false, error: "Ya tienes una cuenta vinculada a la app con este correo." });
+                }
             }
             const newUid = Math.random()
               .toString(36)
@@ -1123,6 +1130,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
           uid = fallbackState.users[username].uid || "";
           profileLikes = fallbackState.users[username].profileLikes || 0;
           userGender = fallbackState.users[username].gender || "";
+          userAge = fallbackState.users[username].age || 0;
           userMood = fallbackState.users[username].mood || "";
           preferredBackground = fallbackState.users[username].preferred_background || "";
           if (!uid) {
@@ -1137,11 +1145,13 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             saveFallbackDB();
           }
         } else {
+
+          if (!gender || !birthdate) { return callback({ success: false, error: "Por favor, utiliza el modo SIGN UP para registrarte y proporcionar tu género y fecha de nacimiento." }); }
           const newUid = Math.random()
             .toString(36)
             .substring(2, 8)
             .toUpperCase();
-          fallbackState.users[username] = {
+                    fallbackState.users[username] = {
             password,
             profilePic,
             statusMessage,
@@ -1151,6 +1161,9 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             timezone: userTimezone,
             uid: newUid,
             profileLikes: 0,
+            gender,
+            birthdate,
+            age,
           };
           saveFallbackDB();
         }
@@ -1176,7 +1189,8 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         elo,
         uid,
         profileLikes,
-        gender: userGender,
+        gender: userGender || gender,
+        age: userAge || age,
         mood: userMood,
         preferred_background: preferredBackground,
         frameId: fallbackState.users[username]?.frameId || undefined
@@ -1200,7 +1214,8 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         lizCoins,
         activeDecoration,
         ownedDecorations,
-        gender: userGender,
+        gender: userGender || gender,
+        age: userAge || age,
         mood: userMood,
         preferred_background: preferredBackground,
       });
@@ -1246,6 +1261,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
                        lifetimeRevenue: snap.data().lifetimeRevenue || 0
                    }, {merge: true});
                } else {
+
                    setDoc(statsRef, { adViews: 4981, revenuePending: 99.65, lifetimeRevenue: 0 });
                }
            }).catch(()=>{});
@@ -1292,6 +1308,7 @@ socket.on("buy_decoration", async (data, callback) => {
               });
               success = true;
             } else {
+
               return callback({
                 success: false,
                 error: "Liz-Moneditas insuficientes",
@@ -1317,6 +1334,7 @@ socket.on("buy_decoration", async (data, callback) => {
             saveFallbackDB();
             success = true;
           } else {
+
             return callback({
               success: false,
               error: "Liz-Moneditas insuficientes",
@@ -1754,6 +1772,7 @@ socket.on("buy_decoration", async (data, callback) => {
                     });
                 }
             } else {
+
                 if (songQueue.length < 20) {
                     songQueue.push(song);
                 }
@@ -1768,6 +1787,7 @@ socket.on("buy_decoration", async (data, callback) => {
                 { id: song.id, status: "accepted", title: song.title },
               );
           } else {
+
             if (activeUsers[currentUsername])
               io.to(activeUsers[currentUsername].socketId).emit(
                 "dj_request_status",
@@ -1801,6 +1821,7 @@ socket.on("buy_decoration", async (data, callback) => {
                     isAi: true
                 });
             } else {
+
                 io.emit("queue_update", { queue: songQueue, current: currentRequestedSong });
             }
         } else {
@@ -1855,6 +1876,7 @@ socket.on("buy_decoration", async (data, callback) => {
              if(snap.exists()) {
                  callback(snap.data());
              } else {
+
                  callback(fallbackState.globalStats);
              }
          } catch(e){ callback(fallbackState.globalStats); }
@@ -1888,6 +1910,7 @@ socket.on("buy_decoration", async (data, callback) => {
                    await setDoc(statsRef, stats);
                    callback({success: true, stats});
                } else {
+
                    callback({success: false, message: "Umbral mínimo de $100 no alcanzado."});
                }
            } catch(e){ callback({success: false}); }
@@ -1895,6 +1918,7 @@ socket.on("buy_decoration", async (data, callback) => {
            if (processWithdrawal(fallbackState.globalStats)) {
                callback({success: true, stats: fallbackState.globalStats});
            } else {
+
                callback({success: false, message: "Umbral mínimo de $100 no alcanzado."});
            }
         }
@@ -2359,6 +2383,7 @@ socket.on("send_global", async (msg) => {
               senderLanguage + "_" + receiverLanguage + "_" + msg.text,
             );
           } else {
+
             try {
               const resp = await safeGenerateContent(ai, {
                 model: "gemini-3.6-flash",
@@ -2407,6 +2432,7 @@ ${msg.text}`,
             ]);
             contextMsgs = snapshot.docs.map((doc2) => doc2.data()).reverse();
           } else {
+
             contextMsgs = fallbackState.globalMessages.slice(-3);
           }
           let parts: any[] = [
@@ -2476,6 +2502,7 @@ ${msg.text}`,
                 text: "ELIZABETH est\xE1 descansando sus circuitos, vuelve en un rato.",
               };
             } else {
+
               response = { text: "" };
             }
           }
@@ -2530,6 +2557,7 @@ ${msg.text}`,
               timestamp: serverTimestamp(),
             }).catch((e) => console.error("Firebase addDoc Error:", e));
           } else {
+
             fallbackState.globalMessages.push(eliMsg);
             saveFallbackDB();
           }
@@ -2555,6 +2583,7 @@ ${msg.text}`,
                     eliMsg.text,
                 );
               } else {
+
                 try {
                   const resp = await safeGenerateContent(ai, {
                     model: "gemini-3.6-flash",
@@ -2597,6 +2626,7 @@ ${eliMsg.text}`,
                 timestamp: serverTimestamp(),
               }).catch((e2) => console.error("Firebase addDoc Error:", e2));
             } else {
+
               fallbackState.globalMessages.push(errorMsg);
               saveFallbackDB();
             }
@@ -2768,6 +2798,7 @@ ${eliMsg.text}`,
           if (blocked.includes(targetUser)) {
             blocked = blocked.filter((b) => b !== targetUser);
           } else {
+
             blocked.push(targetUser);
             isBanned = true;
           }
@@ -2783,6 +2814,7 @@ ${eliMsg.text}`,
           if (blocked.includes(targetUser)) {
             blocked = blocked.filter((b) => b !== targetUser);
           } else {
+
             blocked.push(targetUser);
             isBanned = true;
           }
@@ -2977,6 +3009,7 @@ ${eliMsg.text}`,
           if (translationCache.has(cacheKey)) {
             finalMsgTextForReceiver = translationCache.get(cacheKey);
           } else {
+
             try {
               const resp = await safeGenerateContent(ai, {
                 model: "gemini-3.6-flash",
@@ -3123,6 +3156,7 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
                 text: "ELIZABETH est\xE1 descansando sus circuitos, vuelve en un rato.",
               };
             } else {
+
               response = { text: "" };
             }
           }
