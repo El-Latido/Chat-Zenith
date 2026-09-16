@@ -49,9 +49,7 @@ export function ProfileConfigModal({
   const toggleIncognito = () => {
      const nextVal = !incognito;
      setIncognito(nextVal);
-     import('../socket').then(({ socket }) => {
-         socket.emit("update_incognito", nextVal);
-     });
+     socket.emit("update_incognito", nextVal);
   };
 
   const handleSaveProfile = async () => {

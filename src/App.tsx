@@ -6,7 +6,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
 import {
   collection,
   onSnapshot,
@@ -18,7 +18,9 @@ import {
   serverTimestamp,
   where,
   updateDoc,
-  deleteDoc 
+  deleteDoc,
+  arrayUnion,
+  getDoc
 } from "firebase/firestore";
 import {
   signInAnonymously,
@@ -1356,19 +1358,17 @@ function MainApp() {
     }));
 
     if (docId) {
-        import("firebase/firestore").then(async ({ doc, updateDoc, arrayUnion, getDoc }) => {
-            try {
-                const msgRef = doc(db, "globalMessages", docId);
-                const snap = await getDoc(msgRef);
-                if (snap.exists()) {
-                    await updateDoc(msgRef, {
-                        [`reactions.${emoji}`]: arrayUnion(user.username)
-                    });
-                }
-            } catch (e) {
-                console.error("Error updating reaction in Firestore:", e);
+        try {
+            const msgRef = doc(db, "globalMessages", docId);
+            const snap = await getDoc(msgRef);
+            if (snap.exists()) {
+                await updateDoc(msgRef, {
+                    [`reactions.${emoji}`]: arrayUnion(user.username)
+                });
             }
-        });
+        } catch (e) {
+            console.error("Error updating reaction in Firestore:", e);
+        }
     }
     if (socket) {
         socket.emit("message_reaction", { msgId, emoji, activeChat, docId, username: user.username });
@@ -3168,16 +3168,14 @@ function MainApp() {
                     {!user.friends_list?.includes(selectedUserModal.username) ? (
                         <button
                           onClick={() => {
-                            import("firebase/firestore").then(({ addDoc, collection }) => {
-                              addDoc(collection(db, "friendRequests"), {
-                                from: user.username,
-                                to: selectedUserModal.username,
-                                status: "pending",
-                                timestamp: Date.now(),
-                                createdAt: Date.now(),
-                              }).then((docRef) => {
-                                notifyOwner(selectedUserModal.username, "REQUEST", user.username, { frData: { from: user.username, docId: docRef.id } });
-                              });
+                            addDoc(collection(db, "friendRequests"), {
+                              from: user.username,
+                              to: selectedUserModal.username,
+                              status: "pending",
+                              timestamp: Date.now(),
+                              createdAt: Date.now(),
+                            }).then((docRef) => {
+                              notifyOwner(selectedUserModal.username, "REQUEST", user.username, { frData: { from: user.username, docId: docRef.id } });
                             });
                             setSelectedUserModal(null);
                             alert("Solicitud de amistad enviada");
@@ -3441,18 +3439,14 @@ function MainApp() {
                             "¿Eliminar esta conversación de tu buzón?",
                           )
                         ) {
-                          import("firebase/firestore").then(
-                            ({ deleteDoc, doc }) => {
-                              deleteDoc(
-                                doc(
-                                  db,
-                                  "userChats",
-                                  user.username,
-                                  "chats",
-                                  friendUsername,
-                                ),
-                              );
-                            },
+                          deleteDoc(
+                            doc(
+                              db,
+                              "userChats",
+                              user.username,
+                              "chats",
+                              friendUsername,
+                            ),
                           );
                         }
                       }}
