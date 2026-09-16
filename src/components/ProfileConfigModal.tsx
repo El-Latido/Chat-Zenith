@@ -34,6 +34,10 @@ export function ProfileConfigModal({
   const [bubbleBorder, setBubbleBorder] = useState(user.bubbleBorder || 'border-[#5A52A5]/30');
   const [bubbleShape, setBubbleShape] = useState(user.bubbleShape || 'rounded-2xl rounded-tr-sm');
   const [bubbleTexture, setBubbleTexture] = useState(user.bubbleTexture || 'none');
+  const [audioVisStyle, setAudioVisStyle] = useState(user.audioVisualizerStyle || 'neon_waves');
+  const [audioVisColor1, setAudioVisColor1] = useState(user.audioVisualizerColor1 || '#00f2fe');
+  const [audioVisColor2, setAudioVisColor2] = useState(user.audioVisualizerColor2 || '#4facfe');
+
 
   useEffect(() => {
     const match = (user.bubbleColor || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
@@ -647,7 +651,62 @@ export function ProfileConfigModal({
 
           {/* Footer Save Button */}
           <div className="p-4 md:p-6 border-t border-white/5 bg-black/20 flex flex-col items-center">
-             <button 
+             
+        {/* Audio Visualizer Settings */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <span className="text-cyan-400">♫</span> Audio Visualizer
+          </h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-white/60 text-sm block mb-2">Style</label>
+              <select 
+                className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-cyan-500/50 outline-none"
+                value={audioVisStyle}
+                onChange={e => setAudioVisStyle(e.target.value)}
+              >
+                <option value="neon_waves">Neon Waves</option>
+                <option value="cyber_bars">Cyberpunk Bars</option>
+                <option value="stardust">Stardust Particles</option>
+                <option value="holographic">Holographic Line</option>
+              </select>
+            </div>
+            
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="text-white/60 text-sm block mb-2">Primary Color</label>
+                <input 
+                  type="color" 
+                  className="w-full h-10 rounded cursor-pointer bg-transparent border-0"
+                  value={audioVisColor1}
+                  onChange={e => setAudioVisColor1(e.target.value)}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-white/60 text-sm block mb-2">Secondary Color</label>
+                <input 
+                  type="color" 
+                  className="w-full h-10 rounded cursor-pointer bg-transparent border-0"
+                  value={audioVisColor2}
+                  onChange={e => setAudioVisColor2(e.target.value)}
+                />
+              </div>
+            </div>
+            
+            {/* Preview */}
+            <div className="mt-4 p-4 bg-black/40 rounded-xl border border-white/5 flex items-center justify-center h-20 overflow-hidden relative">
+              <div className="absolute inset-0 opacity-50" style={{ background: `linear-gradient(90deg, ${audioVisColor1}, ${audioVisColor2})`, filter: 'blur(20px)' }}></div>
+              <div className="text-white/80 z-10 font-mono text-sm tracking-widest uppercase flex items-center gap-2">
+                <span className="animate-pulse" style={{color: audioVisColor1}}>ılılı</span>
+                Preview Style
+                <span className="animate-pulse" style={{color: audioVisColor2}}>ılılı</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button 
                onClick={handleSaveProfile}
                className="w-full md:w-auto md:px-12 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-2xl font-bold text-lg transition-all shadow-[0_0_20px_rgba(8,145,178,0.4)] hover:shadow-[0_0_30px_rgba(8,145,178,0.6)] hover:scale-[1.02]"
              >

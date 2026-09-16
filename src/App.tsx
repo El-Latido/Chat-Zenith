@@ -1660,9 +1660,9 @@ function MainApp() {
            <button className="hover:text-white transition-colors"><MessageSquare size={22} /></button>
            <button className="hover:text-white transition-colors"><UserPlus size={22} /></button>
            <button className="hover:text-white transition-colors"><Bell size={22} /></button>
-           <button onClick={() => setIsProfileConfigOpen(true)} className="relative hover:opacity-80 transition-opacity">
+           <button onClick={() => setIsConfigOpen(true)} className="relative hover:opacity-80 transition-opacity">
              <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center overflow-hidden border border-white/10">
-               {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : <User size={18} />}
+               {user.profilePic ? <img src={user.profilePic} className="w-full h-full object-cover" /> : <User size={18} />}
              </div>
              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-yellow-500 rounded-full border-2 border-[#18181b] flex items-center justify-center">
              </div>
@@ -2275,7 +2275,7 @@ function MainApp() {
                                       )}
                                       {(m.type === "audio" || m.audio) && (
                                         <div className="w-full mt-2">
-                                          <PremiumAudioPlayer src={m.audio} />
+                                          <PremiumAudioPlayer src={m.audio} styleType={user?.audioVisualizerStyle} color1={user?.audioVisualizerColor1} color2={user?.audioVisualizerColor2} />
                                         </div>
                                       )}
                                       {m.reactions && Object.keys(m.reactions).length > 0 && (
@@ -2389,7 +2389,7 @@ function MainApp() {
                                     )}
                                     {(m.type === "audio" || m.audio) && (
                                       <div className="w-full mt-1.5">
-                                        <PremiumAudioPlayer src={m.audio} />
+                                        <PremiumAudioPlayer src={m.audio} styleType={user?.audioVisualizerStyle} color1={user?.audioVisualizerColor1} color2={user?.audioVisualizerColor2} />
                                       </div>
                                     )}
                                     {m.reactions && Object.keys(m.reactions).length > 0 && (

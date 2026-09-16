@@ -35,6 +35,11 @@ export interface UserObj {
   bubbleBorder?: string;
   bubbleShape?: string;
   bubbleTexture?: string;
+  birthdate?: string;
+  age?: number;
+  audioVisualizerStyle?: string;
+  audioVisualizerColor1?: string;
+  audioVisualizerColor2?: string;
 }
 
 export interface TutiFruttiState {

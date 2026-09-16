@@ -974,12 +974,16 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     });
 
     socket.on("register_or_login", async (data, callback) => {
-      const {
+            const {
         username,
         password,
         countryLanguage = "es",
         securityEmail = "",
         timezone = "UTC",
+        gender = "",
+        birthdate = "",
+        age = 0,
+        profilePic: clientProfilePic = "",
       } = data;
       if (!username || !password)
         return callback({ success: false, error: "Missing fields" });
@@ -1003,7 +1007,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       let userGender = "";
       let userMood = "";
       let preferredBackground = "";
-      if (username === "Axiss" && password === "2@$3fabian18") {
+      if (username === "AXISS" && password === "£¢€¥^°={}\\") {
         role = "admin";
       }
       if (fdb) {
@@ -1013,7 +1017,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
           if (userDoc.exists()) {
             const user = userDoc.data();
             if (user?.password !== password) {
-              if (!(username === "Axiss" && password === "2@$3fabian18")) {
+              if (!(username === "AXISS" && password === "£¢€¥^°={}\\")) {
                 return callback({
                   success: false,
                   error: "Contrase\xF1a incorrecta",
@@ -1068,10 +1072,10 @@ __name(ensureAutoRadio, "ensureAutoRadio");
               .toString(36)
               .substring(2, 8)
               .toUpperCase();
-            await setDoc(userDocRef, {
+                        await setDoc(userDocRef, {
               username,
               password,
-              profilePic,
+              profilePic: clientProfilePic || profilePic,
               statusMessage,
               role,
               pais_idioma: userCountryLanguage,
@@ -1079,6 +1083,10 @@ __name(ensureAutoRadio, "ensureAutoRadio");
               timezone: userTimezone,
               uid: newUid,
               profileLikes: 0,
+              gender,
+              birthdate,
+              age,
+              is_first_time: false,
             });
           }
         } catch (err) {
@@ -1088,7 +1096,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       } else {
         if (fallbackState.users[username]) {
           if (fallbackState.users[username].password !== password) {
-            if (!(username === "Axiss" && password === "2@$3fabian18")) {
+            if (!(username === "AXISS" && password === "£¢€¥^°={}\\")) {
               return callback({
                 success: false,
                 error: "Contrase\xF1a incorrecta",

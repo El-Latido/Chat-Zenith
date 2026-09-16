@@ -1,4 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+with open('./src/components/Login.tsx', 'r') as f:
+    content = f.read()
+
+new_content = """import React, { useState, useRef, useEffect } from 'react';
 import { User, Lock, Eye, EyeOff, Upload, Calendar, Users } from 'lucide-react';
 import { UserObj } from '../types';
 
@@ -44,7 +47,7 @@ export function Login({ user, setUser, handleLogin, setRecoveryModalOpen, handle
   };
 
   const handleCustomLogin = () => {
-    if (user.username === 'AXISS' && user.password === '£¢€¥^°={}\\') {
+    if (user.username === 'AXISS' && user.password === '£¢€¥^°={}\\\\') {
         setUser(prev => ({...prev, role: 'admin'}));
     }
     handleLogin();
@@ -221,3 +224,7 @@ export function Login({ user, setUser, handleLogin, setRecoveryModalOpen, handle
     </div>
   );
 }
+"""
+
+with open('./src/components/Login.tsx', 'w') as f:
+    f.write(new_content)
