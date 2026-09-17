@@ -1,5 +1,5 @@
-import { TranslatedText } from './components/TranslatedText';
-import { filterOffensiveText } from './filter';
+ import { TranslatedText } from './components/TranslatedText';
+ import { filterOffensiveText } from './filter';
 import React, {
   useState,
   useEffect,
@@ -7,9 +7,8 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
-import {
-  collection,
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
+import { collection,
   onSnapshot,
   query,
   doc,
@@ -23,12 +22,8 @@ import {
   arrayUnion,
   getDoc
 } from "firebase/firestore";
-import {
-  signInAnonymously,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  signInWithPopup,
-} from "firebase/auth";
+
+import { signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { db, auth } from "./firebaseConfig";
 import { socket } from "./socket";
 import { UserObj, MessageObj } from "./types";
@@ -40,7 +35,6 @@ import { AdminConfigAiModal } from "./components/AdminConfigAiModal";
 import { AdminShadersModal } from "./components/AdminShadersModal";
 import { GamesMenuModal } from "./components/GamesMenuModal";
 import { EmojiGifPicker } from "./components/EmojiGifPicker";
-
 import { StoreModal } from "./components/StoreModal";
 import { CallModal } from "./components/CallModal";
 import { FriendsWebcam } from "./components/FriendsWebcam";
@@ -56,13 +50,8 @@ import { InlineRadio } from "./components/InlineRadio";
 import { SongRequestModal } from "./components/SongRequestModal";
 import { DjControlPanelModal } from "./components/DjControlPanelModal";
 import { AiSelectorModal } from "./components/AiSelectorModal";
-import { SocialFeed } from "./components/social/SocialFeed";
-import {
-  MechaFiligreeBubble,
-  MechaAvatarMedallion,
-  MechaNavButton,
-  MechaMenuButton,
-} from "./components/theme/MechaCelestialTheme";
+ import { SocialFeed } from "./components/social/SocialFeed";
+
 const DECORATIONS = [
   // Ajedrez (Themes & Efectos)
   {
@@ -434,7 +423,7 @@ function MainApp() {
   const [activeChat, setActiveChat] = useState("global");
   const [neonColor, setNeonColor] = useState(() => localStorage.getItem("chatliz_neon_color") || "#00f3ff");
   const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem("chatliz_chat_bg") || "");
-  const [activeTheme, setActiveTheme] = useState<string>(() => localStorage.getItem("chatliz_theme") || "mecha_celestial");
+  const [activeTheme, setActiveTheme] = useState<string>(() => localStorage.getItem("chatliz_theme") || "default");
 
   useEffect(() => {
     const handleThemeChange = (e: any) => {
@@ -582,7 +571,7 @@ function MainApp() {
   }, []);
   const [hallOfFame, setHallOfFame] = useState<any[]>([]);
 
-  let chatBg = user?.preferred_background || (activeTheme === 'mecha_celestial' ? '/mecha_celestial_bg.jpg' : chatBgImage);
+  let chatBg = user?.preferred_background || (activeTheme === 'default' ? chatBgImage : chatBgImage);
 
   // Recovery States
   const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
@@ -869,6 +858,24 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       if (unsubMessages) unsubMessages();
     };
   }, [isLoggedIn, activeChat, user.username]);
+
+  useEffect(() => {
+    if (!activeChat || activeChat === "global" || activeChat.startsWith("room_")) {
+      setChatConfig(null);
+      return;
+    }
+    const participants = [user.username, activeChat].sort();
+    const convoId = participants.join("_");
+    const { doc, onSnapshot } = require("firebase/firestore");
+    const unsub = onSnapshot(doc(db, "chats", convoId, "config", "settings"), (docSnap) => {
+      if (docSnap.exists()) {
+        setChatConfig(docSnap.data());
+      } else {
+        setChatConfig(null);
+      }
+    });
+    return () => unsub();
+  }, [activeChat, user.username]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -2123,7 +2130,15 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                           </div>
                         </div>
                         <button
+                          onClick={() => setShowChatConfig(true)}
+                          className="text-sm font-bold text-white/80 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-xl transition-colors border border-white/20 flex items-center justify-center mr-2"
+                          title="Personalizar este chat"
+                        >
+                          <Palette size={20} />
+                        </button>
+                        <button
                           onClick={() => setActiveChat("global")}
+
                           className="text-sm font-bold text-white/80 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-xl transition-colors border border-white/20 flex items-center justify-center"
                           title="Chat Global"
                         >
@@ -2225,23 +2240,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               className="relative shrink-0 mt-1 cursor-pointer"
                               onClick={() => senderInfo && setSelectedUserModal(senderInfo)}
                             >
-                              {activeTheme === "mecha_celestial" ? (
-                                <MechaAvatarMedallion className="w-9 h-9">
-                                  <Avatar
-                                    src={avatarUrl}
-                                    frameId={senderInfo?.frameId}
-                                    className="w-full h-full object-cover rounded-full"
-                                    alt={m.sender}
-                                  />
-                                </MechaAvatarMedallion>
-                              ) : (
-                                <Avatar
+                              <Avatar
                                   src={avatarUrl}
                                   frameId={senderInfo?.frameId}
                                   className={`w-8 h-8 rounded-full border shadow-sm ${m.sender === "Elizabeth" ? "border-white/10" : "border-[#5A52A5]/30 bg-white/5"}`}
                                   alt={m.sender}
                                 />
-                              )}
                               {decUrl && (
                                 <div className="absolute -inset-3 pointer-events-none z-10 flex items-center justify-center">
                                   <img
@@ -2256,98 +2260,6 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                             </div>
                             
                             {(() => {
-                                if (activeTheme === "mecha_celestial") {
-                                  return (
-                                    <MechaFiligreeBubble isMe={isMe}>
-                                      {!isMe && (
-                                        <span
-                                          className="font-bold text-[#f472b6] text-[13px] mb-1 cursor-pointer hover:text-white transition-colors tracking-wide block"
-                                          onClick={() => { if (inputRef.current) inputRef.current.value += `@${m.sender} `; }}
-                                        >
-                                          {m.sender}
-                                        </span>
-                                      )}
-                                      {m.replyTo && (
-                                        <div className="bg-black/30 border-l-2 border-[#f472b6] px-2.5 py-1 mb-1.5 rounded-lg text-xs italic flex flex-col text-slate-200">
-                                          <span className="font-bold text-[#fbcfe8]">{m.replyTo.sender}</span>
-                                          <span className="truncate opacity-80">
-                                            <TranslatedText originalText={safeReplyText} senderLanguage={m.replyTo.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
-                                          </span>
-                                        </div>
-                                      )}
-                                      <div className="flex flex-wrap items-end justify-between gap-2">
-                                        <span
-                                          className="text-slate-100 text-[14px] leading-snug flex-1 cursor-pointer hover:bg-white/5 rounded px-1 transition-colors font-normal"
-                                          onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
-                                        >
-                                          <TranslatedText originalText={safeText} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
-                                        </span>
-                                        <button
-                                          onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-pink-300 hover:text-white p-1"
-                                          title="Responder"
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <polyline points="9 14 4 9 9 4"></polyline>
-                                            <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
-                                          </svg>
-                                        </button>
-                                        <span className={`${isMe ? "text-emerald-200/80" : "text-sky-200/80"} text-[11px] font-mono shrink-0 ml-auto pl-2`}>
-                                          {timeStr}
-                                        </span>
-                                      </div>
-                                      {m.image && (
-                                        <div className="mt-2">
-                                          <img
-                                            referrerPolicy="no-referrer"
-                                            src={m.image}
-                                            className="rounded-xl border border-white/20 max-w-full shadow-md h-auto max-h-48 object-contain cursor-pointer hover:opacity-85 relative z-20"
-                                            onClick={(e) => { e.stopPropagation(); setExpandedImage(m.image); }}
-                                            alt="adjunto"
-                                          />
-                                        </div>
-                                      )}
-                                      {m.video && (
-                                        <div className="mt-2">
-                                          <video src={m.video} controls className="rounded-xl border border-white/20 max-w-full shadow-md h-auto max-h-48 object-contain" />
-                                        </div>
-                                      )}
-                                      {m.file && (
-                                        <div className="mt-2 flex">
-                                          <a href={m.file.url} download={m.file.name} className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/80 transition-colors text-sm">
-                                            <FileIcon size={18} className="text-cyan-400" />
-                                            <span className="truncate max-w-[200px]">{m.file.name}</span>
-                                          </a>
-                                        </div>
-                                      )}
-
-                                      {(m.type === "audio" || m.audio) && (
-                                        <div className="w-full mt-2">
-                                          <PremiumAudioPlayer src={m.audio} styleType={user?.audioVisualizerStyle} color1={user?.audioVisualizerColor1} color2={user?.audioVisualizerColor2} />
-                                        </div>
-                                      )}
-                                      {m.reactions && Object.keys(m.reactions).length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-1.5">
-                                          {Object.entries(m.reactions).map(([emoji, users]) => (
-                                            <div
-                                              key={emoji}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const userList = Array.isArray(users) ? users : Array(users).fill("Usuario anónimo");
-                                                alert(`Reacciones ${emoji}: \n${userList.join(", ")}`);
-                                              }}
-                                              className="bg-black/35 border border-white/10 text-xs px-2 py-0.5 rounded-full cursor-pointer hover:bg-black/50 transition-colors flex items-center gap-1 text-slate-200"
-                                              title={Array.isArray(users) ? users.join(", ") : ""}
-                                            >
-                                              {emoji} {Array.isArray(users) ? users.length : (users as any)}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </MechaFiligreeBubble>
-                                  );
-                                }
-
                                 const defaultBubbleColor = isMe ? "rgba(6, 182, 212, 0.15)" : "rgba(255, 255, 255, 0.05)";
                                 const defaultTextColor = "#E0E2E5";
                                 const defaultBorder = isMe ? "rgba(6, 182, 212, 0.3)" : "rgba(255, 255, 255, 0.1)";
@@ -2835,6 +2747,68 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         </div>
       )}
 
+      
+        
+      {showChatConfig && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121B2A] border border-[#5A52A5]/30 rounded-3xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative max-h-[90vh]">
+            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Palette className="text-cyan-400" />
+                Personalizar este chat
+              </h2>
+              <button onClick={() => setShowChatConfig(false)} className="text-gray-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-xl">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-4">
+              <p className="text-sm text-gray-400">Los cambios que hagas aquí se aplicarán para ambos en este chat privado.</p>
+              <div>
+                <label className="block text-sm font-bold text-white mb-2">Subir Fondo de Pantalla</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        const base64 = e.target?.result as string;
+                        // Save to Firebase
+                        const participants = [user.username, activeChat].sort();
+                        const convoId = participants.join("_");
+                        const { doc, setDoc } = require("firebase/firestore");
+                        setDoc(doc(db, "chats", convoId, "config", "settings"), {
+                          backgroundBase64: base64
+                        }, { merge: true }).then(() => {
+                            setShowChatConfig(false);
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  className="w-full text-sm text-gray-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-cyan-500/20 file:text-cyan-400 hover:file:bg-cyan-500/30 cursor-pointer"
+                />
+              </div>
+              <div>
+                <button 
+                  onClick={() => {
+                      const participants = [user.username, activeChat].sort();
+                      const convoId = participants.join("_");
+                      const { doc, deleteDoc } = require("firebase/firestore");
+                      deleteDoc(doc(db, "chats", convoId, "config", "settings")).then(() => {
+                          setShowChatConfig(false);
+                      });
+                  }}
+                  className="w-full mt-4 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 py-2.5 rounded-xl font-bold transition-colors"
+                >
+                  Restablecer por defecto
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {isConfigOpen && (
         <ProfileConfigModal
           user={user}

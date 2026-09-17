@@ -27,7 +27,7 @@ export function ProfileConfigModal({
   const [frameId, setFrameId] = useState<number | undefined>(user.frameId);
   const [isFriendsPublic, setIsFriendsPublic] = useState(user.is_friends_public || false);
   const [backgroundBase64, setBackgroundBase64] = useState(user.preferred_background || '');
-  const [preferredTheme, setPreferredTheme] = useState(user.preferred_theme || localStorage.getItem("chatliz_theme") || 'mecha_celestial');
+  const [preferredTheme, setPreferredTheme] = useState(user.preferred_theme || localStorage.getItem("chatliz_theme") || "default");
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   const [bubbleColor, setBubbleColor] = useState(user.bubbleColor || '#121B2A');
@@ -342,54 +342,6 @@ export function ProfileConfigModal({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Mecha Celestial Card */}
-                    <div
-                      onClick={() => setPreferredTheme('mecha_celestial')}
-                      className={`cursor-pointer p-3.5 rounded-2xl border-2 transition-all relative overflow-hidden flex flex-col justify-between ${
-                        preferredTheme === 'mecha_celestial'
-                          ? 'border-[#f472b6] bg-gradient-to-br from-[#24132b] via-[#160c1a] to-[#0f172a] shadow-[0_0_20px_rgba(244,114,182,0.3)]'
-                          : 'border-white/10 bg-black/20 hover:border-white/20'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">✨</span>
-                          <span className="text-sm font-bold text-white">Mecha Celestial</span>
-                        </div>
-                        {preferredTheme === 'mecha_celestial' && (
-                          <span className="text-[11px] font-bold text-[#f472b6] bg-[#f472b6]/20 px-2 py-0.5 rounded-full border border-[#f472b6]/40">
-                            Activo
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-300 mb-3 leading-relaxed">
-                        Consola de cristal rosa, marcos con filigrana plateada, gemas cian brillantes y burbujas ciruela/esmeralda.
-                      </p>
-                      
-                      {/* Mini preview */}
-                      <div className="p-2 rounded-xl bg-black/40 border border-[#94a3b8]/40 flex flex-col gap-1.5 mb-2">
-                        <div className="self-start px-2 py-1 rounded-lg bg-[#24132b] border border-[#94a3b8]/60 text-[10px] text-pink-300 font-medium flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff]"></span> Elizabeth
-                        </div>
-                        <div className="self-end px-2 py-1 rounded-lg bg-[#18443e] border border-[#94a3b8]/60 text-[10px] text-teal-200 font-medium flex items-center gap-1">
-                          Tú <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff]"></span>
-                        </div>
-                      </div>
-
-                      {preferredTheme === 'mecha_celestial' && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setBackgroundBase64('/mecha_celestial_bg.jpg');
-                          }}
-                          className="w-full py-1.5 bg-[#f472b6]/15 hover:bg-[#f472b6]/25 border border-[#f472b6]/40 rounded-xl text-[11px] text-[#fbcfe8] font-medium transition-colors text-center"
-                        >
-                          Usar fondo Mecha Celestial
-                        </button>
-                      )}
-                    </div>
-
                     {/* Cyberpunk Neón Card */}
                     <div
                       onClick={() => setPreferredTheme('default')}

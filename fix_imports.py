@@ -1,0 +1,35 @@
+import re
+with open('src/App.tsx', 'r') as f:
+    content = f.read()
+
+# Fix firebase imports
+content = re.sub(r'^\s*getFirestore,', 'import { getFirestore,', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*db, auth \} from', 'import { db, auth } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*socket \} from', 'import { socket } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*UserObj, MessageObj \} from', 'import { UserObj, MessageObj } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*Login \} from', 'import { Login } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*FirstTimeSetupModal \} from', 'import { FirstTimeSetupModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*RecoveryModal \} from', 'import { RecoveryModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*ProfileConfigModal \} from', 'import { ProfileConfigModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*AdminConfigAiModal \} from', 'import { AdminConfigAiModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*AdminShadersModal \} from', 'import { AdminShadersModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*GamesMenuModal \} from', 'import { GamesMenuModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*EmojiGifPicker \} from', 'import { EmojiGifPicker } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*StoreModal \} from', 'import { StoreModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*CallModal \} from', 'import { CallModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*FriendsWebcam \} from', 'import { FriendsWebcam } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*CustomRooms \} from', 'import { CustomRooms } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*ActiveCallModal \} from', 'import { ActiveCallModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*Avatar \} from', 'import { Avatar } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*OutgoingCallModal \} from', 'import { OutgoingCallModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*ChessGameModal \} from', 'import { ChessGameModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*ChessBotModal \} from', 'import { ChessBotModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*PremiumAudioPlayer \} from', 'import { PremiumAudioPlayer } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*PremiumAudioVisualizer \} from', 'import { PremiumAudioVisualizer } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*InlineRadio \} from', 'import { InlineRadio } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*SongRequestModal \} from', 'import { SongRequestModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*DjControlPanelModal \} from', 'import { DjControlPanelModal } from', content, flags=re.MULTILINE)
+content = re.sub(r'^\s*AiSelectorModal \} from', 'import { AiSelectorModal } from', content, flags=re.MULTILINE)
+
+with open('src/App.tsx', 'w') as f:
+    f.write(content)

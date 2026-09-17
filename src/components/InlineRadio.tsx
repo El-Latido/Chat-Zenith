@@ -241,7 +241,7 @@ export function InlineRadio({ theme }: InlineRadioProps = {}) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => { setIsHovered(false); setShowHistory(false); }}
     >
-      {theme === 'mecha_celestial' ? (
+      {theme === 'NONE' ? (
         <div className="w-[48px] h-[48px] sm:w-[52px] sm:h-[52px] rounded-[18px] bg-gradient-to-b from-[#f8fafc] via-[#cbd5e1] to-[#94a3b8] p-[2px] shadow-[0_6px_20px_rgba(0,0,0,0.6),inset_0_1px_2px_rgba(255,255,255,0.9)] flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all relative group">
           {/* 4 Gold corner rivets */}
           <div className="absolute top-1 left-1 w-1.5 h-1.5 rounded-full bg-[#d4af37] border border-[#fef08a] shadow-xs" />
