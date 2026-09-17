@@ -12,12 +12,20 @@ interface PremiumAudioPlayerProps {
 export const PremiumAudioPlayer: React.FC<PremiumAudioPlayerProps> = ({ 
     src, 
     className = "", 
-    color1 = '#25D366' // Default to WhatsApp-ish green
+    color1 = '#34B7F1' // WhatsApp blueish tick color, or maybe #25D366 (green)
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  
+  // Waveform state
+  const [audioData, setAudioDataArray] = useState<Uint8Array>(new Uint8Array(30).fill(10));
+  
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const animationRef = useRef<number>(0);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -47,21 +55,74 @@ export const PremiumAudioPlayer: React.FC<PremiumAudioPlayerProps> = ({
       audio.removeEventListener('loadedmetadata', setAudioData);
       audio.removeEventListener('timeupdate', setAudioTime);
       audio.removeEventListener('ended', handleEnded);
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
   }, [src]);
+
+  const initAudioContext = () => {
+    if (!audioContextRef.current && audioRef.current) {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioCtx();
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        analyserRef.current.fftSize = 64; // We need about 30 bars, 64 fftSize gives 32 frequency bins
+        sourceRef.current = audioContextRef.current.createMediaElementSource(audioRef.current);
+        sourceRef.current.connect(analyserRef.current);
+        analyserRef.current.connect(audioContextRef.current.destination);
+      } catch (e) {
+        console.warn("AudioContext setup failed, possibly CORS issue:", e);
+      }
+    }
+    
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+    }
+  };
+
+  const updateWaveform = () => {
+    if (analyserRef.current && isPlaying) {
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      analyserRef.current.getByteFrequencyData(dataArray);
+      
+      // Normalize and map to our 30 bars
+      const newBars = new Uint8Array(30);
+      for(let i=0; i<30; i++) {
+          // If we have less data than 30, map it. (fftSize 64 -> 32 bins)
+          const value = dataArray[i] || 10; 
+          // Scale it down to a percentage height 10-100
+          newBars[i] = Math.max(10, Math.min(100, (value / 255) * 100));
+      }
+      setAudioDataArray(newBars);
+      animationRef.current = requestAnimationFrame(updateWaveform);
+    }
+  };
+
+  useEffect(() => {
+      if (isPlaying) {
+          updateWaveform();
+      } else {
+          if (animationRef.current) cancelAnimationFrame(animationRef.current);
+          // Reset to a resting state
+          setAudioDataArray(new Uint8Array(30).fill(15));
+      }
+  }, [isPlaying]);
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!audioRef.current) return;
+    
     if (isPlaying) {
       audioRef.current.pause();
+      setIsPlaying(false);
     } else {
-      audioRef.current.play().catch((err: any) => {
+      initAudioContext();
+      audioRef.current.play().then(() => {
+          setIsPlaying(true);
+      }).catch((err: any) => {
         if (err.name === 'AbortError') return;
         console.error("Playback error:", err);
       });
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,49 +140,45 @@ export const PremiumAudioPlayer: React.FC<PremiumAudioPlayerProps> = ({
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
-  // Fake waveform bars
-  const bars = Array.from({ length: 30 }).map((_, i) => {
-    const height = 20 + Math.sin(i * 0.5) * 15 + Math.random() * 10;
-    return height;
-  });
-
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className={`relative flex items-center gap-3 bg-white/10 backdrop-blur-md p-2 px-3 rounded-full border border-white/5 shadow-sm max-w-[280px] ${className}`}>
+    <div className={`relative flex items-center gap-3 bg-[#1e2428] p-2 px-3 rounded-full shadow-sm max-w-[280px] ${className}`}>
       {/* Play/Pause Button */}
       <button 
         onClick={togglePlay}
-        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 cursor-pointer bg-white/10 hover:bg-white/20 transition-colors"
+        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors"
       >
         {isPlaying ? (
-          <Pause size={18} className="text-white" fill="currentColor" />
+          <Pause size={24} className="text-[#aebac1]" fill="currentColor" />
         ) : (
-          <Play size={18} className="text-white ml-1" fill="currentColor" />
+          <Play size={24} className="text-[#aebac1] ml-1" fill="currentColor" />
         )}
       </button>
 
       {/* Waveform & Slider Container */}
-      <div className="flex-1 flex flex-col justify-center relative h-10 min-w-[120px]">
-        {/* Fake Waveform Background */}
-        <div className="absolute inset-0 flex items-center gap-[2px] opacity-30 pointer-events-none px-1">
-          {bars.map((h, i) => {
-             const isPlayed = (i / bars.length) * 100 <= progressPct;
+      <div className="flex-1 flex flex-col justify-center relative h-10 min-w-[130px]">
+        {/* Realtime Waveform */}
+        <div className="absolute inset-0 flex items-center justify-between gap-[2px] pointer-events-none">
+          {Array.from(audioData).map((h, i) => {
+             const isPlayed = (i / 30) * 100 <= progressPct;
+             // If resting (not playing), make it static but slightly varied
+             const height = isPlaying ? h : 15 + Math.sin(i * 0.5) * 5;
              return (
               <div 
                 key={i} 
-                className="flex-1 rounded-full transition-all duration-150" 
+                className="flex-1 rounded-full transition-all duration-75" 
                 style={{ 
-                  height: `${h}%`, 
-                  backgroundColor: isPlayed ? color1 : '#ffffff',
-                  opacity: isPlaying && !isPlayed ? 0.7 + Math.random() * 0.3 : 1
+                  height: `${Math.max(10, height)}%`, 
+                  backgroundColor: isPlayed ? '#53bdeb' : '#8696a0',
+                  opacity: 1
                 }} 
               />
             );
           })}
         </div>
 
-        {/* Range Slider (The Circle) */}
+        {/* Range Slider */}
         <input
           type="range"
           min="0"
@@ -131,23 +188,25 @@ export const PremiumAudioPlayer: React.FC<PremiumAudioPlayerProps> = ({
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
         />
         
-        {/* Custom thumb/circle indicator */}
+        {/* Custom thumb indicator (the circle) */}
         <div 
-          className="absolute h-3 w-3 bg-white rounded-full shadow pointer-events-none top-1/2 -translate-y-1/2 transition-all duration-75"
-          style={{ left: `calc(${progressPct}% - 6px)`, backgroundColor: color1 }}
+          className="absolute h-3 w-3 rounded-full shadow pointer-events-none top-1/2 -translate-y-1/2 transition-all duration-75"
+          style={{ left: `calc(${progressPct}% - 6px)`, backgroundColor: '#53bdeb' }}
         />
       </div>
       
       {/* Time Indicator */}
-      <div className="text-[11px] font-medium text-white/70 min-w-[35px] text-right shrink-0">
+      <div className="text-[11px] font-medium text-[#8696a0] min-w-[35px] text-right shrink-0">
         {formatTime(currentTime)}
       </div>
 
+      {/* We need crossOrigin="anonymous" to allow AudioContext to process the audio if it comes from an external URL */}
       <audio 
         ref={audioRef} 
         src={src} 
         className="hidden" 
-        preload="metadata" 
+        preload="metadata"
+        crossOrigin="anonymous"
       />
     </div>
   );

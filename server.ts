@@ -2240,7 +2240,7 @@ socket.on("buy_decoration", async (data, callback) => {
       if (!currentUsername || !currentRequestedSong) return;
       if (currentRequestedSong.id === data.id) {
         songHistory.unshift(currentRequestedSong);
-        if (songHistory.length > 30) songHistory.pop();
+        if (songHistory.length > 20) songHistory.pop();
         io.emit("radio_history_update", songHistory);
         if (songQueue.length > 0) {
           currentRequestedSong = songQueue.shift();
