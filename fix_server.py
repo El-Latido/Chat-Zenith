@@ -3,41 +3,70 @@ import re
 with open('server.ts', 'r') as f:
     content = f.read()
 
-bad_string = """          if (!gender || !birthdate) {
-              return callback({ success: false, error: "Por favor, utiliza el modo 'SIGN UP' para registrarte y proporcionar tu género y fecha de nacimiento." });
-          }"""
+# Add to firebase extraction
+firebase_extract = """            userGender = user?.gender || "";
+            userAge = user?.age || 0;
+            userMood = user?.mood || "";
+            preferredBackground = user?.preferred_background || "";"""
 
-bad_string2 = """            if (!gender || !birthdate) {
-                return callback({ success: false, error: "Por favor, utiliza el modo 'SIGN UP' para registrarte y proporcionar tu género y fecha de nacimiento." });
-            }"""
+new_firebase_extract = firebase_extract + """
+            let preferredTheme = user?.preferred_theme || "";
+            let bubbleColor = user?.bubbleColor || "";
+            let bubbleBorder = user?.bubbleBorder || "";
+            let bubbleShape = user?.bubbleShape || "";
+            let bubbleTexture = user?.bubbleTexture || "";
+            let audioVisualizerStyle = user?.audioVisualizerStyle || "";
+            let audioVisualizerColor1 = user?.audioVisualizerColor1 || "";
+            let audioVisualizerColor2 = user?.audioVisualizerColor2 || "";
+"""
 
-# Fix the first one everywhere except the correct spot.
-# First, revert ALL of them to just empty.
-content = content.replace(bad_string, "")
-content = content.replace(bad_string2, "")
+content = content.replace(firebase_extract, new_firebase_extract)
 
-# Now inject it safely at the correct spots.
-correct_injection_1 = """          } else {
-            if (!gender || !birthdate) {
-                return callback({ success: false, error: "Por favor, utiliza el modo 'SIGN UP' para registrarte y proporcionar tu género y fecha de nacimiento." });
-            }
-            const qEmail = query(collection(fdb, "users"), where("securityEmail", "==", userSecurityEmail));"""
+# Add to callback payload
+payload = """            is_friends_public: isFriendsPublic,
+            friends_list: friendsList,
+            blocked_list: blockedList,
+            awards,
+            lizCoins,
+            activeDecoration,
+            ownedDecorations,
+            elo,
+            uid,
+            profileLikes,
+            incognito,
+            gender: userGender,
+            age: userAge,
+            mood: userMood,
+            preferred_background: preferredBackground,
+          });"""
 
-content = content.replace(
-    '} else {\n            if (userSecurityEmail) {',
-    correct_injection_1.replace('            const qEmail = query(collection(fdb, "users"), where("securityEmail", "==", userSecurityEmail));', '            if (userSecurityEmail) {')
-)
+new_payload = """            is_friends_public: isFriendsPublic,
+            friends_list: friendsList,
+            blocked_list: blockedList,
+            awards,
+            lizCoins,
+            activeDecoration,
+            ownedDecorations,
+            elo,
+            uid,
+            profileLikes,
+            incognito,
+            gender: userGender,
+            age: userAge,
+            mood: userMood,
+            preferred_background: preferredBackground,
+            preferred_theme: typeof preferredTheme !== 'undefined' ? preferredTheme : "",
+            bubbleColor: typeof bubbleColor !== 'undefined' ? bubbleColor : "",
+            bubbleBorder: typeof bubbleBorder !== 'undefined' ? bubbleBorder : "",
+            bubbleShape: typeof bubbleShape !== 'undefined' ? bubbleShape : "",
+            bubbleTexture: typeof bubbleTexture !== 'undefined' ? bubbleTexture : "",
+            audioVisualizerStyle: typeof audioVisualizerStyle !== 'undefined' ? audioVisualizerStyle : "",
+            audioVisualizerColor1: typeof audioVisualizerColor1 !== 'undefined' ? audioVisualizerColor1 : "",
+            audioVisualizerColor2: typeof audioVisualizerColor2 !== 'undefined' ? audioVisualizerColor2 : "",
+          });"""
 
-correct_injection_2 = """        } else {
-          if (!gender || !birthdate) {
-              return callback({ success: false, error: "Por favor, utiliza el modo 'SIGN UP' para registrarte y proporcionar tu género y fecha de nacimiento." });
-          }
-          const newUid = Math.random()"""
-
-content = content.replace(
-    '} else {\n          const newUid = Math.random()',
-    correct_injection_2
-)
+content = content.replace(payload, new_payload)
 
 with open('server.ts', 'w') as f:
     f.write(content)
+

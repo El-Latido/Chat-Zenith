@@ -1,4 +1,5 @@
 import { TranslatedText } from './components/TranslatedText';
+import { filterOffensiveText } from './filter';
 import React, {
   useState,
   useEffect,
@@ -548,6 +549,7 @@ function MainApp() {
   const [userCache, setUserCache] = useState<Record<string, UserObj>>({});
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isRadioOpen, setIsRadioOpen] = useState(false);
   const [isFriendsSidebarOpen, setIsFriendsSidebarOpen] = useState(false);
   const [unreadPMs, setUnreadPMs] = useState<Record<string, boolean>>({});
   const [toasts, setToasts] = useState<any[]>([]);
@@ -1702,7 +1704,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       <div className="flex flex-1 h-0 relative">
         {/* Sidebar Principal */}
         <aside
-          className={`w-[280px] shrink-0 border-r border-white/5 bg-[#0a0a0c]/80 backdrop-blur-2xl border-r border-white/10 shadow-[4px_0_24px_rgba(0,0,0,0.2)] backdrop-blur-xl absolute md:relative z-40 h-full flex flex-col transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+          className={`w-[280px] shrink-0 border-r border-white/5 bg-[#0a0a0c] border-r border-white/10 absolute md:relative z-40 h-full flex flex-col transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
         >
           <div className="p-4 flex flex-col items-center border-b border-white/5">
             <div
@@ -2018,7 +2020,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                   (() => {
                     if (activeChat.startsWith("room_")) {
                         return (
-                          <div className="bg-[#0a0a0c]/80 backdrop-blur-2xl border-r border-white/10 shadow-[4px_0_24px_rgba(0,0,0,0.2)] backdrop-blur-md border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
+                          <div className="bg-[#0a0a0c] border-r border-white/10 border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
                             <div className="flex items-center gap-3">
                               <button 
                                 onClick={() => {
@@ -2073,7 +2075,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeChat}`;
 
                     return (
-                      <div className="bg-[#0a0a0c]/80 backdrop-blur-2xl border-r border-white/10 shadow-[4px_0_24px_rgba(0,0,0,0.2)] backdrop-blur-md border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
+                      <div className="bg-[#0a0a0c] border-r border-white/10 border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
                         <div className="flex items-center gap-3">
                           <button 
                             onClick={() => setActiveChat(previousChat)} 
@@ -2154,6 +2156,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     .map((m, idx) => {
                       const isLiz = m.sender === "Elizabeth" || m.isAi;
                       const isMe = m.sender === user.username;
+                      const safeText = isLiz ? filterOffensiveText(m.text || '') : (m.text || '');
+                      const isReplyLiz = m.replyTo && (m.replyTo.sender === "Elizabeth" || ['Sensei', 'Shadow', 'Neko'].includes(m.replyTo.sender));
+                      const safeReplyText = m.replyTo ? (isReplyLiz ? filterOffensiveText(m.replyTo.text || '') : (m.replyTo.text || '')) : '';
                       let date = new Date();
                       if (m.timestamp || m.createdAt) {
                         const t = m.timestamp || m.createdAt;
@@ -2266,7 +2271,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                         <div className="bg-black/30 border-l-2 border-[#f472b6] px-2.5 py-1 mb-1.5 rounded-lg text-xs italic flex flex-col text-slate-200">
                                           <span className="font-bold text-[#fbcfe8]">{m.replyTo.sender}</span>
                                           <span className="truncate opacity-80">
-                                            <TranslatedText originalText={m.replyTo.text} senderLanguage={m.replyTo.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
+                                            <TranslatedText originalText={safeReplyText} senderLanguage={m.replyTo.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
                                           </span>
                                         </div>
                                       )}
@@ -2275,7 +2280,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                           className="text-slate-100 text-[14px] leading-snug flex-1 cursor-pointer hover:bg-white/5 rounded px-1 transition-colors font-normal"
                                           onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
                                         >
-                                          <TranslatedText originalText={m.text} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
+                                          <TranslatedText originalText={safeText} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
                                         </span>
                                         <button
                                           onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
@@ -2395,7 +2400,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                     {m.replyTo && (
                                       <div className={`bg-black/10 border-l-2 border-[#5A52A5]/50 px-2 py-1 mb-1 rounded text-xs italic flex flex-col ${textColor}`}>
                                         <span className="font-bold opacity-80">{m.replyTo.sender}</span>
-                                        <span className="truncate opacity-70"><TranslatedText originalText={m.replyTo.text} senderLanguage={m.replyTo.senderLanguage} userLanguage={user.pais_idioma || 'es'} /></span>
+                                        <span className="truncate opacity-70"><TranslatedText originalText={safeReplyText} senderLanguage={m.replyTo.senderLanguage} userLanguage={user.pais_idioma || 'es'} /></span>
                                       </div>
                                     )}
                                     <div className="flex flex-wrap items-end justify-between gap-2">
@@ -2403,7 +2408,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                         className={`${textColor} text-[14px] leading-snug flex-1 cursor-pointer hover:bg-black/5 rounded px-1 transition-colors`}
                                         onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
                                       >
-                                        <TranslatedText originalText={m.text} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
+                                        <TranslatedText originalText={safeText} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
                                       </span>
                                       <button
                                         onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
@@ -2530,8 +2535,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                   {/* Bottom Row: Toolbar */}
                   <div className="flex items-center justify-between text-gray-400 mt-1 px-1">
                     <div className="flex items-center gap-5 sm:gap-6">
-                      <button className="hover:text-white transition-colors"><Gift size={22} /></button>
-                      <button className="hover:text-white transition-colors"><Play size={22} /></button>
+                      
+                      <button onClick={() => setIsRadioOpen(!isRadioOpen)} className="hover:text-white transition-colors"><Play size={22} /></button>
                       <button className="hover:text-white transition-colors"><RotateCcw size={22} /></button>
                     </div>
                     
@@ -2881,7 +2886,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                 setActiveChat(toast.sender);
                 setToasts((prev) => prev.filter((t) => t.id !== toast.id));
               }}
-              className="pointer-events-auto cursor-pointer bg-[#0f111a]/95 backdrop-blur-xl border border-white/10 shadow-[0_4px_20px_rgba(212,175,55,0.15)] rounded-2xl p-3 flex items-center gap-3 w-72 animate-in fade-in slide-in-from-top-4 transition-all hover:bg-white/5"
+              className="pointer-events-auto cursor-pointer bg-[#0f111a]/95 backdrop-blur-md border border-white/10 shadow-[0_4px_20px_rgba(212,175,55,0.15)] rounded-2xl p-3 flex items-center gap-3 w-72 animate-in fade-in slide-in-from-top-4 transition-all hover:bg-white/5"
             >
               <img
                 referrerPolicy="no-referrer"
@@ -3418,7 +3423,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       )}
       {/* Friends Sidebar (Inbox) */}
       {isFriendsSidebarOpen && (
-        <div className="fixed inset-y-0 right-0 w-80 bg-[#0f111a] backdrop-blur-xl border-l border-white/10 shadow-2xl z-[105] flex flex-col transform transition-transform animate-in slide-in-from-right">
+        <div className="fixed inset-y-0 right-0 w-80 bg-[#0f111a] backdrop-blur-md border-l border-white/10 shadow-2xl z-[105] flex flex-col transform transition-transform animate-in slide-in-from-right">
           <div className="p-6 border-b border-white/5 flex items-center justify-between">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <MessageSquare size={24} className="text-cyan-400" />

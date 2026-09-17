@@ -1048,6 +1048,15 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             userAge = user?.age || 0;
             userMood = user?.mood || "";
             preferredBackground = user?.preferred_background || "";
+            let preferredTheme = user?.preferred_theme || "";
+            let bubbleColor = user?.bubbleColor || "";
+            let bubbleBorder = user?.bubbleBorder || "";
+            let bubbleShape = user?.bubbleShape || "";
+            let bubbleTexture = user?.bubbleTexture || "";
+            let audioVisualizerStyle = user?.audioVisualizerStyle || "";
+            let audioVisualizerColor1 = user?.audioVisualizerColor1 || "";
+            let audioVisualizerColor2 = user?.audioVisualizerColor2 || "";
+
             if (!uid) {
               uid = Math.random().toString(36).substring(2, 8).toUpperCase();
               await setDoc(
@@ -1217,8 +1226,16 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         gender: userGender || gender,
         age: userAge || age,
         mood: userMood,
-        preferred_background: preferredBackground,
-      });
+            preferred_background: preferredBackground,
+            preferred_theme: typeof preferredTheme !== 'undefined' ? preferredTheme : "",
+            bubbleColor: typeof bubbleColor !== 'undefined' ? bubbleColor : "",
+            bubbleBorder: typeof bubbleBorder !== 'undefined' ? bubbleBorder : "",
+            bubbleShape: typeof bubbleShape !== 'undefined' ? bubbleShape : "",
+            bubbleTexture: typeof bubbleTexture !== 'undefined' ? bubbleTexture : "",
+            audioVisualizerStyle: typeof audioVisualizerStyle !== 'undefined' ? audioVisualizerStyle : "",
+            audioVisualizerColor1: typeof audioVisualizerColor1 !== 'undefined' ? audioVisualizerColor1 : "",
+            audioVisualizerColor2: typeof audioVisualizerColor2 !== 'undefined' ? audioVisualizerColor2 : "",
+          });
 
       if (fdb) {
           getDoc(doc(fdb, "settings", "globalBg")).then((snap) => {
