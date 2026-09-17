@@ -514,9 +514,9 @@ function MainApp() {
           return;
         }
             } catch (e) {}
-    } else {
-       setUser(prev => ({ ...prev, username: "Invitado_" + Math.floor(Math.random() * 10000), role: "user" }));
-       setIsLoggedIn(true);
+        } else {
+       setIsAuthChecking(false);
+       // Removed auto guest login
     }
     setIsAuthChecking(false);
   }, []);

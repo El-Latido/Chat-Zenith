@@ -644,7 +644,10 @@ export function ProfileConfigModal({
                 
                 <div className="pt-4">
                   <button 
-                    onClick={() => window.location.reload()}
+                    onClick={() => {
+                      localStorage.removeItem('chatliz_user');
+                      window.location.reload();
+                    }}
                     className="w-full flex items-center justify-center gap-2 text-red-400 bg-red-500/10 hover:bg-red-500/20 p-4 rounded-2xl font-bold transition-colors border border-red-500/20"
                   >
                     <LogOut size={18} />

@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { User, Lock, Mail, Eye, EyeOff, Calendar, Users, Upload } from 'lucide-react';
 
 export function Login({ handleGoogleLogin, user, setUser, handleLogin, setRecoveryModalOpen }: any) {
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [isRegisterMode, setIsRegisterMode] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,7 +93,7 @@ export function Login({ handleGoogleLogin, user, setUser, handleLogin, setRecove
           <div className="w-full space-y-6">
             {/* Name Input (Replaces Email ID) */}
             <div className="relative border-b border-white/40 pb-1 flex items-center">
-              <Mail size={16} className="text-white mr-3" />
+              <User size={16} className="text-white mr-3" />
               <input
                 className="w-full bg-transparent border-none p-0 text-white placeholder-white focus:outline-none focus:ring-0 text-sm"
                 placeholder="Name"
