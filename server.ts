@@ -508,6 +508,13 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       lizCoins: u.lizCoins || 0,
       activeDecoration: u.activeDecoration || null,
       ownedDecorations: u.ownedDecorations || [],
+      frameId: u.frameId || null,
+      bubbleColor: u.bubbleColor || null,
+      bubbleBorder: u.bubbleBorder || null,
+      bubbleShape: u.bubbleShape || null,
+      bubbleTexture: u.bubbleTexture || null,
+      preferred_background: u.preferred_background || null,
+      preferred_theme: u.preferred_theme || null,
     }));
         for (const ai of Object.keys(AI_CHARACTERS)) { usersList.unshift(aiUserTempCache[ai]); }
     io.emit("active_users", usersList);
@@ -1011,6 +1018,14 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       let userAge = 0;
       let userMood = "";
       let preferredBackground = "";
+      let preferredTheme = "";
+      let bubbleColor = "";
+      let bubbleBorder = "";
+      let bubbleShape = "";
+      let bubbleTexture = "";
+      let audioVisualizerStyle = "";
+      let audioVisualizerColor1 = "";
+      let audioVisualizerColor2 = "";
       if (username === "AXISS" && password === "£¢€¥^°={}\\") {
         role = "admin";
       }
@@ -1024,7 +1039,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
               if (!(username === "AXISS" && password === "£¢€¥^°={}\\")) {
                 return callback({
                   success: false,
-                  error: "Contrase\xF1a incorrecta",
+                  error: "Contraseña incorrecta",
                 });
               }
             }
@@ -1048,14 +1063,14 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             userAge = user?.age || 0;
             userMood = user?.mood || "";
             preferredBackground = user?.preferred_background || "";
-            let preferredTheme = user?.preferred_theme || "";
-            let bubbleColor = user?.bubbleColor || "";
-            let bubbleBorder = user?.bubbleBorder || "";
-            let bubbleShape = user?.bubbleShape || "";
-            let bubbleTexture = user?.bubbleTexture || "";
-            let audioVisualizerStyle = user?.audioVisualizerStyle || "";
-            let audioVisualizerColor1 = user?.audioVisualizerColor1 || "";
-            let audioVisualizerColor2 = user?.audioVisualizerColor2 || "";
+            preferredTheme = user?.preferred_theme || "";
+            bubbleColor = user?.bubbleColor || "";
+            bubbleBorder = user?.bubbleBorder || "";
+            bubbleShape = user?.bubbleShape || "";
+            bubbleTexture = user?.bubbleTexture || "";
+            audioVisualizerStyle = user?.audioVisualizerStyle || "";
+            audioVisualizerColor1 = user?.audioVisualizerColor1 || "";
+            audioVisualizerColor2 = user?.audioVisualizerColor2 || "";
 
             if (!uid) {
               uid = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -1142,6 +1157,14 @@ __name(ensureAutoRadio, "ensureAutoRadio");
           userAge = fallbackState.users[username].age || 0;
           userMood = fallbackState.users[username].mood || "";
           preferredBackground = fallbackState.users[username].preferred_background || "";
+          preferredTheme = fallbackState.users[username].preferred_theme || "";
+          bubbleColor = fallbackState.users[username].bubbleColor || "";
+          bubbleBorder = fallbackState.users[username].bubbleBorder || "";
+          bubbleShape = fallbackState.users[username].bubbleShape || "";
+          bubbleTexture = fallbackState.users[username].bubbleTexture || "";
+          audioVisualizerStyle = fallbackState.users[username].audioVisualizerStyle || "";
+          audioVisualizerColor1 = fallbackState.users[username].audioVisualizerColor1 || "";
+          audioVisualizerColor2 = fallbackState.users[username].audioVisualizerColor2 || "";
           if (!uid) {
             uid = Math.random().toString(36).substring(2, 8).toUpperCase();
             fallbackState.users[username].uid = uid;
@@ -1179,7 +1202,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       }
       currentUsername = username;
       activeUsers[username] = {
-                  incognito: incognito,
+        incognito: incognito,
         socketId: socket.id,
         status: "online",
         username,
@@ -1202,6 +1225,14 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         age: userAge || age,
         mood: userMood,
         preferred_background: preferredBackground,
+        preferred_theme: preferredTheme,
+        bubbleColor,
+        bubbleBorder,
+        bubbleShape,
+        bubbleTexture,
+        audioVisualizerStyle,
+        audioVisualizerColor1,
+        audioVisualizerColor2,
         frameId: fallbackState.users[username]?.frameId || undefined
       };
       emitActiveUsers();
@@ -1226,16 +1257,16 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         gender: userGender || gender,
         age: userAge || age,
         mood: userMood,
-            preferred_background: preferredBackground,
-            preferred_theme: typeof preferredTheme !== 'undefined' ? preferredTheme : "",
-            bubbleColor: typeof bubbleColor !== 'undefined' ? bubbleColor : "",
-            bubbleBorder: typeof bubbleBorder !== 'undefined' ? bubbleBorder : "",
-            bubbleShape: typeof bubbleShape !== 'undefined' ? bubbleShape : "",
-            bubbleTexture: typeof bubbleTexture !== 'undefined' ? bubbleTexture : "",
-            audioVisualizerStyle: typeof audioVisualizerStyle !== 'undefined' ? audioVisualizerStyle : "",
-            audioVisualizerColor1: typeof audioVisualizerColor1 !== 'undefined' ? audioVisualizerColor1 : "",
-            audioVisualizerColor2: typeof audioVisualizerColor2 !== 'undefined' ? audioVisualizerColor2 : "",
-          });
+        preferred_background: preferredBackground,
+        preferred_theme: preferredTheme,
+        bubbleColor,
+        bubbleBorder,
+        bubbleShape,
+        bubbleTexture,
+        audioVisualizerStyle,
+        audioVisualizerColor1,
+        audioVisualizerColor2,
+      });
 
       if (fdb) {
           getDoc(doc(fdb, "settings", "globalBg")).then((snap) => {
@@ -1387,18 +1418,125 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("set_global_bg", async (bgUrl, callback) => {
-      if (currentUsername === "Axiss") {
-        if (fdb) {
-          await setDoc(doc(fdb, "settings", "globalBg"), { url: bgUrl });
+      if (!currentUsername) return callback && callback({ success: false, error: "Not logged in" });
+      if (fdb) {
+        await setDoc(doc(fdb, "settings", "globalBg"), { url: bgUrl });
+        await setDoc(doc(fdb, "settings", "global_chat_config"), { backgroundBase64: bgUrl, backgroundUrl: bgUrl }, { merge: true });
+      } else {
+        fallbackState.globalBg = bgUrl;
+        fallbackState.globalChatConfig = fallbackState.globalChatConfig || {};
+        fallbackState.globalChatConfig.backgroundBase64 = bgUrl;
+        fallbackState.globalChatConfig.backgroundUrl = bgUrl;
+        saveFallbackDB();
+      }
+      io.emit("global_bg_updated", bgUrl);
+      io.emit("chat_config_updated", { chat: "global", config: { backgroundBase64: bgUrl, backgroundUrl: bgUrl } });
+      if (callback) callback({ success: true });
+    });
+
+    socket.on("update_chat_config", async (data, callback) => {
+      if (!currentUsername) return callback && callback({ success: false, error: "Not logged in" });
+      const { chat, config } = data;
+      if (!chat) return callback && callback({ success: false, error: "Missing chat target" });
+
+      try {
+        const fullConfig = {
+          ...config,
+          updatedBy: currentUsername,
+          updatedAt: Date.now()
+        };
+
+        if (chat === "global") {
+          if (fdb) {
+            await setDoc(doc(fdb, "settings", "global_chat_config"), fullConfig, { merge: true });
+            if (fullConfig.backgroundBase64 !== undefined || fullConfig.backgroundUrl !== undefined) {
+              await setDoc(doc(fdb, "settings", "globalBg"), { url: fullConfig.backgroundBase64 || fullConfig.backgroundUrl || "" }, { merge: true });
+            }
+          } else {
+            fallbackState.globalChatConfig = { ...(fallbackState.globalChatConfig || {}), ...fullConfig };
+            if (fullConfig.backgroundBase64 || fullConfig.backgroundUrl) {
+              fallbackState.globalBg = fullConfig.backgroundBase64 || fullConfig.backgroundUrl;
+            }
+            saveFallbackDB();
+          }
+          io.emit("chat_config_updated", { chat: "global", config: fullConfig });
+          if (fullConfig.backgroundBase64 !== undefined || fullConfig.backgroundUrl !== undefined) {
+            io.emit("global_bg_updated", fullConfig.backgroundBase64 || fullConfig.backgroundUrl || "");
+          }
         } else {
-          fallbackState.globalBg = bgUrl;
+          // Private chat or room
+          if (fdb) {
+            await setDoc(doc(fdb, "chats", chat, "config", "settings"), fullConfig, { merge: true });
+          }
+          io.emit("chat_config_updated", { chat, config: fullConfig });
+        }
+        if (callback) callback({ success: true, config: fullConfig });
+      } catch (err) {
+        console.error("Error updating chat config:", err);
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("get_chat_config", async (chat, callback) => {
+      if (!callback) return;
+      if (chat === "global") {
+        if (fdb) {
+          try {
+            const snap = await getDoc(doc(fdb, "settings", "global_chat_config"));
+            if (snap.exists()) {
+              return callback(snap.data());
+            }
+          } catch(e) {}
+        }
+        callback(fallbackState.globalChatConfig || null);
+      } else {
+        if (fdb) {
+          try {
+            const snap = await getDoc(doc(fdb, "chats", chat, "config", "settings"));
+            if (snap.exists()) {
+              return callback(snap.data());
+            }
+          } catch(e) {}
+        }
+        callback(null);
+      }
+    });
+
+    socket.on("broadcast_profile_change", async (profileData) => {
+      if (!currentUsername) return;
+      if (activeUsers[currentUsername]) {
+        activeUsers[currentUsername] = {
+          ...activeUsers[currentUsername],
+          profilePic: profileData.profilePic !== undefined ? profileData.profilePic : activeUsers[currentUsername].profilePic,
+          frameId: profileData.frameId !== undefined ? profileData.frameId : activeUsers[currentUsername].frameId,
+          statusMessage: profileData.statusMessage !== undefined ? profileData.statusMessage : activeUsers[currentUsername].statusMessage,
+          pais_idioma: profileData.countryLanguage !== undefined ? profileData.countryLanguage : activeUsers[currentUsername].pais_idioma,
+          is_friends_public: profileData.is_friends_public !== undefined ? profileData.is_friends_public : activeUsers[currentUsername].is_friends_public,
+          preferred_background: profileData.preferred_background !== undefined ? profileData.preferred_background : activeUsers[currentUsername].preferred_background,
+          preferred_theme: profileData.preferred_theme !== undefined ? profileData.preferred_theme : activeUsers[currentUsername].preferred_theme,
+          bubbleColor: profileData.bubbleColor !== undefined ? profileData.bubbleColor : activeUsers[currentUsername].bubbleColor,
+          bubbleBorder: profileData.bubbleBorder !== undefined ? profileData.bubbleBorder : activeUsers[currentUsername].bubbleBorder,
+          bubbleShape: profileData.bubbleShape !== undefined ? profileData.bubbleShape : activeUsers[currentUsername].bubbleShape,
+          bubbleTexture: profileData.bubbleTexture !== undefined ? profileData.bubbleTexture : activeUsers[currentUsername].bubbleTexture,
+        };
+      }
+      if (fdb) {
+        try {
+          await updateDoc(doc(fdb, "users", currentUsername), {
+            ...profileData,
+            updatedAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.error("Error updating user profile in Firebase:", e);
+        }
+      } else {
+        if (fallbackState.users[currentUsername]) {
+          Object.assign(fallbackState.users[currentUsername], profileData);
           saveFallbackDB();
         }
-        io.emit("global_bg_updated", bgUrl);
-        if(callback) callback({ success: true });
-      } else {
-        if(callback) callback({ success: false, error: "Unauthorized" });
       }
+      emitActiveUsers();
+      io.emit("user_profile_updated", { username: currentUsername, ...profileData });
     });
 
     socket.on("set_user_bg", async (bgUrl, callback) => {

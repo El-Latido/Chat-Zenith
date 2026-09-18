@@ -20,8 +20,10 @@ import { collection,
   updateDoc,
   deleteDoc,
   arrayUnion,
-  getDoc
+  getDoc,
+  setDoc
 } from "firebase/firestore";
+import { ChatCustomizerModal, ChatConfig } from "./components/ChatCustomizerModal";
 
 import { signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { db, auth } from "./firebaseConfig";
@@ -421,6 +423,9 @@ function MainApp() {
     isInitiator: boolean;
   } | null>(null);
   const [activeChat, setActiveChat] = useState("global");
+  const [showChatConfig, setShowChatConfig] = useState(false);
+  const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
+  const [globalChatConfig, setGlobalChatConfig] = useState<ChatConfig | null>(null);
   const [neonColor, setNeonColor] = useState(() => localStorage.getItem("chatliz_neon_color") || "#00f3ff");
   const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem("chatliz_chat_bg") || "");
   const [activeTheme, setActiveTheme] = useState<string>(() => localStorage.getItem("chatliz_theme") || "default");
@@ -571,7 +576,14 @@ function MainApp() {
   }, []);
   const [hallOfFame, setHallOfFame] = useState<any[]>([]);
 
-  let chatBg = user?.preferred_background || (activeTheme === 'default' ? chatBgImage : chatBgImage);
+  const activeChatConfig = activeChat === "global" ? globalChatConfig : chatConfig;
+  const activeCustomBg = activeChatConfig?.backgroundBase64 || activeChatConfig?.backgroundUrl;
+
+  let chatBg = activeChat === "global"
+    ? (activeCustomBg || user?.preferred_background || chatBgImage)
+    : activeChat.startsWith("room_")
+      ? (user?.preferred_background || chatBgImage)
+      : (activeCustomBg || user?.preferred_background || chatBgImage);
 
   // Recovery States
   const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
@@ -859,23 +871,153 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     };
   }, [isLoggedIn, activeChat, user.username]);
 
+  // Real-time synchronization for Global Chat configuration
   useEffect(() => {
-    if (!activeChat || activeChat === "global" || activeChat.startsWith("room_")) {
+    if (!isLoggedIn) return;
+
+    // Listen to Firebase settings/global_chat_config
+    const unsubGlobal = onSnapshot(doc(db, "settings", "global_chat_config"), (docSnap) => {
+      if (docSnap.exists()) {
+        setGlobalChatConfig(docSnap.data() as ChatConfig);
+      }
+    }, (err) => {
+      console.warn("Global chat config listener note:", err);
+    });
+
+    // Request current state from server socket
+    socket.emit("get_chat_config", "global", (res: any) => {
+      if (res) setGlobalChatConfig(res);
+    });
+
+    // Real-time socket event handlers for immediate broadcast updates
+    const handleChatConfigUpdated = (data: { chat: string; config: ChatConfig }) => {
+      if (data.chat === "global") {
+        setGlobalChatConfig(data.config);
+      } else {
+        const participants = [user.username, activeChat].sort();
+        const convoId = participants.join("_");
+        if (data.chat === convoId) {
+          setChatConfig(data.config);
+        }
+      }
+    };
+
+    const handleGlobalBgUpdated = (bgUrl: string) => {
+      setGlobalChatConfig((prev) => ({
+        ...(prev || {}),
+        backgroundBase64: bgUrl,
+        backgroundUrl: bgUrl
+      }));
+    };
+
+    const handleUserProfileUpdated = (profileData: any) => {
+      setUsersOnline((prev) =>
+        prev.map((u) => (u.username === profileData.username ? { ...u, ...profileData } : u))
+      );
+      if (profileData.username === user.username) {
+        setUser((prev) => ({ ...prev, ...profileData }));
+      }
+    };
+
+    socket.on("chat_config_updated", handleChatConfigUpdated);
+    socket.on("global_bg_updated", handleGlobalBgUpdated);
+    socket.on("user_profile_updated", handleUserProfileUpdated);
+
+    return () => {
+      unsubGlobal();
+      socket.off("chat_config_updated", handleChatConfigUpdated);
+      socket.off("global_bg_updated", handleGlobalBgUpdated);
+      socket.off("user_profile_updated", handleUserProfileUpdated);
+    };
+  }, [isLoggedIn, activeChat, user.username]);
+
+  // Real-time synchronization for Private Chat configuration
+  useEffect(() => {
+    if (!activeChat || activeChat === "global" || activeChat.startsWith("room_") || !user.username) {
       setChatConfig(null);
       return;
     }
     const participants = [user.username, activeChat].sort();
     const convoId = participants.join("_");
-    const { doc, onSnapshot } = require("firebase/firestore");
+
     const unsub = onSnapshot(doc(db, "chats", convoId, "config", "settings"), (docSnap) => {
       if (docSnap.exists()) {
-        setChatConfig(docSnap.data());
+        setChatConfig(docSnap.data() as ChatConfig);
       } else {
         setChatConfig(null);
       }
+    }, (err) => {
+      console.warn("Private chat config listener note:", err);
     });
+
+    socket.emit("get_chat_config", convoId, (res: any) => {
+      if (res) setChatConfig(res);
+    });
+
     return () => unsub();
   }, [activeChat, user.username]);
+
+  const handleSaveChatConfig = async (newConfig: ChatConfig) => {
+    if (activeChat === "global") {
+      try {
+        await setDoc(doc(db, "settings", "global_chat_config"), newConfig, { merge: true });
+        if (newConfig.backgroundBase64 || newConfig.backgroundUrl) {
+          await setDoc(doc(db, "settings", "globalBg"), { url: newConfig.backgroundBase64 || newConfig.backgroundUrl || "" }, { merge: true });
+        }
+      } catch (err) {
+        console.warn("Saving to Firestore fallback:", err);
+      }
+      socket.emit("update_chat_config", { chat: "global", config: newConfig });
+      setGlobalChatConfig(newConfig);
+    } else {
+      const participants = [user.username, activeChat].sort();
+      const convoId = participants.join("_");
+      try {
+        await setDoc(doc(db, "chats", convoId, "config", "settings"), newConfig, { merge: true });
+      } catch (err) {
+        console.warn("Saving private config to Firestore fallback:", err);
+      }
+      socket.emit("update_chat_config", { chat: convoId, config: newConfig });
+      setChatConfig(newConfig);
+    }
+  };
+
+  const handleResetChatConfig = async () => {
+    if (activeChat === "global") {
+      try {
+        await deleteDoc(doc(db, "settings", "global_chat_config"));
+        await deleteDoc(doc(db, "settings", "globalBg"));
+      } catch (err) {}
+      const resetConfig: ChatConfig = {
+        backgroundBase64: "",
+        backgroundUrl: "",
+        icon: "",
+        theme: "cyan",
+        title: "Chat Global",
+        statusMessage: "",
+        bubbleStyle: "default"
+      };
+      socket.emit("update_chat_config", { chat: "global", config: resetConfig });
+      setGlobalChatConfig(null);
+    } else {
+      const participants = [user.username, activeChat].sort();
+      const convoId = participants.join("_");
+      try {
+        await deleteDoc(doc(db, "chats", convoId, "config", "settings"));
+      } catch (err) {}
+      const resetConfig: ChatConfig = {
+        backgroundBase64: "",
+        backgroundUrl: "",
+        icon: "",
+        theme: "cyan",
+        title: "",
+        statusMessage: "",
+        bubbleStyle: "default"
+      };
+      socket.emit("update_chat_config", { chat: convoId, config: resetConfig });
+      setChatConfig(null);
+    }
+  };
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -2023,7 +2165,49 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
               <SocialFeed user={user} onClose={() => setActiveChat("global")} />
             ) : (
               <>
-                {activeChat !== "global" &&
+                {activeChat === "global" ? (
+                  <div className="bg-[#0a0a0c]/90 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500/20 via-purple-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.25)] text-xl overflow-hidden">
+                        {globalChatConfig?.icon ? (
+                          globalChatConfig.icon.startsWith("http") || globalChatConfig.icon.startsWith("data:") ? (
+                            <img src={globalChatConfig.icon} alt="Emblema" className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{globalChatConfig.icon}</span>
+                          )
+                        ) : (
+                          <Globe className="text-cyan-400" size={20} />
+                        )}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-white font-bold text-lg leading-tight flex items-center gap-2">
+                          {globalChatConfig?.title || "Chat Global"}
+                          <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-500/30 uppercase tracking-wider font-semibold">
+                            COMUNIDAD
+                          </span>
+                        </span>
+                        <span className="text-white/60 text-xs font-medium flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-green-400 animate-ping inline-block" />
+                          <span className="text-green-400">{usersOnline.length} {t('online')}</span>
+                          {globalChatConfig?.statusMessage && (
+                            <span className="text-cyan-200/90 truncate max-w-[200px] sm:max-w-xs font-semibold">• {globalChatConfig.statusMessage}</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowChatConfig(true)}
+                        className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
+                        title="Personalizar Chat Global (Sincronizado)"
+                      >
+                        <Palette size={16} />
+                        <span className="hidden sm:inline">Personalizar</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                   (() => {
                     if (activeChat.startsWith("room_")) {
                         return (
@@ -2114,7 +2298,16 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                 setSelectedUserModal(targetUser as any)
                               }
                             >
-                              {activeChat}{" "}
+                              {chatConfig?.icon && (
+                                <span className="text-base mr-0.5">
+                                  {chatConfig.icon.startsWith("http") || chatConfig.icon.startsWith("data:") ? (
+                                    <img src={chatConfig.icon} alt="Emblema" className="w-5 h-5 rounded object-cover inline-block" />
+                                  ) : (
+                                    chatConfig.icon
+                                  )}
+                                </span>
+                              )}
+                              {chatConfig?.title || activeChat}{" "}
                               <span className="text-[10px] bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full border border-pink-500/30 uppercase tracking-wider">
                                 Privado
                               </span>
@@ -2125,7 +2318,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               ) : (
                                 "Desconectado"
                               )}{" "}
-                              • Solo tú y {activeChat} pueden ver este chat
+                              • {chatConfig?.statusMessage ? chatConfig.statusMessage : `Solo tú y ${activeChat} pueden ver este chat`}
                             </span>
                           </div>
                         </div>
@@ -2146,7 +2339,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         </button>
                       </div>
                     );
-                  })()}
+                  })())}
 
                 {reactionMenuId && (
                   <div
@@ -2749,66 +2942,16 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
       
         
-      {showChatConfig && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#121B2A] border border-[#5A52A5]/30 rounded-3xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative max-h-[90vh]">
-            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Palette className="text-cyan-400" />
-                Personalizar este chat
-              </h2>
-              <button onClick={() => setShowChatConfig(false)} className="text-gray-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-xl">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto space-y-4">
-              <p className="text-sm text-gray-400">Los cambios que hagas aquí se aplicarán para ambos en este chat privado.</p>
-              <div>
-                <label className="block text-sm font-bold text-white mb-2">Subir Fondo de Pantalla</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (e) => {
-                        const base64 = e.target?.result as string;
-                        // Save to Firebase
-                        const participants = [user.username, activeChat].sort();
-                        const convoId = participants.join("_");
-                        const { doc, setDoc } = require("firebase/firestore");
-                        setDoc(doc(db, "chats", convoId, "config", "settings"), {
-                          backgroundBase64: base64
-                        }, { merge: true }).then(() => {
-                            setShowChatConfig(false);
-                        });
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                  className="w-full text-sm text-gray-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-cyan-500/20 file:text-cyan-400 hover:file:bg-cyan-500/30 cursor-pointer"
-                />
-              </div>
-              <div>
-                <button 
-                  onClick={() => {
-                      const participants = [user.username, activeChat].sort();
-                      const convoId = participants.join("_");
-                      const { doc, deleteDoc } = require("firebase/firestore");
-                      deleteDoc(doc(db, "chats", convoId, "config", "settings")).then(() => {
-                          setShowChatConfig(false);
-                      });
-                  }}
-                  className="w-full mt-4 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 py-2.5 rounded-xl font-bold transition-colors"
-                >
-                  Restablecer por defecto
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChatCustomizerModal
+        isOpen={showChatConfig}
+        onClose={() => setShowChatConfig(false)}
+        chatId={activeChat === "global" ? "global" : [user.username, activeChat].sort().join("_")}
+        chatTitle={activeChat === "global" ? "Chat Global" : activeChat}
+        isGlobal={activeChat === "global"}
+        currentConfig={activeChat === "global" ? globalChatConfig : chatConfig}
+        onSaveConfig={handleSaveChatConfig}
+        onResetConfig={handleResetChatConfig}
+      />
       {isConfigOpen && (
         <ProfileConfigModal
           user={user}
