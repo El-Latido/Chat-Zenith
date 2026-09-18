@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
 import { collection,
   onSnapshot,
   query,
@@ -49,6 +49,8 @@ import { ChessBotModal } from "./components/ChessBotModal";
 import { PremiumAudioPlayer } from "./components/PremiumAudioPlayer";
 import { PremiumAudioVisualizer } from "./components/PremiumAudioVisualizer";
 import { InlineRadio } from "./components/InlineRadio";
+import { GlobalRadioPlayer } from "./components/GlobalRadioPlayer";
+import { RadioHistoryModal, RadioHistorySong } from "./components/RadioHistoryModal";
 import { SongRequestModal } from "./components/SongRequestModal";
 import { DjControlPanelModal } from "./components/DjControlPanelModal";
 import { AiSelectorModal } from "./components/AiSelectorModal";
@@ -544,6 +546,31 @@ function MainApp() {
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRadioOpen, setIsRadioOpen] = useState(false);
+  const [isRadioPlaying, setIsRadioPlaying] = useState(false);
+  const [showRadioHistory, setShowRadioHistory] = useState(false);
+  const [radioHistorySongs, setRadioHistorySongs] = useState<RadioHistorySong[]>([]);
+
+  useEffect(() => {
+    fetch('/api/radio/history')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.history && Array.isArray(data.history)) {
+          setRadioHistorySongs(data.history);
+        }
+      })
+      .catch((err) => console.error("Error fetching radio history:", err));
+
+    const handleHistory = (history: any) => {
+      if (Array.isArray(history)) {
+        setRadioHistorySongs(history);
+      }
+    };
+
+    socket.on("radio_history_update", handleHistory);
+    return () => {
+      socket.off("radio_history_update", handleHistory);
+    };
+  }, []);
   const [isFriendsSidebarOpen, setIsFriendsSidebarOpen] = useState(false);
   const [unreadPMs, setUnreadPMs] = useState<Record<string, boolean>>({});
   const [toasts, setToasts] = useState<any[]>([]);
@@ -2609,6 +2636,21 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                      </div>
                   )}
                   
+                  {/* Active Radio Player Widget */}
+                  {isRadioPlaying && (
+                    <GlobalRadioPlayer
+                      isPlaying={isRadioPlaying}
+                      onTogglePlay={() => setIsRadioPlaying(!isRadioPlaying)}
+                      onOpenHistory={() => setShowRadioHistory(true)}
+                      onToast={(text) => {
+                        setToasts((prev) => [
+                          ...prev,
+                          { id: Date.now() + Math.random(), type: "Radio", sender: "Radio", text },
+                        ]);
+                      }}
+                    />
+                  )}
+
                   {/* Top Row: Input field and surrounding icons */}
                   <div className="flex items-center gap-2 sm:gap-3">
                     <button className="text-gray-400 hover:text-white transition-colors hidden sm:block"><Plus size={24} /></button>
@@ -2639,15 +2681,63 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
                   {/* Bottom Row: Toolbar */}
                   <div className="flex items-center justify-between text-gray-400 mt-1 px-1">
-                    <div className="flex items-center gap-5 sm:gap-6">
-                      
-                      <button onClick={() => setIsRadioOpen(!isRadioOpen)} className="hover:text-white transition-colors"><Play size={22} /></button>
-                      <button className="hover:text-white transition-colors"><RotateCcw size={22} /></button>
+                    <div className="flex items-center gap-4 sm:gap-5">
+                      {/* Radio triangle button under paperclip */}
+                      <button
+                        onClick={() => {
+                          setIsRadioPlaying((prev) => {
+                            const next = !prev;
+                            setToasts((t) => [
+                              ...t,
+                              {
+                                id: Date.now() + Math.random(),
+                                type: "Radio",
+                                sender: "Radio",
+                                text: next
+                                  ? "📻 Radio encendida: Sonando música variada sin alabanzas"
+                                  : "Radio pausada",
+                              },
+                            ]);
+                            return next;
+                          });
+                        }}
+                        className={`transition-all p-1 rounded-full flex items-center justify-center ${
+                          isRadioPlaying
+                            ? "text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] scale-110"
+                            : "hover:text-white text-gray-400"
+                        }`}
+                        title={isRadioPlaying ? "Pausar Radio" : "Reproducir Radio (Sin alabanzas)"}
+                      >
+                        {isRadioPlaying ? (
+                          <Pause size={22} className="fill-current" />
+                        ) : (
+                          <Play size={22} className="fill-current ml-0.5" />
+                        )}
+                      </button>
+
+                      {/* Rotating circular arrow: 30 songs history with MP3 download */}
+                      <button
+                        onClick={() => setShowRadioHistory(true)}
+                        className="hover:text-white transition-colors relative"
+                        title="Historial de 30 músicas (Descargar en MP3)"
+                      >
+                        <RotateCcw size={22} />
+                      </button>
                     </div>
                     
                     <div className="flex items-center gap-5 sm:gap-6">
-                      <button className="hover:text-white transition-colors"><Repeat size={22} /></button>
-                      <button className="hover:text-white transition-colors"><List size={22} /></button>
+                      <button
+                        onClick={() => {
+                          setToasts((prev) => [
+                            ...prev,
+                            { id: Date.now() + Math.random(), type: "Radio", sender: "Radio", text: "Modo bucle activo" },
+                          ]);
+                        }}
+                        className="hover:text-white transition-colors"
+                        title="Repetición continua"
+                      >
+                        <Repeat size={22} />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2942,6 +3032,35 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
       
         
+      <RadioHistoryModal
+        isOpen={showRadioHistory}
+        onClose={() => setShowRadioHistory(false)}
+        songs={radioHistorySongs}
+        onPlaySong={(song) => {
+          setIsRadioPlaying(true);
+          setToasts((prev) => [
+            ...prev,
+            {
+              id: Date.now() + Math.random(),
+              type: "Radio",
+              sender: "Radio",
+              text: `🎵 Reproduciendo en la radio: ${song.title}`,
+            },
+          ]);
+        }}
+        onToast={(text) => {
+          setToasts((prev) => [
+            ...prev,
+            {
+              id: Date.now() + Math.random(),
+              type: "Radio",
+              sender: "Radio",
+              text,
+            },
+          ]);
+        }}
+      />
+
       <ChatCustomizerModal
         isOpen={showChatConfig}
         onClose={() => setShowChatConfig(false)}

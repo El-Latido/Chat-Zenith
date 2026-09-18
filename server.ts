@@ -404,15 +404,82 @@ const transporter = nodemailer.createTransport({
   ];
   const initHistory = () => {
      let shuffled = [...top30Songs].sort(() => 0.5 - Math.random());
-     songHistory = shuffled.slice(0, 20).map(s => ({
-         id: Date.now().toString() + Math.random().toString(),
+     songHistory = shuffled.slice(0, 30).map((s, idx) => ({
+         id: "song_" + (Date.now() + idx) + "_" + Math.random().toString(36).substring(2, 6),
          url: s.url,
          title: s.title,
-         requester: "Elizabeth (AutoDJ)",
+         requester: "AutoDJ",
          status: "accepted"
      }));
   };
   initHistory();
+
+  app.get("/api/radio/history", (req, res) => {
+    res.json({ history: songHistory });
+  });
+
+  app.get('/api/download', async (req, res) => {
+    try {
+      const rawTitle = (req.query.title as string) || 'cancion';
+      const cleanTitle = rawTitle.replace(/[^\w\s-]/gi, '').trim() || 'cancion';
+      const url = req.query.url as string;
+      const format = (req.query.format as string) || 'mp3';
+
+      if (!url) {
+        return res.status(400).send('URL requerida');
+      }
+
+      res.header('Content-Disposition', `attachment; filename="${cleanTitle}.${format}"`);
+      res.header('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
+
+      if (url.startsWith('http') && !url.includes('youtube.com') && !url.includes('youtu.be')) {
+        try {
+          const fetchRes = await fetch(url);
+          if (fetchRes.body) {
+            const { Readable } = await import('stream');
+            // @ts-ignore
+            Readable.fromWeb(fetchRes.body).pipe(res);
+            return;
+          }
+        } catch (err) {
+          console.error("Direct download pipe error:", err);
+        }
+      }
+
+      if (ytdl.validateURL(url)) {
+        try {
+          const stream = ytdl(url, {
+            filter: format === 'mp3' ? 'audioonly' : undefined,
+            quality: 'highestaudio',
+            highWaterMark: 1 << 25,
+          });
+
+          stream.on('error', (err) => {
+            console.error('ytdl stream error:', err);
+            if (!res.headersSent) {
+              res.redirect(url);
+            }
+          });
+
+          stream.pipe(res);
+          return;
+        } catch (ytdlErr) {
+          console.error('ytdl execution error:', ytdlErr);
+          if (!res.headersSent) {
+            res.redirect(url);
+          }
+          return;
+        }
+      }
+
+      res.redirect(url);
+    } catch (err) {
+      console.error("General download error:", err);
+      if (!res.headersSent) {
+        res.status(500).send('Error downloading');
+      }
+    }
+  });
   
   function generateAutoSong() {
     const song = top30Songs[Math.floor(Math.random() * top30Songs.length)];
@@ -2378,7 +2445,7 @@ socket.on("buy_decoration", async (data, callback) => {
       if (!currentUsername || !currentRequestedSong) return;
       if (currentRequestedSong.id === data.id) {
         songHistory.unshift(currentRequestedSong);
-        if (songHistory.length > 20) songHistory.pop();
+        if (songHistory.length > 30) songHistory.pop();
         io.emit("radio_history_update", songHistory);
         if (songQueue.length > 0) {
           currentRequestedSong = songQueue.shift();
@@ -3708,33 +3775,7 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.get('/api/download', async (req, res) => {
-    try {
-      const url = req.query.url as string;
-      const format = (req.query.format as string) || 'mp3';
-      const quality = (req.query.quality as string) || 'high';
-      
-      if (!url || !ytdl.validateURL(url)) return res.status(400).send('Invalid URL');
-      
-      const info = await ytdl.getInfo(url);
-      const title = info.videoDetails.title.replace(/[^\w\s-]/gi, '');
-      
-      if (format === 'mp3') {
-         res.header('Content-Disposition', `attachment; filename="${title}.mp3"`);
-         res.header('Content-Type', 'audio/mpeg');
-         ytdl(url, { filter: 'audioonly', quality: quality === 'high' ? 'highestaudio' : 'lowestaudio' }).pipe(res);
-      } else {
-         res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
-         res.header('Content-Type', 'video/mp4');
-         ytdl(url, { quality: quality === 'high' ? 'highest' : 'lowest' }).pipe(res);
-      }
-    } catch (err) {
-      console.error(err);
-      res.status(500).send('Error downloading');
-    }
-  });
-
-  app.use(express.static(distPath));
+    app.use(express.static(distPath));
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
   ensureAutoRadio();
