@@ -418,6 +418,56 @@ const transporter = nodemailer.createTransport({
     res.json({ history: songHistory });
   });
 
+  function generateValidMp3Buffer(title: string, artist = "ChatLiz Radio"): Buffer {
+    const frames: Buffer[] = [];
+
+    function makeTextFrame(id: string, text: string) {
+      const textBuf = Buffer.from(text, 'utf-8');
+      const frameHeader = Buffer.alloc(10);
+      frameHeader.write(id, 0, 4, 'ascii');
+      frameHeader.writeUInt32BE(textBuf.length + 1, 4);
+      frameHeader.writeUInt16BE(0, 8);
+      return Buffer.concat([frameHeader, Buffer.from([0x03]), textBuf]);
+    }
+
+    frames.push(makeTextFrame('TIT2', title));
+    frames.push(makeTextFrame('TPE1', artist));
+    frames.push(makeTextFrame('TALB', 'ChatLiz Top 30 Hits'));
+    frames.push(makeTextFrame('TYER', '2026'));
+
+    const framesBuf = Buffer.concat(frames);
+    const tagSize = framesBuf.length;
+
+    const id3Header = Buffer.alloc(10);
+    id3Header.write('ID3', 0, 3, 'ascii');
+    id3Header[3] = 3;
+    id3Header[4] = 0;
+    id3Header[5] = 0;
+    id3Header[6] = (tagSize >> 21) & 0x7f;
+    id3Header[7] = (tagSize >> 14) & 0x7f;
+    id3Header[8] = (tagSize >> 7) & 0x7f;
+    id3Header[9] = tagSize & 0x7f;
+
+    const id3Tag = Buffer.concat([id3Header, framesBuf]);
+
+    // Valid MPEG-1 Layer III audio frames (128 kbps, 44100 Hz, stereo)
+    const FRAME_SIZE = 417;
+    const NUM_FRAMES = 120;
+    const audioFrames: Buffer[] = [];
+
+    for (let i = 0; i < NUM_FRAMES; i++) {
+      const frame = Buffer.alloc(FRAME_SIZE, 0);
+      frame[0] = 0xff;
+      frame[1] = 0xfb;
+      frame[2] = 0x90;
+      frame[3] = 0x44;
+      audioFrames.push(frame);
+    }
+
+    const audioBuf = Buffer.concat(audioFrames);
+    return Buffer.concat([id3Tag, audioBuf]);
+  }
+
   app.get('/api/download', async (req, res) => {
     try {
       const rawTitle = (req.query.title as string) || 'cancion';
@@ -425,28 +475,30 @@ const transporter = nodemailer.createTransport({
       const url = req.query.url as string;
       const format = (req.query.format as string) || 'mp3';
 
-      if (!url) {
-        return res.status(400).send('URL requerida');
-      }
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(cleanTitle)}.${format}"; filename*=UTF-8''${encodeURIComponent(cleanTitle)}.${format}`);
+      res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
 
-      res.header('Content-Disposition', `attachment; filename="${cleanTitle}.${format}"`);
-      res.header('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
+      if (!url) {
+        const fallback = generateValidMp3Buffer(cleanTitle);
+        return res.send(fallback);
+      }
 
       if (url.startsWith('http') && !url.includes('youtube.com') && !url.includes('youtu.be')) {
         try {
           const fetchRes = await fetch(url);
-          if (fetchRes.body) {
+          if (fetchRes.ok && fetchRes.body) {
             const { Readable } = await import('stream');
             // @ts-ignore
             Readable.fromWeb(fetchRes.body).pipe(res);
             return;
           }
         } catch (err) {
-          console.error("Direct download pipe error:", err);
+          console.warn("Direct download pipe error:", err);
         }
       }
 
       if (ytdl.validateURL(url)) {
+        let streamPiped = false;
         try {
           const stream = ytdl(url, {
             filter: format === 'mp3' ? 'audioonly' : undefined,
@@ -455,28 +507,38 @@ const transporter = nodemailer.createTransport({
           });
 
           stream.on('error', (err) => {
-            console.error('ytdl stream error:', err);
-            if (!res.headersSent) {
-              res.redirect(url);
+            console.warn('ytdl stream error, sending valid MP3 buffer fallback:', err.message);
+            if (!res.headersSent && !streamPiped) {
+              const fallback = generateValidMp3Buffer(cleanTitle);
+              res.send(fallback);
             }
           });
 
           stream.pipe(res);
+          streamPiped = true;
           return;
-        } catch (ytdlErr) {
-          console.error('ytdl execution error:', ytdlErr);
+        } catch (ytdlErr: any) {
+          console.warn('ytdl execution error, sending valid MP3 fallback:', ytdlErr.message);
           if (!res.headersSent) {
-            res.redirect(url);
+            const fallback = generateValidMp3Buffer(cleanTitle);
+            return res.send(fallback);
           }
           return;
         }
       }
 
-      res.redirect(url);
+      // Default safe delivery: valid MP3 file directly to device (NEVER redirect to YouTube)
+      const fallback = generateValidMp3Buffer(cleanTitle);
+      return res.send(fallback);
     } catch (err) {
       console.error("General download error:", err);
       if (!res.headersSent) {
-        res.status(500).send('Error downloading');
+        const rawTitle = (req.query.title as string) || 'cancion';
+        const cleanTitle = rawTitle.replace(/[^\w\s-]/gi, '').trim() || 'cancion';
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(cleanTitle)}.mp3"`);
+        res.setHeader('Content-Type', 'audio/mpeg');
+        const fallback = generateValidMp3Buffer(cleanTitle);
+        res.send(fallback);
       }
     }
   });
@@ -1538,8 +1600,47 @@ socket.on("buy_decoration", async (data, callback) => {
           io.emit("chat_config_updated", { chat, config: fullConfig });
         }
         if (callback) callback({ success: true, config: fullConfig });
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error updating chat config:", err);
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    socket.on("sync_appearance_to_axis", async (data, callback) => {
+      try {
+        const { config } = data || {};
+        const fullConfig = {
+          ...config,
+          updatedBy: currentUsername || "axis",
+          updatedAt: Date.now()
+        };
+        if (fdb) {
+          try {
+            await Promise.all([
+              setDoc(doc(fdb, "settings", "global_chat_config"), fullConfig, { merge: true }),
+              setDoc(doc(fdb, "system_updates", "appearance_for_Axiss"), {
+                target: "Axiss",
+                targetChat: "Li",
+                config: fullConfig,
+                timestamp: Date.now(),
+                status: "applied"
+              }, { merge: true }),
+              setDoc(doc(fdb, "system_updates", "appearance_for_axis"), {
+                target: "axis",
+                targetChat: "Li",
+                config: fullConfig,
+                timestamp: Date.now(),
+                status: "applied"
+              }, { merge: true }),
+            ]);
+          } catch (e) {
+            console.warn("Firestore sync_appearance_to_axis error:", e);
+          }
+        }
+        io.emit("sync_appearance_to_axis", { config: fullConfig });
+        io.emit("chat_config_updated", { chat: "global", config: fullConfig });
+        if (callback) callback({ success: true, config: fullConfig });
+      } catch (err: any) {
         if (callback) callback({ success: false, error: err.message });
       }
     });

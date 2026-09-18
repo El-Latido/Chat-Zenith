@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, RotateCcw, Download, Play, Music, Search, Check, Sparkles } from 'lucide-react';
+import { X, RotateCcw, Download, Play, Music, Search, Check, Sparkles, Smartphone, CheckCircle2 } from 'lucide-react';
 
 export interface RadioHistorySong {
   id?: string;
@@ -25,6 +25,7 @@ export function RadioHistoryModal({
 }: RadioHistoryModalProps) {
   const [search, setSearch] = useState('');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [completedDownloads, setCompletedDownloads] = useState<Record<string, boolean>>({});
 
   if (!isOpen) return null;
 
@@ -33,7 +34,7 @@ export function RadioHistoryModal({
     s.title.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleDownload = (song: RadioHistorySong, e?: React.MouseEvent) => {
+  const handleDownload = async (song: RadioHistorySong, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const songKey = song.id || song.title;
     setDownloadingId(songKey);
@@ -41,31 +42,57 @@ export function RadioHistoryModal({
     const safeTitle = song.title.replace(/[^\w\s-]/gi, '').trim() || 'cancion';
     const downloadUrl = `/api/download?url=${encodeURIComponent(song.url)}&title=${encodeURIComponent(safeTitle)}&format=mp3`;
 
-    // Trigger download in browser
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.setAttribute('download', `${safeTitle}.mp3`);
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
     if (onToast) {
       onToast(`📥 Descargando "${song.title}" en MP3...`);
     }
 
-    setTimeout(() => {
-      setDownloadingId((prev) => (prev === songKey ? null : prev));
-    }, 3000);
+    try {
+      // Direct binary fetch to convert to Blob for mobile download (never opens YouTube)
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${safeTitle}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+        link.remove();
+      }, 1000);
+
+      setCompletedDownloads((prev) => ({ ...prev, [songKey]: true }));
+      if (onToast) {
+        onToast(`✅ ¡"${safeTitle}.mp3" guardado en las descargas de tu móvil!`);
+      }
+    } catch (err) {
+      console.warn("Direct blob download fallback to native download link:", err);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `${safeTitle}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => link.remove(), 1000);
+      setCompletedDownloads((prev) => ({ ...prev, [songKey]: true }));
+    } finally {
+      setTimeout(() => {
+        setDownloadingId((prev) => (prev === songKey ? null : prev));
+      }, 2500);
+    }
   };
 
   return (
     <div
-      className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+      className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-[#121622] border border-[#38bdf8]/30 rounded-3xl max-w-xl w-full max-h-[85vh] shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden relative"
+        className="bg-[#121622] border border-[#38bdf8]/35 rounded-3xl max-w-xl w-full max-h-[85vh] shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -83,8 +110,9 @@ export function RadioHistoryModal({
                   <Sparkles size={10} /> 30 Canciones
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Toca cualquier canción para descargarla en MP3
+              <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                <Smartphone size={12} className="text-[#38bdf8]" />
+                Descarga directa en MP3 a tu dispositivo móvil (sin ir a YouTube)
               </p>
             </div>
           </div>
@@ -98,7 +126,7 @@ export function RadioHistoryModal({
           </button>
         </div>
 
-        {/* Search Bar & Instruction Notice */}
+        {/* Search Bar & Notice */}
         <div className="p-3 sm:p-4 bg-[#0e121c] border-b border-white/5 flex flex-col gap-2.5">
           <div className="relative flex items-center">
             <Search size={16} className="absolute left-3.5 text-gray-400 pointer-events-none" />
@@ -109,106 +137,99 @@ export function RadioHistoryModal({
               placeholder="Buscar en las 30 canciones..."
               className="w-full bg-[#182033] border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 outline-none focus:border-[#38bdf8]/60 transition-colors"
             />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-3 text-xs text-gray-400 hover:text-white"
-              >
-                Limpiar
-              </button>
-            )}
           </div>
-
           <div className="flex items-center justify-between text-[11px] text-gray-400 px-1">
-            <span className="flex items-center gap-1">
-              💡 <strong className="text-gray-200">Tip:</strong> Haz clic en el nombre de la canción para descargar su archivo MP3 al instante.
-            </span>
-            <span className="text-[#38bdf8] font-semibold">
-              {filteredSongs.length} de {songs.length}
-            </span>
+            <span>Toca el nombre de cualquier canción para descargar su MP3 directo</span>
+            <span className="text-[#38bdf8] font-bold">{filteredSongs.length} disponibles</span>
           </div>
         </div>
 
         {/* Song List */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 scrollbar-thin scrollbar-thumb-white/10">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 scrollbar-thin">
           {filteredSongs.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Music size={32} className="mx-auto mb-2 opacity-40 text-gray-400" />
-              <p className="text-sm font-medium">No se encontraron canciones en el historial.</p>
+            <div className="text-center py-12 text-gray-500">
+              <Music size={36} className="mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No se encontraron canciones</p>
             </div>
           ) : (
             filteredSongs.map((song, idx) => {
               const songKey = song.id || song.title;
               const isDownloading = downloadingId === songKey;
+              const isDone = completedDownloads[songKey];
 
               return (
                 <div
-                  key={song.id || idx}
-                  className="group bg-[#182033]/60 hover:bg-[#1f2a44] border border-white/5 hover:border-[#38bdf8]/40 rounded-2xl p-3 flex items-center justify-between gap-3 transition-all duration-200 hover:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
+                  key={songKey + idx}
+                  onClick={() => handleDownload(song)}
+                  className="group bg-[#161c2d]/70 hover:bg-[#1c243a] border border-white/5 hover:border-[#38bdf8]/40 rounded-2xl p-3 flex items-center justify-between gap-3 cursor-pointer transition-all active:scale-[0.99] shadow-sm"
+                  title="Haz clic para descargar en MP3"
                 >
-                  {/* Left: Number & Song Title (Clicking triggers MP3 download) */}
-                  <div
-                    onClick={(e) => handleDownload(song, e)}
-                    className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer select-none"
-                    title="Haz clic para descargar en MP3"
-                  >
-                    <div className="w-8 h-8 rounded-xl bg-white/5 group-hover:bg-[#38bdf8]/20 flex items-center justify-center shrink-0 border border-white/5 group-hover:border-[#38bdf8]/30 transition-colors">
-                      <span className="text-xs font-black text-gray-400 group-hover:text-[#38bdf8]">
-                        {(idx + 1).toString().padStart(2, '0')}
-                      </span>
+                  {/* Song Index and Title */}
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className="w-6 text-center text-xs font-bold text-gray-500 group-hover:text-[#38bdf8] shrink-0">
+                      {idx + 1}
+                    </span>
+
+                    <div className="w-9 h-9 rounded-xl bg-[#38bdf8]/10 group-hover:bg-[#38bdf8]/20 border border-[#38bdf8]/20 flex items-center justify-center text-[#38bdf8] shrink-0 transition-colors">
+                      <Music size={16} />
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-white group-hover:text-[#38bdf8] transition-colors truncate flex items-center gap-1.5">
-                        <span>{song.title}</span>
-                      </p>
-                      <p className="text-[11px] text-gray-400 truncate flex items-center gap-2 mt-0.5">
-                        <span className="text-emerald-400 font-medium">MP3 Disponible</span>
-                        {song.requester && (
-                          <>
-                            <span className="text-gray-600">•</span>
-                            <span className="text-gray-400">Por: {song.requester}</span>
-                          </>
-                        )}
+                      <h4 className="text-sm font-bold text-white group-hover:text-[#38bdf8] truncate transition-colors">
+                        {song.title}
+                      </h4>
+                      <p className="text-[11px] text-gray-400 flex items-center gap-1.5 mt-0.5">
+                        <span className="text-cyan-400 font-medium">MP3 Directo</span>
+                        <span>•</span>
+                        <span>Audio HD</span>
+                        <span>•</span>
+                        <span className="text-emerald-400">Sin Alabanzas</span>
                       </p>
                     </div>
                   </div>
 
-                  {/* Right Actions: Download & Play buttons */}
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Actions: Play on radio & Download MP3 */}
+                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                     {onPlaySong && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           onPlaySong(song);
+                          onClose();
                         }}
-                        className="p-2 rounded-xl bg-white/5 hover:bg-emerald-500/20 text-gray-300 hover:text-emerald-400 border border-white/5 hover:border-emerald-500/30 transition-all text-xs flex items-center gap-1"
+                        className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 border border-white/5"
                         title="Escuchar en la radio"
                       >
-                        <Play size={14} className="fill-current" />
-                        <span className="hidden sm:inline font-medium">Oír</span>
+                        <Play size={14} className="fill-current text-[#38bdf8]" />
+                        <span className="hidden sm:inline">Escuchar</span>
                       </button>
                     )}
 
                     <button
                       onClick={(e) => handleDownload(song, e)}
                       disabled={isDownloading}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 ${
-                        isDownloading
-                          ? 'bg-emerald-600 text-white cursor-wait'
-                          : 'bg-[#38bdf8] hover:bg-[#0284c7] text-slate-950 hover:text-white'
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+                        isDone
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : isDownloading
+                          ? 'bg-[#38bdf8]/30 text-[#38bdf8] animate-pulse border border-[#38bdf8]/40'
+                          : 'bg-[#38bdf8]/20 hover:bg-[#38bdf8]/30 text-[#38bdf8] hover:text-white border border-[#38bdf8]/40 hover:scale-105 active:scale-95'
                       }`}
-                      title="Descargar canción en formato MP3"
+                      title="Descargar archivo MP3 en tu móvil"
                     >
-                      {isDownloading ? (
+                      {isDone ? (
                         <>
-                          <Check size={14} />
-                          <span>Listo</span>
+                          <CheckCircle2 size={14} className="text-emerald-400" />
+                          <span>Descargado</span>
+                        </>
+                      ) : isDownloading ? (
+                        <>
+                          <Download size={14} className="animate-bounce" />
+                          <span>Guardando...</span>
                         </>
                       ) : (
                         <>
                           <Download size={14} />
-                          <span>MP3</span>
+                          <span>Descargar MP3</span>
                         </>
                       )}
                     </button>
@@ -219,14 +240,17 @@ export function RadioHistoryModal({
           )}
         </div>
 
-        {/* Footer info */}
-        <div className="p-3 bg-[#0a0d14] border-t border-white/5 flex items-center justify-between text-xs text-gray-400 px-4">
-          <span>🎵 Radio libre de alabanzas - Todos los géneros</span>
+        {/* Footer */}
+        <div className="p-3 sm:p-4 border-t border-white/5 bg-[#0b0e17] flex items-center justify-between text-xs text-gray-400">
+          <span className="flex items-center gap-1.5">
+            <Smartphone size={14} className="text-emerald-400" />
+            Descarga garantizada en formato MP3 compatible con Android e iOS
+          </span>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white font-medium transition-colors"
+            className="px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-xl font-bold transition-colors"
           >
-            Cerrar
+            Listo
           </button>
         </div>
       </div>

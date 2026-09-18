@@ -10,12 +10,49 @@
         "placedItems": { "type": "array" },
         "updatedAt": { "type": "string" }
       }
+    },
+    "SystemUpdate": {
+      "title": "SystemUpdate",
+      "description": "Appearance and system update payloads shared across chats",
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "targetChat": { "type": "string" },
+        "config": { "type": "object" },
+        "timestamp": { "type": "number" },
+        "status": { "type": "string" },
+        "origin": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "ChatSetting": {
+      "title": "ChatSetting",
+      "description": "Global and private chat appearance settings",
+      "type": "object",
+      "properties": {
+        "backgroundBase64": { "type": "string" },
+        "backgroundUrl": { "type": "string" },
+        "theme": { "type": "string" },
+        "icon": { "type": "string" },
+        "title": { "type": "string" },
+        "statusMessage": { "type": "string" },
+        "bubbleStyle": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      }
     }
   },
   "firestore": {
     "/worlds/{worldId}": {
       "schema": { "$ref": "#/entities/World" },
       "description": "Worlds collection"
+    },
+    "/system_updates/{updateId}": {
+      "schema": { "$ref": "#/entities/SystemUpdate" },
+      "description": "System updates collection for real-time cross-chat appearance sync"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/ChatSetting" },
+      "description": "Chat and system settings"
     }
   }
 }

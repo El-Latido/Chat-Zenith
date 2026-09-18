@@ -46,6 +46,7 @@ interface ChatCustomizerModalProps {
   currentConfig: ChatConfig | null;
   onSaveConfig: (newConfig: ChatConfig) => Promise<void>;
   onResetConfig: () => Promise<void>;
+  onOpenSyncToAxis?: () => void;
 }
 
 const PRESET_WALLPAPERS = [
@@ -117,6 +118,7 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
   currentConfig,
   onSaveConfig,
   onResetConfig,
+  onOpenSyncToAxis,
 }) => {
   const [activeTab, setActiveTab] = useState<"wallpaper" | "icon" | "theme" | "details">("wallpaper");
   const [backgroundBase64, setBackgroundBase64] = useState<string>(
@@ -609,17 +611,34 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-3.5 border-t border-white/10 bg-black/30 flex items-center justify-between gap-2">
-          <button
-            id="btn-reset-chat-customizer"
-            type="button"
-            disabled={isSaving}
-            onClick={handleReset}
-            className="flex items-center gap-1.5 text-xs font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-3 py-2.5 rounded-xl transition-all disabled:opacity-50"
-          >
-            <RotateCcw size={14} />
-            Restablecer
-          </button>
+        <div className="p-3.5 border-t border-white/10 bg-black/30 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <button
+              id="btn-reset-chat-customizer"
+              type="button"
+              disabled={isSaving}
+              onClick={handleReset}
+              className="flex items-center gap-1.5 text-xs font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-3 py-2 rounded-xl transition-all disabled:opacity-50"
+            >
+              <RotateCcw size={14} />
+              Restablecer
+            </button>
+
+            {onOpenSyncToAxis && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenSyncToAxis();
+                }}
+                className="flex items-center gap-1.5 text-xs font-bold text-amber-300 hover:text-white bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 px-3 py-2 rounded-xl transition-all shadow-sm"
+                title="Transferir este aspecto y mejoras a Axis (Chat Principal Li)"
+              >
+                <Sparkles size={14} className="text-amber-400" />
+                <span>Pasar a Chat Li (Axis)</span>
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
             <button

@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock} from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles } from "lucide-react";
 import { collection,
   onSnapshot,
   query,
@@ -51,6 +51,7 @@ import { PremiumAudioVisualizer } from "./components/PremiumAudioVisualizer";
 import { InlineRadio } from "./components/InlineRadio";
 import { GlobalRadioPlayer } from "./components/GlobalRadioPlayer";
 import { RadioHistoryModal, RadioHistorySong } from "./components/RadioHistoryModal";
+import { SyncToAxisModal } from "./components/SyncToAxisModal";
 import { SongRequestModal } from "./components/SongRequestModal";
 import { DjControlPanelModal } from "./components/DjControlPanelModal";
 import { AiSelectorModal } from "./components/AiSelectorModal";
@@ -549,6 +550,19 @@ function MainApp() {
   const [isRadioPlaying, setIsRadioPlaying] = useState(false);
   const [showRadioHistory, setShowRadioHistory] = useState(false);
   const [radioHistorySongs, setRadioHistorySongs] = useState<RadioHistorySong[]>([]);
+  const [showSyncToAxisModal, setShowSyncToAxisModal] = useState(false);
+
+  const addSystemToast = (text: string, type = "Sistema") => {
+    setToasts((prev) => [
+      ...prev,
+      {
+        id: Date.now() + Math.random(),
+        type,
+        sender: "Sistema",
+        text,
+      },
+    ]);
+  };
 
   useEffect(() => {
     fetch('/api/radio/history')
@@ -898,18 +912,138 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     };
   }, [isLoggedIn, activeChat, user.username]);
 
+  // Dedicated, immediate listener for appearance synchronization across chats (Axiss <-> Test Chat)
+  useEffect(() => {
+    let lastAppliedSignature = "";
+
+    const applyAppearanceInstantly = (rawConfig: any, source: string) => {
+      if (!rawConfig) return;
+      // Extract configuration payload whether wrapped in config, appearance, payload, or root
+      const config: ChatConfig = (rawConfig.config || rawConfig.appearance || rawConfig.payload || rawConfig) as ChatConfig;
+      if (!config) return;
+
+      const signature = JSON.stringify({
+        bg: config.backgroundBase64 || config.backgroundUrl || (rawConfig as any).url,
+        theme: config.theme,
+        icon: config.icon,
+        title: config.title,
+        status: config.statusMessage,
+        bubble: config.bubbleStyle,
+        ts: rawConfig.timestamp || config.updatedAt,
+      });
+
+      if (signature === lastAppliedSignature) return;
+      lastAppliedSignature = signature;
+
+      console.log(`[Appearance Sync] Immediate cross-chat update applied from ${source}:`, config);
+
+      // 1. Immediately update global chat config state
+      setGlobalChatConfig((prev) => ({
+        ...(prev || {}),
+        ...config,
+      }));
+
+      // 2. Immediate background image & video handling
+      const bg = config.backgroundBase64 || config.backgroundUrl || (rawConfig as any).url || (rawConfig as any).background;
+      if (bg) {
+        setChatBgImage(bg);
+        try {
+          localStorage.setItem("chatliz_chat_bg", bg);
+        } catch (e) {}
+        // Preload image so it displays instantly without white flash
+        if (!bg.match(/\.(mp4|webm|ogg)$/i) && !bg.startsWith("data:video")) {
+          const preloader = new Image();
+          preloader.src = bg;
+        }
+      } else if (config.backgroundBase64 === "" && config.backgroundUrl === "") {
+        setChatBgImage("");
+        try {
+          localStorage.removeItem("chatliz_chat_bg");
+        } catch (e) {}
+      }
+
+      // 3. Immediate theme and accent color synchronization
+      if (config.theme) {
+        setActiveTheme(config.theme);
+        try {
+          localStorage.setItem("chatliz_theme", config.theme);
+        } catch (e) {}
+        window.dispatchEvent(new CustomEvent("chatliz_theme_changed", { detail: config.theme }));
+
+        const THEME_NEON_MAP: Record<string, string> = {
+          cyan: "#00f3ff",
+          purple: "#c084fc",
+          emerald: "#34d399",
+          pink: "#f472b6",
+          amber: "#fbbf24",
+          red: "#f87171",
+        };
+        if (THEME_NEON_MAP[config.theme]) {
+          setNeonColor(THEME_NEON_MAP[config.theme]);
+          try {
+            localStorage.setItem("chatliz_neon_color", THEME_NEON_MAP[config.theme]);
+          } catch (e) {}
+        }
+      }
+
+      addSystemToast(`🎨 Apariencia de ${source} sincronizada al instante`, "Apariencia");
+    };
+
+    // Primary document explicitly requested: system_updates/appearance_for_Axiss
+    const unsubAxiss = onSnapshot(
+      doc(db, "system_updates", "appearance_for_Axiss"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          applyAppearanceInstantly(docSnap.data(), "Axiss");
+        }
+      },
+      (err) => console.warn("Listener system_updates/appearance_for_Axiss note:", err)
+    );
+
+    // Fallback/alias: system_updates/appearance_for_axis
+    const unsubAxis = onSnapshot(
+      doc(db, "system_updates", "appearance_for_axis"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          applyAppearanceInstantly(docSnap.data(), "Axis");
+        }
+      },
+      (err) => console.warn("Listener system_updates/appearance_for_axis note:", err)
+    );
+
+    // Fallback/alias: system_updates/appearance_for_Axis
+    const unsubAxisUpper = onSnapshot(
+      doc(db, "system_updates", "appearance_for_Axis"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          applyAppearanceInstantly(docSnap.data(), "Axis");
+        }
+      },
+      (err) => console.warn("Listener system_updates/appearance_for_Axis note:", err)
+    );
+
+    // Also listen to settings/global_chat_config
+    const unsubGlobalDoc = onSnapshot(
+      doc(db, "settings", "global_chat_config"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          applyAppearanceInstantly(docSnap.data(), "Chat Global");
+        }
+      },
+      (err) => console.warn("Listener settings/global_chat_config note:", err)
+    );
+
+    return () => {
+      unsubAxiss();
+      unsubAxis();
+      unsubAxisUpper();
+      unsubGlobalDoc();
+    };
+  }, []);
+
   // Real-time synchronization for Global Chat configuration
   useEffect(() => {
     if (!isLoggedIn) return;
-
-    // Listen to Firebase settings/global_chat_config
-    const unsubGlobal = onSnapshot(doc(db, "settings", "global_chat_config"), (docSnap) => {
-      if (docSnap.exists()) {
-        setGlobalChatConfig(docSnap.data() as ChatConfig);
-      }
-    }, (err) => {
-      console.warn("Global chat config listener note:", err);
-    });
 
     // Request current state from server socket
     socket.emit("get_chat_config", "global", (res: any) => {
@@ -920,11 +1054,37 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const handleChatConfigUpdated = (data: { chat: string; config: ChatConfig }) => {
       if (data.chat === "global") {
         setGlobalChatConfig(data.config);
+        const bg = data.config.backgroundBase64 || data.config.backgroundUrl;
+        if (bg) {
+          setChatBgImage(bg);
+          try { localStorage.setItem("chatliz_chat_bg", bg); } catch (e) {}
+        }
+        if (data.config.theme) {
+          setActiveTheme(data.config.theme);
+          try { localStorage.setItem("chatliz_theme", data.config.theme); } catch (e) {}
+          window.dispatchEvent(new CustomEvent("chatliz_theme_changed", { detail: data.config.theme }));
+        }
       } else {
         const participants = [user.username, activeChat].sort();
         const convoId = participants.join("_");
         if (data.chat === convoId) {
           setChatConfig(data.config);
+        }
+      }
+    };
+
+    const handleSyncToAxis = (data: any) => {
+      if (data?.config) {
+        setGlobalChatConfig(data.config);
+        const bg = data.config.backgroundBase64 || data.config.backgroundUrl;
+        if (bg) {
+          setChatBgImage(bg);
+          try { localStorage.setItem("chatliz_chat_bg", bg); } catch (e) {}
+        }
+        if (data.config.theme) {
+          setActiveTheme(data.config.theme);
+          try { localStorage.setItem("chatliz_theme", data.config.theme); } catch (e) {}
+          window.dispatchEvent(new CustomEvent("chatliz_theme_changed", { detail: data.config.theme }));
         }
       }
     };
@@ -935,6 +1095,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         backgroundBase64: bgUrl,
         backgroundUrl: bgUrl
       }));
+      setChatBgImage(bgUrl);
+      try { localStorage.setItem("chatliz_chat_bg", bgUrl); } catch (e) {}
     };
 
     const handleUserProfileUpdated = (profileData: any) => {
@@ -949,12 +1111,13 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     socket.on("chat_config_updated", handleChatConfigUpdated);
     socket.on("global_bg_updated", handleGlobalBgUpdated);
     socket.on("user_profile_updated", handleUserProfileUpdated);
+    socket.on("sync_appearance_to_axis", handleSyncToAxis);
 
     return () => {
-      unsubGlobal();
       socket.off("chat_config_updated", handleChatConfigUpdated);
       socket.off("global_bg_updated", handleGlobalBgUpdated);
       socket.off("user_profile_updated", handleUserProfileUpdated);
+      socket.off("sync_appearance_to_axis", handleSyncToAxis);
     };
   }, [isLoggedIn, activeChat, user.username]);
 
@@ -2225,6 +2388,16 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={() => setShowSyncToAxisModal(true)}
+                        className="text-xs sm:text-sm font-bold text-amber-300 hover:text-white bg-amber-500/15 hover:bg-amber-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-amber-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
+                        title="Enviar solicitud y transferir aspecto visual a Axis (Chat Principal Li)"
+                      >
+                        <Sparkles size={16} className="text-amber-400" />
+                        <span className="hidden sm:inline">Pasar a Chat Li (Axis)</span>
+                        <span className="sm:hidden">A Axis</span>
+                      </button>
+
+                      <button
                         onClick={() => setShowChatConfig(true)}
                         className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
                         title="Personalizar Chat Global (Sincronizado)"
@@ -3070,6 +3243,14 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         currentConfig={activeChat === "global" ? globalChatConfig : chatConfig}
         onSaveConfig={handleSaveChatConfig}
         onResetConfig={handleResetChatConfig}
+        onOpenSyncToAxis={() => setShowSyncToAxisModal(true)}
+      />
+
+      <SyncToAxisModal
+        isOpen={showSyncToAxisModal}
+        onClose={() => setShowSyncToAxisModal(false)}
+        currentGlobalConfig={globalChatConfig}
+        onToast={addSystemToast}
       />
       {isConfigOpen && (
         <ProfileConfigModal
