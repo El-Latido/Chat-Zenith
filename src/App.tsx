@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key } from "lucide-react";
 import { collection,
   onSnapshot,
   query,
@@ -2849,46 +2849,44 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       </div>
                     </div>
 
-                    {isUserAdmin && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setShowRoomCleanerModal(true)}
-                          className={`text-xs sm:text-sm font-bold px-2.5 sm:px-3 py-2 rounded-xl transition-all border flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                            messages.length >= 18
-                              ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
-                              : messages.length >= 14
-                              ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
-                              : "bg-purple-500/15 text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
-                          }`}
-                          title="Limpiador de Sala Global"
-                        >
-                          <Trash2 size={16} className={messages.length >= 18 ? "text-rose-400" : "text-purple-400"} />
-                          <span className="hidden sm:inline">Limpiador</span>
-                          <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[11px] font-mono border border-white/10">
-                            {messages.length}/20
-                          </span>
-                        </button>
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                      <button
+                        onClick={() => setShowRoomCleanerModal(true)}
+                        className={`text-xs sm:text-sm font-bold px-2.5 sm:px-3 py-2 rounded-xl transition-all border flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                          messages.length >= 18
+                            ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                            : messages.length >= 14
+                            ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
+                            : "bg-purple-500/15 text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
+                        }`}
+                        title="Limpiador de Sala Global"
+                      >
+                        <Trash2 size={16} className={messages.length >= 18 ? "text-rose-400" : "text-purple-400"} />
+                        <span className="hidden sm:inline">Limpiador</span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[11px] font-mono border border-white/10">
+                          {messages.length}/20
+                        </span>
+                      </button>
 
-                        <button
-                          onClick={() => setShowSyncToAxisModal(true)}
-                          className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-cyan-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
-                          title="Transportar aspecto y diseño a ChatLiz"
-                        >
-                          <Sparkles size={16} className="text-cyan-400" />
-                          <span className="hidden sm:inline">Transportar a ChatLiz</span>
-                          <span className="sm:hidden">A ChatLiz</span>
-                        </button>
+                      <button
+                        onClick={() => setShowSyncToAxisModal(true)}
+                        className="text-xs sm:text-sm font-bold text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-emerald-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
+                        title="Pasar nuevas actualizaciones a Hugging Face (chatliz-online-chatliz.hf.space) con tu Token"
+                      >
+                        <Key size={15} className="text-emerald-400 animate-pulse" />
+                        <span className="hidden sm:inline">Pasar a Hugging Face</span>
+                        <span className="sm:hidden">Token HF</span>
+                      </button>
 
-                        <button
-                          onClick={() => setShowChatConfig(true)}
-                          className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
-                          title="Personalizar Chat Global"
-                        >
-                          <Palette size={16} />
-                          <span className="hidden sm:inline">Personalizar</span>
-                        </button>
-                      </div>
-                    )}
+                      <button
+                        onClick={() => setShowChatConfig(true)}
+                        className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
+                        title="Personalizar Chat Global"
+                      >
+                        <Palette size={16} />
+                        <span className="hidden sm:inline">Personalizar</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   (() => {

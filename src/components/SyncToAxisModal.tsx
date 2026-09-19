@@ -18,7 +18,10 @@ import {
   Key,
   ShieldCheck,
   AlertTriangle,
-  Flame
+  Flame,
+  Eye,
+  EyeOff,
+  Check
 } from 'lucide-react';
 import { doc, setDoc, addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
@@ -43,21 +46,26 @@ export function SyncToAxisModal({
   const [isSuccess, setIsSuccess] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
 
-  // HF Token deployment state
-  const [hfToken, setHfToken] = useState(() => {
+  // HF Token deployment state (Manual entry for security)
+  const [showTokenText, setShowTokenText] = useState(false);
+  const [targetSpace, setTargetSpace] = useState(() => {
     try {
-      return localStorage.getItem("hf_space_token") || "";
+      return localStorage.getItem("hf_target_space") || "chatliz-online/ChatLiz";
     } catch {
-      return "";
+      return "chatliz-online/ChatLiz";
     }
   });
+  const [hfToken, setHfToken] = useState("");
   const [isDeployingToken, setIsDeployingToken] = useState(false);
-  const [deployResult, setDeployResult] = useState<{ success: boolean; message?: string; error?: string; user?: string } | null>(null);
+  const [deployResult, setDeployResult] = useState<{ success: boolean; message?: string; error?: string; user?: string; spaceUrl?: string } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setDeployResult(null);
       setIsSuccess(false);
+      try {
+        localStorage.removeItem("hf_space_token");
+      } catch {}
     }
   }, [isOpen]);
 
@@ -157,10 +165,6 @@ export function SyncToAxisModal({
       return;
     }
 
-    try {
-      localStorage.setItem("hf_space_token", trimmed);
-    } catch {}
-
     setIsDeployingToken(true);
     setDeployResult(null);
 
@@ -170,7 +174,7 @@ export function SyncToAxisModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token: trimmed,
-          space: "chatliz-online/ChatLiz",
+          space: targetSpace.trim() || "chatliz-online/ChatLiz",
         }),
       });
 
@@ -335,39 +339,104 @@ export function SyncToAxisModal({
                     <Key size={14} className="text-cyan-400" />
                     Hugging Face Access Token (hf_...)
                   </label>
-                  <a
-                    href="https://huggingface.co/settings/tokens"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] text-cyan-300 hover:text-cyan-200 underline flex items-center gap-1"
-                  >
-                    Obtener Token en Hugging Face
-                    <ExternalLink size={11} />
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text && text.trim().startsWith("hf_")) {
+                            setHfToken(text.trim());
+                            if (onToast) onToast("📋 Token pegado desde el portapapeles");
+                          } else if (text) {
+                            setHfToken(text.trim());
+                          }
+                        } catch {
+                          if (onToast) onToast("Pega tu token directamente en la casilla");
+                        }
+                      }}
+                      className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1 bg-white/5 hover:bg-white/10 px-2 py-1 rounded-lg transition-all"
+                      title="Pegar token"
+                    >
+                      <Copy size={11} />
+                      Pegar
+                    </button>
+                    {hfToken && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHfToken("");
+                          if (onToast) onToast("🗑️ Token borrado");
+                        }}
+                        className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 rounded-lg transition-all"
+                        title="Borrar token de la pantalla"
+                      >
+                        <X size={11} />
+                        Borrar
+                      </button>
+                    )}
+                    <a
+                      href="https://huggingface.co/settings/tokens"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-cyan-300 hover:text-cyan-200 underline flex items-center gap-1"
+                    >
+                      Obtener Token
+                      <ExternalLink size={11} />
+                    </a>
+                  </div>
                 </div>
 
-                <div className="relative">
+                <div className="relative flex items-center">
                   <input
-                    type="password"
+                    type={showTokenText ? "text" : "password"}
                     placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                     value={hfToken}
                     onChange={(e) => setHfToken(e.target.value)}
-                    className="w-full bg-[#070a12] border border-cyan-500/40 rounded-xl px-3.5 py-2.5 text-xs text-cyan-200 font-mono focus:outline-none focus:border-cyan-400 placeholder-gray-600"
+                    className="w-full bg-[#070a12] border border-cyan-500/40 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-cyan-200 font-mono focus:outline-none focus:border-cyan-400 placeholder-gray-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTokenText(!showTokenText)}
+                    className="absolute right-2.5 text-gray-400 hover:text-white p-1 transition-colors"
+                    title={showTokenText ? "Ocultar token" : "Mostrar token"}
+                  >
+                    {showTokenText ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+
+                {/* Target Space */}
+                <div className="space-y-1 pt-1">
+                  <label className="text-[11px] text-gray-400 font-semibold flex items-center justify-between">
+                    <span>Espacio de destino en Hugging Face:</span>
+                    <span className="text-emerald-400 text-[10px]">chatliz-online/ChatLiz</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={targetSpace}
+                    onChange={(e) => setTargetSpace(e.target.value)}
+                    placeholder="usuario/NombreDelSpace (ej: chatliz-online/ChatLiz)"
+                    className="w-full bg-[#070a12] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-amber-200 font-mono focus:outline-none focus:border-amber-400 placeholder-gray-600"
                   />
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-400">
-                  <span>Permiso requerido: <strong className="text-emerald-300">Write</strong> (Escritura)</span>
-                  <span>Repositorio: <code className="text-amber-300">chatliz-online/ChatLiz</code></span>
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-emerald-400" />
+                    Permiso: <strong className="text-emerald-300">Write</strong> (Escritura)
+                  </span>
+                  <span className="flex items-center gap-1">
+                    Destino: <code className="text-amber-300 bg-amber-950/30 px-1.5 py-0.5 rounded border border-amber-800/30">{targetSpace || "chatliz-online/ChatLiz"}</code>
+                  </span>
                 </div>
 
                 {/* Quick 3-Step help */}
                 <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5 space-y-1 text-[10px] text-gray-300">
-                  <div className="font-bold text-gray-200">¿Cómo generar tu token en 10 segundos?</div>
+                  <div className="font-bold text-gray-200">¿Cómo funciona el pase de actualizaciones?</div>
                   <ol className="list-decimal list-inside space-y-0.5 text-gray-400">
-                    <li>Entra a <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="text-cyan-300 underline">huggingface.co/settings/tokens</a></li>
-                    <li>Haz clic en <strong>"Create new token"</strong></li>
-                    <li>Selecciona el tipo <strong>"Write"</strong>, ponle cualquier nombre y cópialo aquí.</li>
+                    <li>Coloca tu token de Hugging Face de tipo <strong>Write</strong> (ya viene precargado el tuyo listo).</li>
+                    <li>Haz clic en <strong>"Desplegar Todo a Hugging Face"</strong>.</li>
+                    <li>El servidor sube automáticamente el código, diseño y limpiador a tu espacio <a href="https://chatliz-online-chatliz.hf.space/" target="_blank" rel="noreferrer" className="text-cyan-300 underline">chatliz-online-chatliz.hf.space</a>.</li>
                   </ol>
                 </div>
               </div>
