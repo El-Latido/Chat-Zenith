@@ -55,6 +55,7 @@ import { SyncToAxisModal } from "./components/SyncToAxisModal";
 import { SongRequestModal } from "./components/SongRequestModal";
 import { DjControlPanelModal } from "./components/DjControlPanelModal";
 import { AiSelectorModal } from "./components/AiSelectorModal";
+import { RoomCleanerModal } from "./components/RoomCleanerModal";
  import { SocialFeed } from "./components/social/SocialFeed";
 
 const DECORATIONS = [
@@ -637,7 +638,9 @@ function MainApp() {
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedGif, setSelectedGif] = useState<string | null>(null);
-    const [selectedFile, setSelectedFile] = useState<{name: string, type: string, url: string} | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{name: string, type: string, url: string} | null>(null);
+  const [showRoomCleanerModal, setShowRoomCleanerModal] = useState(false);
+  const isCleaningGlobalRef = useRef(false);
 const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStream, setRecordingStream] = useState<MediaStream | null>(
@@ -866,6 +869,14 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           return true;
         });
         setMessages(filteredMsgs);
+        if (msgs.length >= 20 && !isCleaningGlobalRef.current) {
+          isCleaningGlobalRef.current = true;
+          socket.emit("clean_global_room_keep_last", () => {
+            setTimeout(() => {
+              isCleaningGlobalRef.current = false;
+            }, 3000);
+          });
+        }
         setTimeout(
           scrollToBottom,
           100,
@@ -1022,6 +1033,17 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       (err) => console.warn("Listener system_updates/appearance_for_Axis note:", err)
     );
 
+    // Target: system_updates/appearance_for_chatliz (Hugging Face Space)
+    const unsubChatliz = onSnapshot(
+      doc(db, "system_updates", "appearance_for_chatliz"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          applyAppearanceInstantly(docSnap.data(), "ChatLiz (Hugging Face)");
+        }
+      },
+      (err) => console.warn("Listener system_updates/appearance_for_chatliz note:", err)
+    );
+
     // Also listen to settings/global_chat_config
     const unsubGlobalDoc = onSnapshot(
       doc(db, "settings", "global_chat_config"),
@@ -1037,6 +1059,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       unsubAxiss();
       unsubAxis();
       unsubAxisUpper();
+      unsubChatliz();
       unsubGlobalDoc();
     };
   }, []);
@@ -1089,6 +1112,10 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       }
     };
 
+    const handleGlobalChatCleaned = (data: any) => {
+      console.log("[Limpiador de Sala Global] Chat global limpiado a 20 mensajes:", data);
+    };
+
     const handleGlobalBgUpdated = (bgUrl: string) => {
       setGlobalChatConfig((prev) => ({
         ...(prev || {}),
@@ -1112,12 +1139,14 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     socket.on("global_bg_updated", handleGlobalBgUpdated);
     socket.on("user_profile_updated", handleUserProfileUpdated);
     socket.on("sync_appearance_to_axis", handleSyncToAxis);
+    socket.on("global_chat_cleaned", handleGlobalChatCleaned);
 
     return () => {
       socket.off("chat_config_updated", handleChatConfigUpdated);
       socket.off("global_bg_updated", handleGlobalBgUpdated);
       socket.off("user_profile_updated", handleUserProfileUpdated);
       socket.off("sync_appearance_to_axis", handleSyncToAxis);
+      socket.off("global_chat_cleaned", handleGlobalChatCleaned);
     };
   }, [isLoggedIn, activeChat, user.username]);
 
@@ -2388,13 +2417,31 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setShowSyncToAxisModal(true)}
-                        className="text-xs sm:text-sm font-bold text-amber-300 hover:text-white bg-amber-500/15 hover:bg-amber-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-amber-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
-                        title="Enviar solicitud y transferir aspecto visual a Axis (Chat Principal Li)"
+                        onClick={() => setShowRoomCleanerModal(true)}
+                        className={`text-xs sm:text-sm font-bold px-2.5 sm:px-3 py-2 rounded-xl transition-all border flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                          messages.length >= 18
+                            ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                            : messages.length >= 14
+                            ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
+                            : "bg-purple-500/15 text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
+                        }`}
+                        title="Limpiador de Sala Global: Limpieza automática al alcanzar 20 mensajes (dejando el último para responder)"
                       >
-                        <Sparkles size={16} className="text-amber-400" />
-                        <span className="hidden sm:inline">Pasar a Chat Li (Axis)</span>
-                        <span className="sm:hidden">A Axis</span>
+                        <Trash2 size={16} className={messages.length >= 18 ? "text-rose-400" : "text-purple-400"} />
+                        <span className="hidden sm:inline">Limpiador</span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[11px] font-mono border border-white/10">
+                          {messages.length}/20
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => setShowSyncToAxisModal(true)}
+                        className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-cyan-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
+                        title="Transportar aspecto, diseño y funcionalidad a ChatLiz (https://chatliz-online-chatliz.hf.space/) y Axis"
+                      >
+                        <Sparkles size={16} className="text-cyan-400" />
+                        <span className="hidden sm:inline">Transportar a ChatLiz</span>
+                        <span className="sm:hidden">A ChatLiz</span>
                       </button>
 
                       <button
@@ -2550,6 +2597,28 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
                 {/* Chat Feed */}
                 <div className="flex-1 overflow-y-auto px-2 md:px-4 py-2 space-y-1.5 scrollbar-thin">
+                  {/* Banner informando limpieza y permitiendo responder directamente al último mensaje */}
+                  {activeChat === "global" && messages.length === 1 && (
+                    <div className="mx-auto max-w-lg my-3 bg-gradient-to-r from-purple-950/60 via-cyan-950/40 to-purple-950/60 border border-cyan-500/40 rounded-2xl p-3.5 text-center shadow-lg backdrop-blur-md animate-fadeIn">
+                      <div className="flex items-center justify-center gap-2 text-cyan-300 font-bold text-xs sm:text-sm mb-1">
+                        <Sparkles size={16} className="text-amber-400" />
+                        <span>Sala Global Limpia (Límite 20 mensajes)</span>
+                      </div>
+                      <p className="text-[12px] text-gray-300 leading-snug">
+                        Se limpiaron los mensajes anteriores y se conservó el último mensaje de <strong className="text-cyan-300 font-semibold">@{messages[0]?.sender}</strong> para que puedas leerlo y responder de inmediato.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setReplyingTo(messages[0]);
+                          if (inputRef.current) inputRef.current.focus();
+                        }}
+                        className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-bold text-cyan-200 bg-cyan-500/25 hover:bg-cyan-500/40 px-3.5 py-1.5 rounded-xl border border-cyan-400/40 transition-all shadow-sm active:scale-95"
+                      >
+                        <MessageSquare size={13} />
+                        Responder a @{messages[0]?.sender}
+                      </button>
+                    </div>
+                  )}
                   {messages
                     .filter((m) => m && m.sender)
                     .filter((m) => {
@@ -4087,6 +4156,47 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
               });
             }
           }}
+        />
+      )}
+
+      {/* Limpiador de Sala Global Modal */}
+      {showRoomCleanerModal && (
+        <RoomCleanerModal
+          isOpen={showRoomCleanerModal}
+          onClose={() => setShowRoomCleanerModal(false)}
+          messageCount={activeChat === "global" ? messages.length : 0}
+          maxLimit={20}
+          lastMessage={messages.length > 0 ? messages[messages.length - 1] : null}
+          onCleanKeepLast={async () => {
+            return new Promise<void>((resolve, reject) => {
+              socket.emit("clean_global_room_keep_last", (res: any) => {
+                if (res && res.success) {
+                  resolve();
+                } else {
+                  reject(new Error(res?.error || "Error al limpiar sala"));
+                }
+              });
+            });
+          }}
+          onClearAll={async () => {
+            return new Promise<void>((resolve, reject) => {
+              socket.emit("clear_global_chat", (res: any) => {
+                if (res && res.success) {
+                  resolve();
+                } else {
+                  reject(new Error(res?.error || "Error al vaciar sala"));
+                }
+              });
+            });
+          }}
+          onReplyLastMessage={() => {
+            if (messages.length > 0) {
+              setReplyingTo(messages[messages.length - 1]);
+              setShowRoomCleanerModal(false);
+              if (inputRef.current) inputRef.current.focus();
+            }
+          }}
+          isAdmin={user.username.toUpperCase() === "AXISS"}
         />
       )}
     </div>

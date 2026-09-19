@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { spawn } from "child_process";
 // @ts-nocheck
 var __defProp = Object.defineProperty;
 var __name = (target, value) =>
@@ -195,6 +196,54 @@ const transporter = nodemailer.createTransport({
   const SERVER_VERSION = Date.now().toString();
   app.get("/version", (req, res) => {
     res.json({ version: SERVER_VERSION });
+  });
+
+  app.get("/api/download-hf-space-zip", (req, res) => {
+    const zipPath = path.join(process.cwd(), "public", "chatliz-hf-space.zip");
+    if (fs.existsSync(zipPath)) {
+      res.setHeader("Content-Disposition", 'attachment; filename="chatliz-huggingface-ready.zip"');
+      res.setHeader("Content-Type", "application/zip");
+      return fs.createReadStream(zipPath).pipe(res);
+    }
+    return res.status(404).json({ error: "Zip file not found" });
+  });
+
+  app.post("/api/deploy-to-huggingface", express.json(), (req, res) => {
+    const { token, space } = req.body || {};
+    if (!token || typeof token !== "string" || !token.trim()) {
+      return res.status(400).json({ success: false, error: "El token de Hugging Face es requerido." });
+    }
+    const cleanToken = token.trim();
+    const cleanSpace = (space && typeof space === "string" && space.trim()) ? space.trim() : "chatliz-online/ChatLiz";
+
+    const scriptPath = path.join(process.cwd(), "scripts", "deploy_to_hf.py");
+    const proc = spawn("python3", [scriptPath, cleanToken, cleanSpace]);
+
+    let stdoutData = "";
+    let stderrData = "";
+
+    proc.stdout.on("data", (data) => {
+      stdoutData += data.toString();
+    });
+    proc.stderr.on("data", (data) => {
+      stderrData += data.toString();
+    });
+
+    proc.on("close", (code) => {
+      try {
+        const parsed = JSON.parse(stdoutData.trim());
+        return res.json(parsed);
+      } catch (e) {
+        if (code === 0) {
+          return res.json({ success: true, message: stdoutData.trim() || "Desplegado con éxito." });
+        } else {
+          return res.status(500).json({
+            success: false,
+            error: stdoutData.trim() || stderrData.trim() || `Proceso falló con código ${code}`,
+          });
+        }
+      }
+    });
   });
   const uploadsDir = path.join(process.cwd(), "static", "uploads");
   if (!fs.existsSync(uploadsDir)) {
@@ -649,6 +698,64 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     io.emit("active_users", usersList);
   }, "emitActiveUsers");
   let recoveryCodes = {};
+
+  // Limpiador de Sala Global: Limpieza automática al tener 20 mensajes (conservando el último)
+  const checkAndAutoCleanGlobalChat = async (forceKeepLast = false) => {
+    try {
+      if (fdb) {
+        const q = query(collection(fdb, "global_chat"));
+        const snapshot = await getDocs(q);
+        const docs = [...snapshot.docs].sort((a, b) => {
+          const dataA = a.data();
+          const dataB = b.data();
+          const tA = dataA.timestamp?.toMillis ? dataA.timestamp.toMillis() : (dataA.timestamp || dataA.createdAt || 0);
+          const tB = dataB.timestamp?.toMillis ? dataB.timestamp.toMillis() : (dataB.timestamp || dataB.createdAt || 0);
+          return tA - tB;
+        });
+        const total = docs.length;
+        if (total >= 20 || (forceKeepLast && total > 1)) {
+          // Conservar estrictamente el último mensaje y limpiar todos los anteriores
+          const lastDoc = docs[total - 1];
+          const lastMsgData = lastDoc.data();
+          const docsToDelete = docs.slice(0, total - 1);
+
+          await Promise.all(docsToDelete.map((d) => deleteDoc(d.ref)));
+
+          fallbackState.globalMessages = [{ ...lastMsgData, id: lastDoc.id }];
+          saveFallbackDB();
+
+          const keptMsg = { ...lastMsgData, id: lastDoc.id, docId: lastDoc.id };
+          io.emit("global_chat_cleaned", {
+            keptMessage: keptMsg,
+            cleanedCount: docsToDelete.length,
+            timestamp: Date.now(),
+          });
+          console.log(`[Limpiador de Sala] Sala global limpiada: se eliminaron ${docsToDelete.length} mensajes, se conservó el último mensaje de ${lastMsgData.sender}`);
+          return { success: true, cleanedCount: docsToDelete.length, keptMessage: keptMsg };
+        }
+      } else {
+        const total = (fallbackState.globalMessages || []).length;
+        if (total >= 20 || (forceKeepLast && total > 1)) {
+          const kept = fallbackState.globalMessages.slice(-1);
+          const cleanedCount = total - kept.length;
+          fallbackState.globalMessages = kept;
+          saveFallbackDB();
+
+          io.emit("global_chat_cleaned", {
+            keptMessage: kept[0],
+            cleanedCount,
+            timestamp: Date.now(),
+          });
+          return { success: true, cleanedCount, keptMessage: kept[0] };
+        }
+      }
+    } catch (err) {
+      console.error("[Limpiador de Sala Global Error]:", err);
+      return { success: false, error: String(err) };
+    }
+    return { success: false, message: "Límite de 20 mensajes no alcanzado aún" };
+  };
+
   io.on("connection", (socket) => {
     let currentUsername = "";
     socket.on("forgot_password_request", async (data, callback) => {
@@ -1543,6 +1650,15 @@ socket.on("buy_decoration", async (data, callback) => {
         if(callback) callback({ success: true });
       } else {
         if(callback) callback({ success: false, error: "Unauthorized" });
+      }
+    });
+
+    socket.on("clean_global_room_keep_last", async (callback) => {
+      try {
+        const res = await checkAndAutoCleanGlobalChat(true);
+        if (callback) callback(res);
+      } catch (err: any) {
+        if (callback) callback({ success: false, error: err?.message || "Error al limpiar sala" });
       }
     });
 
@@ -2669,28 +2785,20 @@ socket.on("send_global", async (msg) => {
       }
       if (fdb) {
         let dbMsg = { ...msg, timestamp: serverTimestamp() };
-        addDoc(collection(fdb, "global_chat"), dbMsg).catch((e) =>
-          console.error("Firebase addDoc Error:", e),
-        );
-        const countSnapshot = await getCountFromServer(
-          collection(fdb, "global_chat"),
-        );
-        if (countSnapshot.data().count > 100) {
-          const oldestQ = query(
-            collection(fdb, "global_chat"),
-            orderBy("timestamp", "asc"),
-            limit(1),
-          );
-          const oldest = await getDocs(oldestQ);
-          if (!oldest.empty) {
-            await deleteDoc(oldest.docs[0].ref);
-          }
+        try {
+          await addDoc(collection(fdb, "global_chat"), dbMsg);
+        } catch (e) {
+          console.error("Firebase addDoc Error:", e);
         }
+        // Limpiador automático: al alcanzar 20 mensajes, limpia los anteriores y preserva el último
+        await checkAndAutoCleanGlobalChat();
       } else {
         fallbackState.globalMessages.push(msg);
-        if (fallbackState.globalMessages.length > 100)
-          fallbackState.globalMessages.shift();
-        saveFallbackDB();
+        if (fallbackState.globalMessages.length >= 20) {
+          await checkAndAutoCleanGlobalChat();
+        } else {
+          saveFallbackDB();
+        }
       }
       const senderLanguage = activeUsers[currentUsername]?.pais_idioma || "es";
       for (const [uname, userData] of Object.entries(activeUsers)) {
@@ -2878,11 +2986,17 @@ ${msg.text}`,
             addDoc(collection(fdb, "global_chat"), {
               ...eliMsg,
               timestamp: serverTimestamp(),
-            }).catch((e) => console.error("Firebase addDoc Error:", e));
+            })
+              .then(() => checkAndAutoCleanGlobalChat())
+              .catch((e) => console.error("Firebase addDoc Error:", e));
           } else {
 
             fallbackState.globalMessages.push(eliMsg);
-            saveFallbackDB();
+            if (fallbackState.globalMessages.length >= 20) {
+              checkAndAutoCleanGlobalChat();
+            } else {
+              saveFallbackDB();
+            }
           }
           const eliSenderLanguage = "es";
           for (const [uname, userData] of Object.entries(activeUsers)) {
@@ -3882,6 +3996,8 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
   ensureAutoRadio();
   server.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+    // Verificar y limpiar mensajes antiguos si la sala ya cuenta con 20 o más mensajes
+    checkAndAutoCleanGlobalChat().catch((e) => console.warn("Init auto-clean check note:", e));
   });
 }
 __name(startServer, "startServer");

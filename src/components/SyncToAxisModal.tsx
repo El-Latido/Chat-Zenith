@@ -1,19 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   X,
   CheckCircle2,
-  ShieldCheck,
   Send,
   Radio,
   Download,
   Palette,
-  Layers,
   ArrowRight,
   Cpu,
-  RefreshCw
+  RefreshCw,
+  ExternalLink,
+  Copy,
+  Terminal,
+  FileCode2,
+  Share2,
+  Key,
+  ShieldCheck,
+  AlertTriangle,
+  Flame
 } from 'lucide-react';
-import { doc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { socket } from '../socket';
 import { ChatConfig } from './ChatCustomizerModal';
@@ -31,22 +38,42 @@ export function SyncToAxisModal({
   currentGlobalConfig,
   onToast,
 }: SyncToAxisModalProps) {
+  const [activeTab, setActiveTab] = useState<'appearance' | 'token_hf' | 'code_hf'>('token_hf');
   const [isSending, setIsSending] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+
+  // HF Token deployment state
+  const [hfToken, setHfToken] = useState(() => {
+    try {
+      return localStorage.getItem("hf_space_token") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [isDeployingToken, setIsDeployingToken] = useState(false);
+  const [deployResult, setDeployResult] = useState<{ success: boolean; message?: string; error?: string; user?: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setDeployResult(null);
+      setIsSuccess(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSyncToAxis = async () => {
+  const handleSyncAppearance = async () => {
     setIsSending(true);
     try {
       const timestamp = Date.now();
       const payload: ChatConfig = {
         ...(currentGlobalConfig || {}),
-        updatedBy: "axis (Sector de Actualizaciones)",
+        updatedBy: "Zenith / Axis (Transportador Cloud)",
         updatedAt: timestamp,
       };
 
-      // 1. Save to primary Firestore settings read by both chats
+      // 1. Guardar en configuración global de Firestore compartida
       await setDoc(doc(db, "settings", "global_chat_config"), payload, { merge: true });
       if (payload.backgroundBase64 || payload.backgroundUrl) {
         await setDoc(
@@ -56,31 +83,36 @@ export function SyncToAxisModal({
         );
       }
 
-      // 2. Save to special system update documents specifically targeting Axiss / Chat Li
+      // 2. Guardar en los canales de actualización de sistemas para ChatLiz y Axis
       const updateData = {
-        target: "Axiss",
-        targetChat: "Li",
-        origin: "Sector de Actualizaciones",
+        originChat: "https://chat-zenith.onrender.com/",
+        targetSpaces: [
+          "https://chatliz-online-chatliz.hf.space/",
+          "Chat Principal Li (Axis)"
+        ],
         status: "approved_and_applied",
-        version: "v2.5-stable",
+        version: "v3.0-cleaner20-live",
         timestamp,
         config: payload,
-        message: "Aspecto visual y mejoras de radio/MP3 transferidas con 0 errores a Axiss.",
+        message: "Aspecto visual, diseño, fondos, limpiador y temas transportados con éxito a ChatLiz (Hugging Face) y Axis.",
       };
 
       await Promise.all([
+        setDoc(doc(db, "system_updates", "appearance_for_chatliz"), updateData, { merge: true }),
         setDoc(doc(db, "system_updates", "appearance_for_Axiss"), updateData, { merge: true }),
         setDoc(doc(db, "system_updates", "appearance_for_axis"), updateData, { merge: true }),
         setDoc(doc(db, "system_updates", "appearance_for_Axis"), updateData, { merge: true }),
       ]);
 
-      // 3. Log into update_requests collection for audit history
+      // 3. Registrar auditoría en Firestore
       try {
         await addDoc(collection(db, "update_requests"), {
-          sender: "Sector de Actualizaciones",
-          recipient: "axis",
-          targetChat: "Li",
-          action: "SYNC_APPEARANCE",
+          sender: "Chat Zenith (Render)",
+          recipients: [
+            "https://chatliz-online-chatliz.hf.space/",
+            "Axis (Chat Li)"
+          ],
+          action: "TRANSPORT_APPEARANCE_AND_DESIGN",
           config: payload,
           createdAt: timestamp,
           applied: true,
@@ -89,59 +121,122 @@ export function SyncToAxisModal({
         console.warn("Audit log notice:", e);
       }
 
-      // 4. Emit real-time socket events for instantaneous client reflection
+      // 4. Emitir eventos de sockets para actualización en caliente
       socket.emit("update_chat_config", { chat: "global", config: payload });
       socket.emit("sync_appearance_to_axis", {
-        target: "axis",
-        chat: "Li",
+        target: "all_spaces",
+        targetUrl: "https://chatliz-online-chatliz.hf.space/",
         config: payload,
       });
 
-      // 5. Send an announcement in the global chat so both chats display confirmation
+      // 5. Enviar anuncio en el chat global
       socket.emit("send_message", {
         room: "global",
-        text: "🚀 [SECTOR DE ACTUALIZACIONES ➔ AXIS]: ¡Solicitud de actualización completada! El aspecto visual y las mejoras han sido transferidos al Chat Principal 'Li'. Ambos chats tienen ahora la misma apariencia sin errores.",
+        text: "🚀 [TRANSPORTADOR CLOUD]: ¡Aspecto, diseño y mejoras visuales transportadas con éxito desde Zenith hacia ChatLiz (https://chatliz-online-chatliz.hf.space/) y Chat Li (Axis)! Todos los chats sincronizados sin errores.",
         system: true,
       });
 
       setIsSuccess(true);
       if (onToast) {
-        onToast("✅ ¡Aspecto y actualizaciones transferidos a Axis (Chat Principal Li)!");
+        onToast("✅ ¡Aspecto y diseño transportados a ChatLiz (Hugging Face) y Axis!");
       }
     } catch (err: any) {
-      console.error("Error syncing to Axis:", err);
+      console.error("Error transporting appearance:", err);
       if (onToast) {
-        onToast("⚠️ Hubo un error al transferir, reintentando...");
+        onToast("⚠️ Error al sincronizar, verifique su conexión.");
       }
     } finally {
       setIsSending(false);
     }
   };
 
+  const handleDeployWithToken = async () => {
+    const trimmed = hfToken.trim();
+    if (!trimmed) {
+      if (onToast) onToast("⚠️ Ingresa tu Token de Hugging Face");
+      return;
+    }
+
+    try {
+      localStorage.setItem("hf_space_token", trimmed);
+    } catch {}
+
+    setIsDeployingToken(true);
+    setDeployResult(null);
+
+    try {
+      const res = await fetch("/api/deploy-to-huggingface", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: trimmed,
+          space: "chatliz-online/ChatLiz",
+        }),
+      });
+
+      const data = await res.json();
+      setDeployResult(data);
+
+      if (data.success) {
+        // También sincronizamos aspecto en caliente
+        handleSyncAppearance();
+        if (onToast) onToast("🎉 ¡Despliegue a Hugging Face iniciado con éxito!");
+      } else {
+        if (onToast) onToast(`❌ Error: ${data.error || "No se pudo desplegar"}`);
+      }
+    } catch (err: any) {
+      setDeployResult({
+        success: false,
+        error: "Error de red al conectar con el servicio de despliegue.",
+      });
+      if (onToast) onToast("❌ Error de conexión al servidor");
+    } finally {
+      setIsDeployingToken(false);
+    }
+  };
+
+  const handleDownloadConfigJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentGlobalConfig || {}, null, 2));
+    const downloadAnchor = document.createElement("a");
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", "chatliz-appearance-config.json");
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    if (onToast) onToast("💾 Configuración JSON descargada");
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCmd(id);
+    setTimeout(() => setCopiedCmd(null), 2500);
+    if (onToast) onToast("📋 Copiado al portapapeles");
+  };
+
   return (
     <div
-      className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+      className="fixed inset-0 z-[150] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-[#101422] border border-amber-500/40 rounded-3xl max-w-lg w-full shadow-[0_25px_60px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden relative"
+        className="bg-[#0e121e] border border-cyan-500/40 rounded-3xl max-w-xl w-full shadow-[0_25px_70px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-amber-950/40 via-[#182033] to-[#101422]">
+        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-cyan-950/50 via-[#141b2d] to-[#0e121e]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
-              <Sparkles size={20} className="animate-spin" style={{ animationDuration: '8s' }} />
+            <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+              <Share2 size={20} className="animate-pulse" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                Sector de Actualizaciones
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30 uppercase tracking-wider font-bold">
-                  ➔ Chat Li (Axis)
+              <h2 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
+                Transportador a Hugging Face
+                <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-500/30 uppercase tracking-wider font-bold">
+                  Con Token
                 </span>
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                Transferir aspecto visual y mejoras probadas al chat original
+                Transportar aspecto, diseño y funcionalidad desde Zenith hacia ChatLiz
               </p>
             </div>
           </div>
@@ -155,120 +250,380 @@ export function SyncToAxisModal({
           </button>
         </div>
 
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-white/10 bg-[#0a0d15] px-4 pt-2 gap-2 overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setActiveTab('token_hf')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-t-xl text-xs font-bold transition-all border-b-2 whitespace-nowrap ${
+              activeTab === 'token_hf'
+                ? 'border-emerald-400 text-emerald-300 bg-white/5'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Key size={15} />
+            <span>Despliegue por Token (1 Clic)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('appearance')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-t-xl text-xs font-bold transition-all border-b-2 whitespace-nowrap ${
+              activeTab === 'appearance'
+                ? 'border-cyan-400 text-cyan-300 bg-white/5'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Palette size={15} />
+            <span>Aspecto y Diseño en Vivo</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('code_hf')}
+            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-t-xl text-xs font-bold transition-all border-b-2 whitespace-nowrap ${
+              activeTab === 'code_hf'
+                ? 'border-amber-400 text-amber-300 bg-white/5'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <FileCode2 size={15} />
+            <span>Manual (.zip / Git)</span>
+          </button>
+        </div>
+
         {/* Content Body */}
-        <div className="p-4 sm:p-5 space-y-4 max-h-[70vh] overflow-y-auto scrollbar-thin">
-          {/* Status Banner */}
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-3 flex items-start gap-3">
-            <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="text-xs font-bold text-emerald-300">
-                Entorno de Pruebas: 0 Errores Detectados
-              </h4>
-              <p className="text-[11px] text-emerald-200/70 mt-0.5">
-                Todas las nuevas funciones están validadas y listas para sincronizarse con tu chat principal original <strong>Li</strong> administrado por <strong>Axis</strong>.
-              </p>
+        <div className="p-4 sm:p-5 space-y-4 max-h-[70vh] overflow-y-auto scrollbar-thin text-xs">
+          {/* Route details banner */}
+          <div className="bg-black/50 border border-white/10 rounded-2xl p-3 space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]">
+              <span className="text-gray-400 font-medium">Origen actual:</span>
+              <span className="text-cyan-300 font-mono font-bold bg-cyan-950/40 px-2 py-0.5 rounded-lg border border-cyan-800/40">
+                https://chat-zenith.onrender.com/
+              </span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]">
+              <span className="text-gray-400 font-medium">Destino Hugging Face:</span>
+              <a
+                href="https://chatliz-online-chatliz.hf.space/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-300 font-mono font-bold bg-amber-950/40 hover:bg-amber-950/70 px-2 py-0.5 rounded-lg border border-amber-800/40 flex items-center gap-1 transition-all"
+              >
+                https://chatliz-online-chatliz.hf.space/
+                <ExternalLink size={12} />
+              </a>
             </div>
           </div>
 
-          {/* Module Checklist */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider px-1">
-              Paquete de Actualizaciones a Transferir:
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
-                <Palette size={16} className="text-cyan-400 shrink-0" />
-                <div>
-                  <div className="font-bold text-white">Aspecto Visual</div>
-                  <div className="text-[10px] text-gray-400">Fondos, temas y colores</div>
+          {/* TAB 1: TOKEN DEPLOYMENT */}
+          {activeTab === 'token_hf' && (
+            <div className="space-y-4">
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-3.5 flex items-start gap-3">
+                <ShieldCheck size={22} className="text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-emerald-300 text-xs">
+                    ¡Sí, se puede hacer 100% automático mediante tu Token de Hugging Face!
+                  </h4>
+                  <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+                    Ingresa tu <strong>User Access Token</strong> de Hugging Face con permisos de <strong>Write</strong>. El servidor subirá el código nuevo (con el Limpiador de 20 mensajes, Radio HD, reproductor y diseño) directamente al repositorio de tu Space <code>chatliz-online/ChatLiz</code>.
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
-                <Radio size={16} className="text-pink-400 shrink-0" />
-                <div>
-                  <div className="font-bold text-white">Radio HD</div>
-                  <div className="text-[10px] text-gray-400">Sin interferencias ni alabanzas</div>
+              {/* Token Input Box */}
+              <div className="bg-black/60 border border-white/10 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-white text-xs flex items-center gap-2">
+                    <Key size={14} className="text-cyan-400" />
+                    Hugging Face Access Token (hf_...)
+                  </label>
+                  <a
+                    href="https://huggingface.co/settings/tokens"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-cyan-300 hover:text-cyan-200 underline flex items-center gap-1"
+                  >
+                    Obtener Token en Hugging Face
+                    <ExternalLink size={11} />
+                  </a>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="password"
+                    placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    value={hfToken}
+                    onChange={(e) => setHfToken(e.target.value)}
+                    className="w-full bg-[#070a12] border border-cyan-500/40 rounded-xl px-3.5 py-2.5 text-xs text-cyan-200 font-mono focus:outline-none focus:border-cyan-400 placeholder-gray-600"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-400">
+                  <span>Permiso requerido: <strong className="text-emerald-300">Write</strong> (Escritura)</span>
+                  <span>Repositorio: <code className="text-amber-300">chatliz-online/ChatLiz</code></span>
+                </div>
+
+                {/* Quick 3-Step help */}
+                <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5 space-y-1 text-[10px] text-gray-300">
+                  <div className="font-bold text-gray-200">¿Cómo generar tu token en 10 segundos?</div>
+                  <ol className="list-decimal list-inside space-y-0.5 text-gray-400">
+                    <li>Entra a <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="text-cyan-300 underline">huggingface.co/settings/tokens</a></li>
+                    <li>Haz clic en <strong>"Create new token"</strong></li>
+                    <li>Selecciona el tipo <strong>"Write"</strong>, ponle cualquier nombre y cópialo aquí.</li>
+                  </ol>
                 </div>
               </div>
 
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
-                <Download size={16} className="text-amber-400 shrink-0" />
+              {/* Deploy result feedback */}
+              {deployResult && (
+                <div
+                  className={`p-3.5 rounded-2xl border flex items-start gap-3 animate-in zoom-in-95 ${
+                    deployResult.success
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                      : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
+                  }`}
+                >
+                  {deployResult.success ? (
+                    <CheckCircle2 size={22} className="text-emerald-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle size={22} className="text-rose-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-1">
+                    <div className="font-bold text-white text-xs">
+                      {deployResult.success ? "¡Despliegue Iniciado con Éxito!" : "Error en el Despliegue"}
+                    </div>
+                    <div className="text-[11px] leading-relaxed">
+                      {deployResult.message || deployResult.error}
+                    </div>
+                    {deployResult.success && (
+                      <div className="pt-1.5 flex items-center gap-2">
+                        <a
+                          href="https://chatliz-online-chatliz.hf.space/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/30 hover:bg-emerald-500/40 text-emerald-200 font-bold border border-emerald-400/40 transition-all text-xs"
+                        >
+                          <ExternalLink size={13} />
+                          Abrir Space en Vivo
+                        </a>
+                        <a
+                          href="https://huggingface.co/spaces/chatliz-online/ChatLiz"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold border border-white/10 transition-all text-xs"
+                        >
+                          Ver Logs de Compilación
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Button */}
+              <button
+                onClick={handleDeployWithToken}
+                disabled={isDeployingToken || !hfToken.trim()}
+                className="w-full flex items-center justify-center gap-2 text-xs font-black text-black bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 py-3 rounded-2xl transition-all shadow-[0_0_25px_rgba(16,185,129,0.4)] disabled:opacity-50 active:scale-95"
+              >
+                {isDeployingToken ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    <span>Conectando y Subiendo Código a Hugging Face...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={15} />
+                    <span>🚀 Desplegar Todo a Hugging Face con este Token</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* TAB 2: LIVE APPEARANCE */}
+          {activeTab === 'appearance' && (
+            <div className="space-y-4">
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-3 flex items-start gap-3">
+                <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-white">Descarga MP3 Móvil</div>
-                  <div className="text-[10px] text-gray-400">Directa a descargas (sin YouTube)</div>
+                  <h4 className="font-bold text-emerald-300">
+                    Sincronización Inmediata en la Nube (Firestore & WebSockets)
+                  </h4>
+                  <p className="text-[11px] text-emerald-200/80 mt-0.5 leading-relaxed">
+                    Al presionar el botón, el fondo actual, paleta de colores, neón, efectos y personalización se envían al instante a <strong>chatliz-online-chatliz.hf.space</strong> y al <strong>Chat Li (Axis)</strong> sin requerir recargar la página.
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
-                <Cpu size={16} className="text-emerald-400 shrink-0" />
-                <div>
-                  <div className="font-bold text-white">Sincronización Total</div>
-                  <div className="text-[10px] text-gray-400">Firestore en tiempo real</div>
+              {/* Module Highlights */}
+              <div className="space-y-2">
+                <h3 className="font-bold text-gray-300 uppercase tracking-wider px-1 text-[11px]">
+                  Elementos que se transportan:
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <Palette size={16} className="text-cyan-400 shrink-0" />
+                    <div>
+                      <div className="font-bold text-white">Aspecto Visual Completo</div>
+                      <div className="text-[10px] text-gray-400">Fondo global, desenfoque y tema activo</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <Flame size={16} className="text-amber-400 shrink-0" />
+                    <div>
+                      <div className="font-bold text-white">Efectos Neón y Shaders</div>
+                      <div className="text-[10px] text-gray-400">Resplandores, brillos y tarjetas</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <Radio size={16} className="text-pink-400 shrink-0" />
+                    <div>
+                      <div className="font-bold text-white">Emisora y Radio HD</div>
+                      <div className="text-[10px] text-gray-400">Mismo reproductor y sintonizador</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <Cpu size={16} className="text-emerald-400 shrink-0" />
+                    <div>
+                      <div className="font-bold text-white">Reglas del Limpiador</div>
+                      <div className="text-[10px] text-gray-400">20 mensajes con último preservado</div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Sync Information */}
-          <div className="bg-black/40 border border-white/10 rounded-2xl p-3 text-xs text-gray-300 space-y-1.5">
-            <div className="flex justify-between items-center text-[11px]">
-              <span className="text-gray-400">Origen:</span>
-              <span className="text-white font-bold">Chat-Liz (Sector Actualizaciones)</span>
-            </div>
-            <div className="flex justify-between items-center text-[11px]">
-              <span className="text-gray-400">Destinatario / Admin:</span>
-              <span className="text-amber-300 font-bold">Axis (Tú mismo)</span>
-            </div>
-            <div className="flex justify-between items-center text-[11px]">
-              <span className="text-gray-400">Destino:</span>
-              <span className="text-cyan-300 font-bold">Chat Original "Li"</span>
-            </div>
-          </div>
+              {isSuccess && (
+                <div className="bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/40 rounded-2xl p-3.5 text-center animate-in zoom-in-95">
+                  <CheckCircle2 size={26} className="text-emerald-400 mx-auto mb-1" />
+                  <div className="text-sm font-bold text-white">¡Aspecto y Diseño Transportados con Éxito!</div>
+                  <div className="text-[11px] text-emerald-200 mt-1">
+                    La configuración visual ha sido inyectada en la base de datos común de Firestore y emitida a todos los clientes de <strong>https://chatliz-online-chatliz.hf.space/</strong> y <strong>Axis</strong>.
+                  </div>
+                </div>
+              )}
 
-          {isSuccess && (
-            <div className="bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 rounded-2xl p-3 text-center animate-in zoom-in-95">
-              <CheckCircle2 size={24} className="text-emerald-400 mx-auto mb-1" />
-              <div className="text-sm font-bold text-white">¡Sincronización Exitosa!</div>
-              <div className="text-xs text-emerald-200 mt-0.5">
-                La solicitud y el aspecto han sido enviados a Axis. El chat principal Li ahora comparte la misma apariencia.
+              {/* Direct JSON backup */}
+              <div className="flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-2xl p-3">
+                <div>
+                  <div className="font-bold text-white">Descargar Copia de Respaldo (.json)</div>
+                  <div className="text-[10px] text-gray-400">Guarda el archivo con la apariencia exacta para importar cuando quieras.</div>
+                </div>
+                <button
+                  onClick={handleDownloadConfigJSON}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold border border-white/10 flex items-center gap-1.5 transition-all active:scale-95 shrink-0"
+                >
+                  <Download size={14} />
+                  <span>Descargar</span>
+                </button>
+              </div>
+
+              <button
+                onClick={handleSyncAppearance}
+                disabled={isSending}
+                className="w-full flex items-center justify-center gap-2 text-xs font-black text-black bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 py-3 rounded-2xl transition-all shadow-[0_0_25px_rgba(6,182,212,0.4)] disabled:opacity-50 active:scale-95"
+              >
+                {isSending ? (
+                  <>
+                    <RefreshCw size={15} className="animate-spin" />
+                    <span>Transportando en Vivo...</span>
+                  </>
+                ) : isSuccess ? (
+                  <>
+                    <CheckCircle2 size={15} />
+                    <span>¡Aspecto Actualizado en Vivo!</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={15} />
+                    <span>Transportar Aspecto y Diseño en Vivo</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* TAB 3: MANUAL ZIP / GIT */}
+          {activeTab === 'code_hf' && (
+            <div className="space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 text-amber-200 leading-relaxed">
+                <h4 className="font-bold text-amber-300 text-xs mb-1 flex items-center gap-1.5">
+                  <Terminal size={15} />
+                  Comando Git con Token para Terminal
+                </h4>
+                <p className="text-[11px] text-amber-200/90">
+                  Si prefieres usar la consola en tu computadora con tu token de Hugging Face:
+                </p>
+              </div>
+
+              {/* Git with Token command */}
+              <div className="bg-black/40 border border-cyan-500/30 rounded-2xl p-3.5 space-y-2">
+                <div className="font-bold text-white flex items-center gap-2">
+                  <Terminal size={15} className="text-cyan-400" />
+                  Comando Git con Token Directo
+                </div>
+                <div className="bg-[#05070d] border border-white/15 rounded-xl p-2.5 font-mono text-[11px] text-cyan-300 flex items-center justify-between break-all">
+                  <code>git push -f https://oauth2:{hfToken || 'TU_TOKEN'}@huggingface.co/spaces/chatliz-online/ChatLiz main</code>
+                  <button
+                    onClick={() => copyToClipboard(`git push -f https://oauth2:${hfToken || 'TU_TOKEN'}@huggingface.co/spaces/chatliz-online/ChatLiz main`, "git_token_cmd")}
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all ml-2 shrink-0"
+                    title="Copiar comando"
+                  >
+                    {copiedCmd === "git_token_cmd" ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Method ZIP */}
+              <div className="bg-black/40 border border-white/10 rounded-2xl p-3.5 space-y-2.5">
+                <div className="font-bold text-white flex items-center gap-2">
+                  <Download size={15} className="text-amber-400" />
+                  Descargar Código Fuente Empaquetado (.zip)
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <a
+                    href="/api/download-hf-space-zip"
+                    download="chatliz-huggingface-ready.zip"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-black transition-all shadow-md active:scale-95"
+                  >
+                    <Download size={15} />
+                    <span>Descargar .zip para Hugging Face</span>
+                  </a>
+
+                  <a
+                    href="https://huggingface.co/spaces/chatliz-online/ChatLiz/tree/main"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold border border-white/10 transition-all text-xs"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Ver Archivos en Hugging Face</span>
+                  </a>
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer Actions */}
-        <div className="p-4 border-t border-white/10 bg-[#0c0f18] flex items-center justify-between gap-3">
+        {/* Footer */}
+        <div className="p-4 border-t border-white/10 bg-[#0a0d15] flex items-center justify-between">
           <button
             onClick={onClose}
             className="text-xs font-semibold text-gray-400 hover:text-white px-3 py-2 rounded-xl transition-colors"
           >
-            {isSuccess ? "Cerrar" : "Cancelar"}
+            Cerrar
           </button>
 
-          <button
-            onClick={handleSyncToAxis}
-            disabled={isSending}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs font-black text-black bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 px-5 py-2.5 rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.4)] disabled:opacity-50 active:scale-95"
+          <a
+            href="https://chatliz-online-chatliz.hf.space/"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 text-xs font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3.5 py-2 rounded-xl border border-cyan-500/30 transition-all"
           >
-            {isSending ? (
-              <>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Enviando a Axis...</span>
-              </>
-            ) : isSuccess ? (
-              <>
-                <CheckCircle2 size={14} />
-                <span>¡Actualizado con Éxito!</span>
-              </>
-            ) : (
-              <>
-                <Send size={14} />
-                <span>Aprobar y Pasar a Chat Li (Axis)</span>
-              </>
-            )}
-          </button>
+            <ExternalLink size={14} />
+            <span>Visitar ChatLiz Space</span>
+          </a>
         </div>
       </div>
     </div>
