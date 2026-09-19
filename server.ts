@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { spawn } from "child_process";
+import { deployToHuggingFaceSpace } from "./server/hfDeployService";
 // @ts-nocheck
 var __defProp = Object.defineProperty;
 var __name = (target, value) =>
@@ -217,7 +218,7 @@ const transporter = nodemailer.createTransport({
     return res.status(404).json({ error: "Zip file not found" });
   });
 
-  app.post("/api/deploy-to-huggingface", express.json(), (req, res) => {
+  app.post("/api/deploy-to-huggingface", express.json(), async (req, res) => {
     const { token, space } = req.body || {};
     if (!token || typeof token !== "string" || !token.trim()) {
       return res.status(400).json({ success: false, error: "El token de Hugging Face es requerido." });
@@ -225,34 +226,16 @@ const transporter = nodemailer.createTransport({
     const cleanToken = token.trim();
     const cleanSpace = (space && typeof space === "string" && space.trim()) ? space.trim() : "chatliz-online/ChatLiz";
 
-    const scriptPath = path.join(process.cwd(), "scripts", "deploy_to_hf.py");
-    const proc = spawn("python3", [scriptPath, cleanToken, cleanSpace]);
-
-    let stdoutData = "";
-    let stderrData = "";
-
-    proc.stdout.on("data", (data) => {
-      stdoutData += data.toString();
-    });
-    proc.stderr.on("data", (data) => {
-      stderrData += data.toString();
-    });
-
-    proc.on("close", (code) => {
-      try {
-        const parsed = JSON.parse(stdoutData.trim());
-        return res.json(parsed);
-      } catch (e) {
-        if (code === 0) {
-          return res.json({ success: true, message: stdoutData.trim() || "Desplegado con éxito." });
-        } else {
-          return res.status(500).json({
-            success: false,
-            error: stdoutData.trim() || stderrData.trim() || `Proceso falló con código ${code}`,
-          });
-        }
-      }
-    });
+    try {
+      const result = await deployToHuggingFaceSpace(cleanToken, cleanSpace);
+      return res.json(result);
+    } catch (deployErr: any) {
+      console.error("deployToHuggingFaceSpace Error:", deployErr);
+      return res.status(400).json({
+        success: false,
+        error: deployErr?.message || "Error al desplegar en Hugging Face"
+      });
+    }
   });
   const uploadsDir = path.join(process.cwd(), "static", "uploads");
   if (!fs.existsSync(uploadsDir)) {
@@ -1228,7 +1211,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       });
     });
 
-    socket.on("deploy_to_hf", (data, callback) => {
+    socket.on("deploy_to_hf", async (data, callback) => {
       const { token, space } = data || {};
       if (!token || typeof token !== "string" || !token.trim()) {
         if (typeof callback === "function") callback({ success: false, error: "El token de Hugging Face es requerido." });
@@ -1237,34 +1220,18 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       const cleanToken = token.trim();
       const cleanSpace = (space && typeof space === "string" && space.trim()) ? space.trim() : "chatliz-online/ChatLiz";
 
-      const scriptPath = path.join(process.cwd(), "scripts", "deploy_to_hf.py");
-      const proc = spawn("python3", [scriptPath, cleanToken, cleanSpace]);
-
-      let stdoutData = "";
-      let stderrData = "";
-
-      proc.stdout.on("data", (d) => {
-        stdoutData += d.toString();
-      });
-      proc.stderr.on("data", (d) => {
-        stderrData += d.toString();
-      });
-
-      proc.on("close", (code) => {
-        try {
-          const parsed = JSON.parse(stdoutData.trim());
-          if (typeof callback === "function") callback(parsed);
-        } catch (e) {
-          if (code === 0) {
-            if (typeof callback === "function") callback({ success: true, message: stdoutData.trim() || "Desplegado con éxito." });
-          } else {
-            if (typeof callback === "function") callback({
-              success: false,
-              error: stdoutData.trim() || stderrData.trim() || `Proceso falló con código ${code}`,
-            });
-          }
+      try {
+        const result = await deployToHuggingFaceSpace(cleanToken, cleanSpace);
+        if (typeof callback === "function") callback(result);
+      } catch (deployErr: any) {
+        console.error("Socket deployToHuggingFaceSpace Error:", deployErr);
+        if (typeof callback === "function") {
+          callback({
+            success: false,
+            error: deployErr?.message || "Error al desplegar en Hugging Face"
+          });
         }
-      });
+      }
     });
 
     socket.on("register_or_login", async (data, callback) => {
