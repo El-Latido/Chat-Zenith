@@ -165,37 +165,88 @@ export function SyncToAxisModal({
       return;
     }
 
+    if (!trimmed.startsWith("hf_")) {
+      if (onToast) onToast("⚠️ El token de Hugging Face debe comenzar con 'hf_'");
+      setDeployResult({
+        success: false,
+        error: "El token debe comenzar con 'hf_'. Por favor revísalo.",
+      });
+      return;
+    }
+
     setIsDeployingToken(true);
     setDeployResult(null);
 
-    try {
-      const res = await fetch("/api/deploy-to-huggingface", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: trimmed,
-          space: targetSpace.trim() || "chatliz-online/ChatLiz",
-        }),
-      });
+    const space = targetSpace.trim() || "chatliz-online/ChatLiz";
 
-      const data = await res.json();
+    const onResponseReceived = (data: any) => {
       setDeployResult(data);
-
-      if (data.success) {
-        // También sincronizamos aspecto en caliente
+      if (data && data.success) {
         handleSyncAppearance();
         if (onToast) onToast("🎉 ¡Despliegue a Hugging Face iniciado con éxito!");
       } else {
-        if (onToast) onToast(`❌ Error: ${data.error || "No se pudo desplegar"}`);
+        if (onToast) onToast(`❌ Error: ${data?.error || "No se pudo desplegar"}`);
       }
-    } catch (err: any) {
-      setDeployResult({
-        success: false,
-        error: "Error de red al conectar con el servicio de despliegue.",
+    };
+
+    // 1. Intentar primero a través de Socket.io (conexión WebSocket en vivo, inmune a caídas de proxy o CORS)
+    if (socket && socket.connected) {
+      let resolved = false;
+      const timeoutId = setTimeout(() => {
+        if (!resolved) {
+          fallbackHttp();
+        }
+      }, 45000);
+
+      socket.emit("deploy_to_hf", { token: trimmed, space }, (resData: any) => {
+        resolved = true;
+        clearTimeout(timeoutId);
+        setIsDeployingToken(false);
+        onResponseReceived(resData);
       });
-      if (onToast) onToast("❌ Error de conexión al servidor");
-    } finally {
-      setIsDeployingToken(false);
+      return;
+    }
+
+    // 2. Si el socket no está listo, usar HTTP POST como respaldo
+    fallbackHttp();
+
+    async function fallbackHttp() {
+      try {
+        const res = await fetch("/api/deploy-to-huggingface", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({
+            token: trimmed,
+            space,
+          }),
+        });
+
+        const text = await res.text();
+        let data: any;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = {
+            success: res.ok,
+            error: res.ok ? undefined : `Respuesta del servidor (${res.status}): ${text.slice(0, 150)}`,
+            message: res.ok ? text : undefined
+          };
+        }
+
+        onResponseReceived(data);
+      } catch (err: any) {
+        console.error("HTTP deploy error:", err);
+        setDeployResult({
+          success: false,
+          error: `Error al contactar con el servidor: ${err?.message || "Compruebe su conexión"}`,
+        });
+        if (onToast) onToast("❌ Error de conexión al servidor");
+      } finally {
+        setIsDeployingToken(false);
+      }
     }
   };
 
@@ -434,7 +485,7 @@ export function SyncToAxisModal({
                 <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5 space-y-1 text-[10px] text-gray-300">
                   <div className="font-bold text-gray-200">¿Cómo funciona el pase de actualizaciones?</div>
                   <ol className="list-decimal list-inside space-y-0.5 text-gray-400">
-                    <li>Coloca tu token de Hugging Face de tipo <strong>Write</strong> (ya viene precargado el tuyo listo).</li>
+                    <li>Coloca o pega manualmente tu token de Hugging Face de tipo <strong>Write</strong>.</li>
                     <li>Haz clic en <strong>"Desplegar Todo a Hugging Face"</strong>.</li>
                     <li>El servidor sube automáticamente el código, diseño y limpiador a tu espacio <a href="https://chatliz-online-chatliz.hf.space/" target="_blank" rel="noreferrer" className="text-cyan-300 underline">chatliz-online-chatliz.hf.space</a>.</li>
                   </ol>

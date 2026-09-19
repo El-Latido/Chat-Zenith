@@ -6,6 +6,7 @@ import subprocess
 import json
 import urllib.request
 import urllib.error
+import tempfile
 
 def main():
     if len(sys.argv) < 2:
@@ -43,11 +44,8 @@ def main():
         print(json.dumps({"success": False, "error": f"Error al contactar con Hugging Face: {str(e)}"}))
         sys.exit(1)
 
-    # 2. Preparar carpeta temporal
-    work_dir = "/tmp/hf_space_sync"
-    if os.path.exists(work_dir):
-        shutil.rmtree(work_dir, ignore_errors=True)
-    os.makedirs(work_dir, exist_ok=True)
+    # 2. Preparar carpeta temporal aislada
+    work_dir = tempfile.mkdtemp(prefix="hf_space_sync_")
 
     remote_url = f"https://{hf_user}:{token}@huggingface.co/spaces/{space_name}"
 

@@ -185,6 +185,15 @@ const transporter = nodemailer.createTransport({
     cors: { origin: "*" },
     maxHttpBufferSize: 5e7,
   });
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
   app.use((err, req, res, next) => {
@@ -1216,6 +1225,45 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         queue: songQueue,
         current: currentRequestedSong,
         history: songHistory
+      });
+    });
+
+    socket.on("deploy_to_hf", (data, callback) => {
+      const { token, space } = data || {};
+      if (!token || typeof token !== "string" || !token.trim()) {
+        if (typeof callback === "function") callback({ success: false, error: "El token de Hugging Face es requerido." });
+        return;
+      }
+      const cleanToken = token.trim();
+      const cleanSpace = (space && typeof space === "string" && space.trim()) ? space.trim() : "chatliz-online/ChatLiz";
+
+      const scriptPath = path.join(process.cwd(), "scripts", "deploy_to_hf.py");
+      const proc = spawn("python3", [scriptPath, cleanToken, cleanSpace]);
+
+      let stdoutData = "";
+      let stderrData = "";
+
+      proc.stdout.on("data", (d) => {
+        stdoutData += d.toString();
+      });
+      proc.stderr.on("data", (d) => {
+        stderrData += d.toString();
+      });
+
+      proc.on("close", (code) => {
+        try {
+          const parsed = JSON.parse(stdoutData.trim());
+          if (typeof callback === "function") callback(parsed);
+        } catch (e) {
+          if (code === 0) {
+            if (typeof callback === "function") callback({ success: true, message: stdoutData.trim() || "Desplegado con éxito." });
+          } else {
+            if (typeof callback === "function") callback({
+              success: false,
+              error: stdoutData.trim() || stderrData.trim() || `Proceso falló con código ${code}`,
+            });
+          }
+        }
       });
     });
 
