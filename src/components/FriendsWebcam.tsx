@@ -1,13 +1,36 @@
 import React, { useEffect, useRef, useState } from "react";
 import { socket } from "../socket";
-import { Webcam, Video, VideoOff, Mic, MicOff, PhoneOff, User, RefreshCw } from "lucide-react";
+import { Webcam, Video, VideoOff, Mic, MicOff, PhoneOff, User, RefreshCw, ShieldAlert } from "lucide-react";
 
-export function FriendsWebcam({ user, onClose }: { user: any, onClose: () => void }) {
+export function FriendsWebcam({ user, onClose }: { user: any; onClose: () => void }) {
+    const isMasterAdmin = user?.username === "AXISS" || user?.username === "Axiss";
+
+    // Strict access control: only AXISS and Axiss
+    if (!isMasterAdmin) {
+        return (
+            <div className="fixed inset-0 bg-[#0B0D17] z-[170] flex flex-col items-center justify-center p-6 text-center">
+                <div className="w-16 h-16 rounded-3xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 mb-4 shadow-[0_0_25px_rgba(239,68,68,0.4)]">
+                    <ShieldAlert size={32} />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Acceso Exclusivo de Administrador</h3>
+                <p className="text-sm text-gray-400 max-w-md mb-6">
+                    La sección de Friends Webcam (Cámara de amigos en directo) está reservada exclusivamente para la administración principal (AXISS y Axiss).
+                </p>
+                <button
+                    onClick={onClose}
+                    className="px-6 py-2.5 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-sm transition-all"
+                >
+                    Volver al Chat
+                </button>
+            </div>
+        );
+    }
+
     const [state, setState] = useState<'idle' | 'searching' | 'matched'>('idle');
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [partnerDisconnected, setPartnerDisconnected] = useState(false);
-    const [webcamName, setWebcamName] = useState(user.username);
+    const [webcamName] = useState(user.username);
     const [partnerName, setPartnerName] = useState("");
 
     const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -15,16 +38,28 @@ export function FriendsWebcam({ user, onClose }: { user: any, onClose: () => voi
     const localStream = useRef<MediaStream | null>(null);
     const peerConnection = useRef<RTCPeerConnection | null>(null);
     const partnerSocketId = useRef<string | null>(null);
+    const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
 
     useEffect(() => {
         const initLocalStream = async () => {
             try {
-                localStream.current = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStream.current = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30, max: 30 }
+                    },
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
                 if (localVideoRef.current) {
                     localVideoRef.current.srcObject = localStream.current;
                 }
             } catch (e) {
-                console.error("Error accessing media devices.", e);
+                console.error("Error accessing media devices:", e);
                 alert("No se pudo acceder a tu cámara o micrófono.");
             }
         };
@@ -38,89 +73,157 @@ export function FriendsWebcam({ user, onClose }: { user: any, onClose: () => voi
     const cleanup = () => {
         localStream.current?.getTracks().forEach(t => t.stop());
         peerConnection.current?.close();
+        peerConnection.current = null;
+        pendingCandidates.current = [];
         socket.emit("leave_webcam_queue");
     };
 
     const nextPartner = () => {
         if (peerConnection.current) {
             peerConnection.current.close();
+            peerConnection.current = null;
         }
+        pendingCandidates.current = [];
         setPartnerDisconnected(false);
         setState('searching');
         socket.emit("join_webcam_queue", { name: webcamName });
     };
 
+    const drainCandidates = async (pc: RTCPeerConnection) => {
+        while (pendingCandidates.current.length > 0) {
+            const cand = pendingCandidates.current.shift();
+            if (cand) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (err) {
+                    console.warn("Failed to add buffered candidate:", err);
+                }
+            }
+        }
+    };
+
     useEffect(() => {
-        socket.on("webcam_matched", async ({ initiator, partnerSocket, partnerName }) => {
+        const handleMatched = async ({ initiator, partnerSocket, partnerName }: any) => {
             setPartnerName(partnerName);
             setState('matched');
             partnerSocketId.current = partnerSocket;
             setPartnerDisconnected(false);
+            pendingCandidates.current = [];
 
-            const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-            peerConnection.current = new RTCPeerConnection(config);
+            const config: RTCConfiguration = {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' }
+                ]
+            };
 
-            localStream.current?.getTracks().forEach(track => {
-                peerConnection.current?.addTrack(track, localStream.current!);
-            });
+            if (peerConnection.current) {
+                peerConnection.current.close();
+            }
 
-            peerConnection.current.ontrack = (event) => {
-                if (remoteVideoRef.current) {
+            const pc = new RTCPeerConnection(config);
+            peerConnection.current = pc;
+
+            if (localStream.current) {
+                localStream.current.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream.current!);
+                });
+            }
+
+            pc.ontrack = (event) => {
+                if (remoteVideoRef.current && event.streams[0]) {
                     remoteVideoRef.current.srcObject = event.streams[0];
+                    remoteVideoRef.current.play().catch(e => console.warn("Remote playback play() notice:", e));
                 }
             };
 
-            peerConnection.current.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit("webcam_signal", { to: partnerSocketId.current, signal: { type: 'candidate', candidate: event.candidate } });
+            pc.onicecandidate = (event) => {
+                if (event.candidate && partnerSocketId.current) {
+                    socket.emit("webcam_signal", {
+                        to: partnerSocketId.current,
+                        signal: { type: 'candidate', candidate: event.candidate }
+                    });
                 }
             };
 
             if (initiator) {
-                const offer = await peerConnection.current.createOffer();
-                await peerConnection.current.setLocalDescription(offer);
-                socket.emit("webcam_signal", { to: partnerSocketId.current, signal: { type: 'offer', offer } });
+                try {
+                    const offer = await pc.createOffer({
+                        offerToReceiveAudio: true,
+                        offerToReceiveVideo: true
+                    });
+                    await pc.setLocalDescription(offer);
+                    socket.emit("webcam_signal", {
+                        to: partnerSocketId.current,
+                        signal: { type: 'offer', offer }
+                    });
+                } catch (err) {
+                    console.error("Error creating WebRTC offer:", err);
+                }
             }
-        });
+        };
 
-        socket.on("webcam_signal", async (data) => {
+        const handleSignal = async (data: any) => {
             const { signal, from } = data;
             if (from !== partnerSocketId.current) return;
-            if (!peerConnection.current) return;
+            const pc = peerConnection.current;
+            if (!pc) return;
 
-            if (signal.type === 'offer') {
-                await peerConnection.current.setRemoteDescription(new RTCSessionDescription(signal.offer));
-                const answer = await peerConnection.current.createAnswer();
-                await peerConnection.current.setLocalDescription(answer);
-                socket.emit("webcam_signal", { to: partnerSocketId.current, signal: { type: 'answer', answer } });
-            } else if (signal.type === 'answer') {
-                await peerConnection.current.setRemoteDescription(new RTCSessionDescription(signal.answer));
-            } else if (signal.type === 'candidate') {
-                await peerConnection.current.addIceCandidate(new RTCIceCandidate(signal.candidate));
+            try {
+                if (signal.type === 'offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(signal.offer));
+                    await drainCandidates(pc);
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit("webcam_signal", {
+                        to: partnerSocketId.current,
+                        signal: { type: 'answer', answer }
+                    });
+                } else if (signal.type === 'answer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(signal.answer));
+                    await drainCandidates(pc);
+                } else if (signal.type === 'candidate') {
+                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                    } else {
+                        pendingCandidates.current.push(signal.candidate);
+                    }
+                }
+            } catch (err) {
+                console.error("WebRTC signal handling error:", err);
             }
-        });
+        };
 
-        socket.on("webcam_peer_disconnected", () => {
+        const handlePeerDisconnected = () => {
             setPartnerDisconnected(true);
-        });
+            if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = null;
+            }
+        };
+
+        socket.on("webcam_matched", handleMatched);
+        socket.on("webcam_signal", handleSignal);
+        socket.on("webcam_peer_disconnected", handlePeerDisconnected);
 
         return () => {
-            socket.off("webcam_matched");
-            socket.off("webcam_signal");
-            socket.off("webcam_peer_disconnected");
+            socket.off("webcam_matched", handleMatched);
+            socket.off("webcam_signal", handleSignal);
+            socket.off("webcam_peer_disconnected", handlePeerDisconnected);
         };
     }, []);
 
     const toggleMute = () => {
         if (localStream.current) {
-            localStream.current.getAudioTracks().forEach(t => t.enabled = !t.enabled);
+            localStream.current.getAudioTracks().forEach(t => (t.enabled = !t.enabled));
             setIsMuted(!isMuted);
         }
     };
 
     const toggleVideo = () => {
         if (localStream.current) {
-            localStream.current.getVideoTracks().forEach(t => t.enabled = !t.enabled);
+            localStream.current.getVideoTracks().forEach(t => (t.enabled = !t.enabled));
             setIsVideoOff(!isVideoOff);
         }
     };
@@ -128,112 +231,131 @@ export function FriendsWebcam({ user, onClose }: { user: any, onClose: () => voi
     return (
         <div className="absolute inset-0 bg-[#0B0D17] flex flex-col items-center justify-center p-4 z-50 overflow-hidden">
             {/* Header */}
-            <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-20">
+            <div className="absolute top-0 left-0 w-full p-4 sm:p-6 flex justify-between items-center z-20">
                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-purple-500/20 rounded-2xl flex items-center justify-center border border-purple-500/30">
+                    <div className="w-10 sm:w-12 h-10 sm:h-12 bg-purple-500/20 rounded-2xl flex items-center justify-center border border-purple-500/30">
                         <Webcam className="text-purple-400" size={24} />
                     </div>
                     <div>
-                        <h2 className="text-white font-bold text-xl uppercase tracking-wider">Friends Webcam</h2>
-                        <p className="text-purple-400 text-sm font-mono tracking-widest">Random Chat</p>
+                        <h2 className="text-white font-bold text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2">
+                            Friends Webcam
+                            <span className="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded-full border border-red-500/30 font-mono">
+                                Admin Only
+                            </span>
+                        </h2>
+                        <p className="text-purple-400 text-xs sm:text-sm font-mono tracking-widest">Random Chat En Directo</p>
                     </div>
                 </div>
-                <button onClick={onClose} className="px-6 py-2 rounded-full bg-white/5 hover:bg-white/10 text-white font-bold transition-colors">
+                <button
+                    onClick={onClose}
+                    className="px-5 sm:px-6 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-colors"
+                >
                     Salir
                 </button>
             </div>
 
             {/* Video Area */}
-            <div className="relative w-full max-w-5xl aspect-video rounded-[2rem] overflow-hidden bg-black shadow-2xl border border-white/5 mt-16">
+            <div className="relative w-full max-w-5xl aspect-video rounded-3xl sm:rounded-[2rem] overflow-hidden bg-black shadow-2xl border border-white/10 mt-14">
                 {/* Remote Video */}
-                <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
+                <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover"
+                />
                 {state === 'matched' && !partnerDisconnected && partnerName && (
-                    <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 z-10">
-                        <p className="text-white font-bold">{partnerName}</p>
+                    <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10 flex items-center gap-2 z-10">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                        <span className="text-xs font-bold text-white tracking-wide">{partnerName}</span>
                     </div>
                 )}
-                
-                {/* Overlays */}
+
+                {/* Empty State */}
                 {state === 'idle' && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-                        <Webcam size={64} className="text-purple-500/50 mb-6" />
-                        <h3 className="text-white text-2xl font-light mb-4">Conoce gente nueva al instante</h3>
-                        <div className="flex flex-col items-center mb-8">
-                            <label className="text-purple-300 text-sm mb-2 font-mono">TU NOMBRE EN WEBCAM (Anónimo)</label>
-                            <input 
-                                type="text" 
-                                value={webcamName} 
-                                onChange={(e) => setWebcamName(e.target.value)} 
-                                className="bg-black/50 border border-purple-500/50 text-white text-center px-4 py-2 rounded-xl focus:outline-none focus:border-purple-400"
-                                maxLength={20}
-                            />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#07090F] p-6 text-center z-10">
+                        <div className="w-20 h-20 bg-purple-500/10 border border-purple-500/20 rounded-3xl flex items-center justify-center text-purple-400 mb-4 animate-bounce">
+                            <Webcam size={40} />
                         </div>
-                        <button 
+                        <h3 className="text-xl sm:text-2xl font-black text-white mb-2">Conéctate en Vivo</h3>
+                        <p className="text-xs sm:text-sm text-gray-400 max-w-sm mb-6">
+                            Transmisión directa de audio y video en tiempo real.
+                        </p>
+                        <button
                             onClick={nextPartner}
-                            className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-4 rounded-full font-bold text-lg shadow-[0_0_30px_rgba(168,85,247,0.4)] hover:shadow-[0_0_50px_rgba(168,85,247,0.6)] transition-all hover:scale-105"
+                            className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white font-bold text-sm shadow-[0_0_25px_rgba(168,85,247,0.4)] transition-all active:scale-95"
                         >
-                            ¡Empezar ahora!
+                            Comenzar Búsqueda
                         </button>
                     </div>
                 )}
-                
+
+                {/* Searching State */}
                 {state === 'searching' && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
-                        <div className="w-24 h-24 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                        <p className="text-purple-300 font-mono text-xl tracking-widest animate-pulse">Buscando amigo...</p>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#07090F] p-6 text-center z-10">
+                        <RefreshCw size={44} className="text-purple-400 animate-spin mb-4" />
+                        <h3 className="text-xl font-bold text-white mb-1">Emparejando...</h3>
+                        <p className="text-xs text-gray-400">Buscando usuario disponible en directo sin demoras</p>
                     </div>
                 )}
 
-                {state === 'matched' && partnerDisconnected && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-                        <User size={64} className="text-gray-500 mb-6" />
-                        <h3 className="text-white text-2xl font-light mb-8">Tu amigo se ha desconectado</h3>
-                        <button 
+                {/* Partner Disconnected State */}
+                {partnerDisconnected && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md p-6 text-center z-10">
+                        <PhoneOff size={40} className="text-rose-400 mb-3" />
+                        <h3 className="text-lg font-bold text-white mb-2">El usuario se ha desconectado</h3>
+                        <button
                             onClick={nextPartner}
-                            className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-4 rounded-full font-bold text-lg shadow-[0_0_30px_rgba(168,85,247,0.4)] transition-all hover:scale-105"
+                            className="px-6 py-2.5 rounded-2xl bg-purple-500 hover:bg-purple-400 text-white font-bold text-xs transition-all shadow-lg"
                         >
-                            Buscar a otro
+                            Buscar Siguiente
                         </button>
                     </div>
                 )}
 
-                {/* Local Video */}
-                <div className="absolute bottom-6 right-6 w-48 aspect-[3/4] bg-gray-900 rounded-3xl overflow-hidden border-2 border-white/20 shadow-2xl">
-                    <video ref={localVideoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+                {/* Local Video Picture-in-Picture */}
+                <div className="absolute bottom-4 right-4 w-28 sm:w-44 aspect-video rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-gray-900 z-10">
+                    <video
+                        ref={localVideoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover scale-x-[-1]"
+                    />
+                    <div className="absolute bottom-1 left-2 text-[9px] font-bold text-white/80 bg-black/60 px-1.5 py-0.5 rounded">
+                        Tú ({webcamName})
+                    </div>
                 </div>
             </div>
 
-            {/* Controls bottom */}
-            {state === 'matched' && (
-                <div className="flex items-center gap-6 mt-8">
-                    <button 
-                        onClick={nextPartner}
-                        className="bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white border border-purple-500/30 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold transition-all"
-                    >
-                        <RefreshCw size={20} />
-                        Siguiente
-                    </button>
-                    <button 
+            {/* Controls */}
+            {state === 'matched' && !partnerDisconnected && (
+                <div className="flex items-center gap-3 sm:gap-4 mt-6 z-20">
+                    <button
                         onClick={toggleMute}
-                        className={`p-4 rounded-2xl transition-all \${isMuted ? 'bg-red-500/20 text-red-400' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                        className={`p-3.5 sm:p-4 rounded-2xl transition-all ${
+                            isMuted ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20'
+                        }`}
+                        title={isMuted ? 'Activar Micrófono' : 'Silenciar Micrófono'}
                     >
-                        {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+                        {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
                     </button>
-                    <button 
+
+                    <button
                         onClick={toggleVideo}
-                        className={`p-4 rounded-2xl transition-all \${isVideoOff ? 'bg-red-500/20 text-red-400' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                        className={`p-3.5 sm:p-4 rounded-2xl transition-all ${
+                            isVideoOff ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20'
+                        }`}
+                        title={isVideoOff ? 'Activar Cámara' : 'Apagar Cámara'}
                     >
-                        {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
+                        {isVideoOff ? <VideoOff size={20} /> : <Video size={20} />}
                     </button>
-                    <button 
-                        onClick={() => {
-                            if(peerConnection.current) peerConnection.current.close();
-                            socket.emit("webcam_disconnect", { to: partnerSocketId.current });
-                            setState('idle');
-                        }}
-                        className="p-4 rounded-2xl bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all"
+
+                    <button
+                        onClick={nextPartner}
+                        className="flex items-center gap-2 px-6 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white font-bold text-sm shadow-[0_0_20px_rgba(168,85,247,0.4)] transition-all active:scale-95"
                     >
-                        <PhoneOff size={24} />
+                        <RefreshCw size={18} />
+                        <span>Siguiente</span>
                     </button>
                 </div>
             )}

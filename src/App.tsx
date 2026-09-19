@@ -56,7 +56,12 @@ import { SongRequestModal } from "./components/SongRequestModal";
 import { DjControlPanelModal } from "./components/DjControlPanelModal";
 import { AiSelectorModal } from "./components/AiSelectorModal";
 import { RoomCleanerModal } from "./components/RoomCleanerModal";
- import { SocialFeed } from "./components/social/SocialFeed";
+import { SocialFeed } from "./components/social/SocialFeed";
+import { VoiceRecorderPreview } from "./components/VoiceRecorderPreview";
+import { NotificationBellModal, NotificationItem } from "./components/NotificationBellModal";
+import { FriendsModal, FriendRequest, FriendUser } from "./components/FriendsModal";
+import { MailboxModal, MailboxItem } from "./components/MailboxModal";
+import { AdminPanelModal } from "./components/AdminPanelModal";
 
 const DECORATIONS = [
   // Ajedrez (Themes & Efectos)
@@ -434,6 +439,101 @@ function MainApp() {
   const [chatBgImage, setChatBgImage] = useState(() => localStorage.getItem("chatliz_chat_bg") || "");
   const [activeTheme, setActiveTheme] = useState<string>(() => localStorage.getItem("chatliz_theme") || "default");
 
+  // New Modals
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [isNotificationBellOpen, setIsNotificationBellOpen] = useState(false);
+  const [isFriendsModalOpen, setIsFriendsModalOpen] = useState(false);
+  const [isMailboxModalOpen, setIsMailboxModalOpen] = useState(false);
+
+  // Audio Recording & Voice Emulator
+  const [showVoiceRecorderPreview, setShowVoiceRecorderPreview] = useState(false);
+  const [recordedAudioBlob, setRecordedAudioBlob] = useState<Blob | null>(null);
+
+  // Notifications, Friends & Mailbox Collections
+  const [bellNotifications, setBellNotifications] = useState<NotificationItem[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("chatliz_bell_notifications") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [myFriends, setMyFriends] = useState<FriendUser[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("chatliz_my_friends") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [pendingFriendRequests, setPendingFriendRequests] = useState<FriendRequest[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("chatliz_pending_friend_reqs") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [mailboxItems, setMailboxItems] = useState<MailboxItem[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("chatliz_mailbox_items") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  // Delegated Admins & Bans
+  const [delegatedAdmins, setDelegatedAdmins] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("chatliz_delegated_admins") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [bannedAdminsOrUsers, setBannedAdminsOrUsers] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("chatliz_banned_admins") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  const isMasterAdmin = user?.username === "AXISS" || user?.username === "Axiss";
+  const isUserAdmin = isMasterAdmin || delegatedAdmins.includes(user?.username) || user?.role === "admin";
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("chatliz_bell_notifications", JSON.stringify(bellNotifications));
+    } catch {}
+  }, [bellNotifications]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("chatliz_my_friends", JSON.stringify(myFriends));
+    } catch {}
+  }, [myFriends]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("chatliz_pending_friend_reqs", JSON.stringify(pendingFriendRequests));
+    } catch {}
+  }, [pendingFriendRequests]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("chatliz_mailbox_items", JSON.stringify(mailboxItems));
+    } catch {}
+  }, [mailboxItems]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("chatliz_delegated_admins", JSON.stringify(delegatedAdmins));
+    } catch {}
+  }, [delegatedAdmins]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("chatliz_banned_admins", JSON.stringify(bannedAdminsOrUsers));
+    } catch {}
+  }, [bannedAdminsOrUsers]);
+
   useEffect(() => {
     const handleThemeChange = (e: any) => {
       if (e.detail) setActiveTheme(e.detail);
@@ -621,11 +721,9 @@ function MainApp() {
   const activeChatConfig = activeChat === "global" ? globalChatConfig : chatConfig;
   const activeCustomBg = activeChatConfig?.backgroundBase64 || activeChatConfig?.backgroundUrl;
 
-  let chatBg = activeChat === "global"
-    ? (activeCustomBg || user?.preferred_background || chatBgImage)
-    : activeChat.startsWith("room_")
-      ? (user?.preferred_background || chatBgImage)
-      : (activeCustomBg || user?.preferred_background || chatBgImage);
+  // User personal background isolation: your background only changes for YOU
+  const personalBg = user?.preferred_background || localStorage.getItem("chatliz_personal_bg");
+  let chatBg = personalBg || activeCustomBg || chatBgImage;
 
   // Recovery States
   const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
@@ -1341,6 +1439,22 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             read: false,
             timestamp: Date.now()
         }, ...prev]);
+        setBellNotifications(prev => [{
+          id: Date.now().toString(),
+          type: 'private_msg',
+          sender: fromUser,
+          text: msg.text || "Mensaje privado recibido",
+          timestamp: Date.now(),
+          read: false
+        }, ...prev]);
+        setMailboxItems(prev => [{
+          id: Date.now().toString(),
+          type: 'private_chat',
+          sender: fromUser,
+          text: msg.text || "Mensaje privado recibido",
+          timestamp: Date.now(),
+          read: false
+        }, ...prev]);
         setToasts((prev) => [
           ...prev,
           {
@@ -1360,6 +1474,94 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           100,
         );
       }
+    });
+
+    socket.on("message", (msg: any) => {
+      if (msg && msg.sender && msg.sender !== user.username) {
+        const myName = (user.username || "").toLowerCase();
+        const txt = (msg.text || "").toLowerCase();
+        if (myName && (txt.includes(`@${myName}`) || txt.includes(myName))) {
+          setMailboxItems(prev => [{
+            id: `${Date.now()}_${msg.sender}`,
+            type: 'mention',
+            sender: msg.sender,
+            senderPic: msg.senderPic,
+            room: activeChatRef.current || 'global',
+            roomTitle: activeChatRef.current === 'global' ? 'Sala Global' : activeChatRef.current,
+            text: msg.text || '',
+            timestamp: Date.now(),
+            read: false
+          }, ...prev]);
+          setToasts(prev => [...prev, {
+            id: Date.now(),
+            type: "Mención",
+            sender: msg.sender,
+            text: `${msg.sender} te mencionó en el chat.`
+          }]);
+        }
+      }
+    });
+
+    socket.on("friend_request_received", (req: FriendRequest) => {
+      setPendingFriendRequests(prev => {
+        if (prev.some(r => r.id === req.id || r.from === req.from)) return prev;
+        return [req, ...prev];
+      });
+      setToasts(prev => [...prev, {
+        id: Date.now(),
+        type: "Amigo",
+        sender: req.from,
+        text: `${req.from} te envió una solicitud de amistad.`
+      }]);
+    });
+
+    socket.on("friend_request_status", (data: { from: string; status: 'accepted' | 'rejected' }) => {
+      if (data.status === 'accepted') {
+        setMyFriends(prev => {
+          if (prev.some(f => f.username === data.from)) return prev;
+          return [{ username: data.from, addedAt: Date.now() }, ...prev];
+        });
+        setBellNotifications(prev => [{
+          id: Date.now().toString(),
+          type: 'friend_accepted',
+          sender: data.from,
+          text: 'Solicitud de amistad aceptada',
+          timestamp: Date.now(),
+          read: false
+        }, ...prev]);
+        setToasts(prev => [...prev, {
+          id: Date.now(),
+          type: "Amigo",
+          sender: data.from,
+          text: `¡${data.from} aceptó tu solicitud de amistad!`
+        }]);
+      } else {
+        setBellNotifications(prev => [{
+          id: Date.now().toString(),
+          type: 'friend_rejected',
+          sender: data.from,
+          text: 'Solicitud de amistad rechazada',
+          timestamp: Date.now(),
+          read: false
+        }, ...prev]);
+      }
+    });
+
+    socket.on("user_like_received", (data: { from: string; fromPic?: string; type?: 'like' | 'heart' }) => {
+      setBellNotifications(prev => [{
+        id: `${Date.now()}_${data.from}`,
+        type: data.type || 'heart',
+        sender: data.from,
+        senderPic: data.fromPic,
+        timestamp: Date.now(),
+        read: false
+      }, ...prev]);
+      setToasts(prev => [...prev, {
+        id: Date.now(),
+        type: "Like",
+        sender: data.from,
+        text: data.type === 'heart' ? `${data.from} te envió un ❤️` : `${data.from} le dio like a tu perfil.`
+      }]);
     });
 
     socket.emit("get_hall_of_fame", (data: any[]) => {
@@ -1424,6 +1626,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     });
 
     socket.on("system_message", (data) => {
+        // System updates are strictly ONLY visible to master administrators AXISS and Axiss
+        const isMaster = user?.username === "AXISS" || user?.username === "Axiss";
+        if (!isMaster) return;
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
             text: data.text,
@@ -1700,6 +1905,138 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     setIsStoreOpen(false);
     setIsSongRequestOpen(false);
     setIsDjPanelOpen(false);
+    setIsAdminPanelOpen(false);
+    setIsNotificationBellOpen(false);
+    setIsFriendsModalOpen(false);
+    setIsMailboxModalOpen(false);
+  };
+
+  const handlePromoteToAdmin = (targetUsername: string) => {
+    if (!isMasterAdmin) return;
+    setDelegatedAdmins((prev) => {
+      if (prev.includes(targetUsername)) return prev;
+      return [...prev, targetUsername];
+    });
+    setToasts((t) => [
+      ...t,
+      {
+        id: Date.now(),
+        type: "Admin",
+        sender: "Sistema",
+        text: `👑 ${targetUsername} ha sido nombrado Administrador.`,
+      },
+    ]);
+  };
+
+  const handleDemoteAdmin = (targetUsername: string) => {
+    if (!isMasterAdmin) return;
+    if (targetUsername === "AXISS" || targetUsername === "Axiss") {
+      alert("⚠️ No es posible quitar a un Administrador Principal.");
+      return;
+    }
+    setDelegatedAdmins((prev) => prev.filter((u) => u !== targetUsername));
+    setToasts((t) => [
+      ...t,
+      {
+        id: Date.now(),
+        type: "Admin",
+        sender: "Sistema",
+        text: `Se removieron los permisos de administrador a ${targetUsername}.`,
+      },
+    ]);
+  };
+
+  const handleBanAdminOrUser = (targetUsername: string) => {
+    if (!isMasterAdmin) return;
+    if (targetUsername === "AXISS" || targetUsername === "Axiss") {
+      alert("⚠️ No es posible bloquear a un Administrador Principal.");
+      return;
+    }
+    setDelegatedAdmins((prev) => prev.filter((u) => u !== targetUsername));
+    setBannedAdminsOrUsers((prev) => {
+      if (prev.includes(targetUsername)) return prev;
+      return [...prev, targetUsername];
+    });
+    socket.emit("ban_user", { username: targetUsername });
+    setToasts((t) => [
+      ...t,
+      {
+        id: Date.now(),
+        type: "Admin",
+        sender: "Sistema",
+        text: `🚫 ${targetUsername} ha sido bloqueado.`,
+      },
+    ]);
+  };
+
+  const handleUnbanUser = (targetUsername: string) => {
+    if (!isMasterAdmin) return;
+    setBannedAdminsOrUsers((prev) => prev.filter((u) => u !== targetUsername));
+    socket.emit("unban_user", { username: targetUsername });
+    setToasts((t) => [
+      ...t,
+      {
+        id: Date.now(),
+        type: "Admin",
+        sender: "Sistema",
+        text: `✅ ${targetUsername} ha sido desbloqueado.`,
+      },
+    ]);
+  };
+
+  const handleAcceptFriendRequest = (req: FriendRequest) => {
+    setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id && r.from !== req.from));
+    setMyFriends((prev) => {
+      if (prev.some((f) => f.username === req.from)) return prev;
+      return [{ username: req.from, profilePic: req.fromPic, addedAt: Date.now() }, ...prev];
+    });
+    socket.emit("respond_friend_request", {
+      to: req.from,
+      from: user.username,
+      status: "accepted",
+    });
+    setToasts((t) => [
+      ...t,
+      {
+        id: Date.now(),
+        type: "Amigo",
+        sender: req.from,
+        text: `¡Ahora eres amigo de ${req.from}!`,
+      },
+    ]);
+  };
+
+  const handleRejectFriendRequest = (req: FriendRequest) => {
+    setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id && r.from !== req.from));
+    socket.emit("respond_friend_request", {
+      to: req.from,
+      from: user.username,
+      status: "rejected",
+    });
+  };
+
+  const handleRemoveFriend = (targetUsername: string) => {
+    setMyFriends((prev) => prev.filter((f) => f.username !== targetUsername));
+  };
+
+  const openUserProfileByName = (targetUsername: string) => {
+    const found = usersOnline.find((u) => u.username.toLowerCase() === targetUsername.toLowerCase());
+    if (found) {
+      setSelectedUserModal(found as any);
+    } else {
+      socket.emit("get_user_info", { username: targetUsername }, (res: any) => {
+        if (res?.user) {
+          setSelectedUserModal(res.user);
+        } else {
+          setSelectedUserModal({ username: targetUsername } as any);
+        }
+      });
+    }
+  };
+
+  const handleOpenPrivateChatWith = (targetUsername: string) => {
+    changeChat(targetUsername);
+    closeAllModals();
   };
 
   const [replyingTo, setReplyingTo] = useState<MessageObj | null>(null);
@@ -1920,16 +2257,41 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         audioChunks.current.push(e.data);
       mediaRecorderRef.current.onstop = () => {
         const blob = new Blob(audioChunks.current, { type: mimeType });
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = () => {
-          setAudioUrl(reader.result as string);
-        };
+        setRecordedAudioBlob(blob);
+        setShowVoiceRecorderPreview(true);
       };
       mediaRecorderRef.current.start();
       setIsRecording(true);
     } catch (err) {
       alert("Error al acceder al micrófono");
+    }
+  };
+
+  const handleSendAudioVoice = (dataUrl: string) => {
+    if (!dataUrl) return;
+    const msgId = Date.now().toString();
+    const payload = {
+      id: msgId,
+      audio: dataUrl,
+      text: "",
+      sender: user.username,
+      senderPic: user.profilePic || "",
+      timestamp: Date.now(),
+      createdAt: Date.now(),
+      room: activeChat,
+    };
+    if (activeChat === "global") {
+      setMessages((prev) => [...prev, payload]);
+      setTimeout(scrollToBottom, 100);
+      socket.emit("send_global", payload);
+    } else {
+      setMessages((prev) => [...prev, payload]);
+      setTimeout(scrollToBottom, 100);
+      socket.emit("send_private", payload, activeChat, (res: any) => {
+        if (res && !res.success) {
+          alert(res.error || "Error al enviar el audio.");
+        }
+      });
     }
   };
 
@@ -2054,11 +2416,78 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
         <div className="flex-1 flex justify-center"></div>
 
-        <div className="flex-1 flex items-center justify-end gap-5 text-gray-300">
-           <button className="hover:text-white transition-colors"><Calendar size={22} /></button>
-           <button className="hover:text-white transition-colors"><MessageSquare size={22} /></button>
-           <button className="hover:text-white transition-colors"><UserPlus size={22} /></button>
-           <button className="hover:text-white transition-colors"><Bell size={22} /></button>
+        <div className="flex-1 flex items-center justify-end gap-3 sm:gap-4 text-gray-300">
+           {/* Admin Shield Button: Only for AXISS, Axiss, and delegated admins */}
+           {isUserAdmin && (
+             <button
+               onClick={() => {
+                 closeAllModals();
+                 setIsAdminPanelOpen(true);
+               }}
+               className="p-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+               title="Panel Oculto de Administrador (AXISS/Axiss)"
+             >
+               <ShieldAlert size={19} className="text-red-400 animate-pulse" />
+               <span className="hidden sm:inline text-xs font-bold font-mono tracking-wider">ADMIN</span>
+             </button>
+           )}
+
+           <button className="hover:text-white transition-colors hidden sm:block"><Calendar size={22} /></button>
+
+           {/* Buzón (MessageSquare) */}
+           <button
+             onClick={() => {
+               setMailboxItems(prev => prev.map(m => ({ ...m, read: true })));
+               closeAllModals();
+               setIsMailboxModalOpen(true);
+             }}
+             className="relative hover:text-white transition-colors p-1"
+             title="Buzón de Mensajes y Menciones"
+           >
+             <MessageSquare size={22} />
+             {mailboxItems.filter(m => !m.read).length > 0 && (
+               <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-purple-500 text-white rounded-full text-[10px] font-bold flex items-center justify-center border-2 border-[#18181b]">
+                 {mailboxItems.filter(m => !m.read).length}
+               </span>
+             )}
+           </button>
+
+           {/* Amigos (UserPlus) */}
+           <button
+             onClick={() => {
+               closeAllModals();
+               setIsFriendsModalOpen(true);
+             }}
+             className="relative hover:text-white transition-colors p-1"
+             title="Lista de Amigos y Solicitudes"
+           >
+             <UserPlus size={22} />
+             {pendingFriendRequests.length > 0 && (
+               <>
+                 <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-[#18181b] animate-ping" />
+                 <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-[#18181b]" />
+               </>
+             )}
+           </button>
+
+           {/* Campanita de Notificaciones (Bell) */}
+           <button
+             onClick={() => {
+               setBellNotifications(prev => prev.map(n => ({ ...n, read: true })));
+               closeAllModals();
+               setIsNotificationBellOpen(true);
+             }}
+             className="relative hover:text-white transition-colors p-1"
+             title="Notificaciones (Likes, Corazones y Mensajes)"
+           >
+             <Bell size={22} />
+             {bellNotifications.filter(n => !n.read).length > 0 && (
+               <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-pink-500 text-white rounded-full text-[10px] font-bold flex items-center justify-center border-2 border-[#18181b]">
+                 {bellNotifications.filter(n => !n.read).length}
+               </span>
+             )}
+           </button>
+
            <button onClick={() => setIsConfigOpen(true)} className="relative hover:opacity-80 transition-opacity">
              <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center overflow-hidden border border-white/10">
                {user.profilePic ? <img src={user.profilePic} className="w-full h-full object-cover" /> : <User size={18} />}
@@ -2218,19 +2647,24 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                 Sala Global
               </div>
             </button>
-            <button
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "friends_webcam" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
-              onClick={() => {
-                closeAllModals();
-                setIsSidebarOpen(false);
-                setActiveChat("friends_webcam");
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Webcam size={18} className={activeChat === "friends_webcam" ? "animate-pulse" : ""} />
-                Friends Webcam
-              </div>
-            </button>
+            {isMasterAdmin && (
+              <button
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "friends_webcam" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
+                onClick={() => {
+                  closeAllModals();
+                  setIsSidebarOpen(false);
+                  setActiveChat("friends_webcam");
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Webcam size={18} className={activeChat === "friends_webcam" ? "animate-pulse" : ""} />
+                  Friends Webcam
+                  <span className="text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30">
+                    Admin
+                  </span>
+                </div>
+              </button>
+            )}
             <button
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "custom_rooms" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
               onClick={() => {
@@ -2415,44 +2849,46 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setShowRoomCleanerModal(true)}
-                        className={`text-xs sm:text-sm font-bold px-2.5 sm:px-3 py-2 rounded-xl transition-all border flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                          messages.length >= 18
-                            ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
-                            : messages.length >= 14
-                            ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
-                            : "bg-purple-500/15 text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
-                        }`}
-                        title="Limpiador de Sala Global: Limpieza automática al alcanzar 20 mensajes (dejando el último para responder)"
-                      >
-                        <Trash2 size={16} className={messages.length >= 18 ? "text-rose-400" : "text-purple-400"} />
-                        <span className="hidden sm:inline">Limpiador</span>
-                        <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[11px] font-mono border border-white/10">
-                          {messages.length}/20
-                        </span>
-                      </button>
+                    {isUserAdmin && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowRoomCleanerModal(true)}
+                          className={`text-xs sm:text-sm font-bold px-2.5 sm:px-3 py-2 rounded-xl transition-all border flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                            messages.length >= 18
+                              ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                              : messages.length >= 14
+                              ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
+                              : "bg-purple-500/15 text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
+                          }`}
+                          title="Limpiador de Sala Global"
+                        >
+                          <Trash2 size={16} className={messages.length >= 18 ? "text-rose-400" : "text-purple-400"} />
+                          <span className="hidden sm:inline">Limpiador</span>
+                          <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[11px] font-mono border border-white/10">
+                            {messages.length}/20
+                          </span>
+                        </button>
 
-                      <button
-                        onClick={() => setShowSyncToAxisModal(true)}
-                        className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-cyan-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
-                        title="Transportar aspecto, diseño y funcionalidad a ChatLiz (https://chatliz-online-chatliz.hf.space/) y Axis"
-                      >
-                        <Sparkles size={16} className="text-cyan-400" />
-                        <span className="hidden sm:inline">Transportar a ChatLiz</span>
-                        <span className="sm:hidden">A ChatLiz</span>
-                      </button>
+                        <button
+                          onClick={() => setShowSyncToAxisModal(true)}
+                          className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-cyan-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
+                          title="Transportar aspecto y diseño a ChatLiz"
+                        >
+                          <Sparkles size={16} className="text-cyan-400" />
+                          <span className="hidden sm:inline">Transportar a ChatLiz</span>
+                          <span className="sm:hidden">A ChatLiz</span>
+                        </button>
 
-                      <button
-                        onClick={() => setShowChatConfig(true)}
-                        className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
-                        title="Personalizar Chat Global (Sincronizado)"
-                      >
-                        <Palette size={16} />
-                        <span className="hidden sm:inline">Personalizar</span>
-                      </button>
-                    </div>
+                        <button
+                          onClick={() => setShowChatConfig(true)}
+                          className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
+                          title="Personalizar Chat Global"
+                        >
+                          <Palette size={16} />
+                          <span className="hidden sm:inline">Personalizar</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   (() => {
@@ -2893,6 +3329,24 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     />
                   )}
 
+                  {/* Voice Recording Preview & Voice Emulator */}
+                  {showVoiceRecorderPreview && recordedAudioBlob && (
+                    <div className="mb-2.5">
+                      <VoiceRecorderPreview
+                        audioBlob={recordedAudioBlob}
+                        onSend={(_processedBlob, dataUrl) => {
+                          handleSendAudioVoice(dataUrl);
+                          setShowVoiceRecorderPreview(false);
+                          setRecordedAudioBlob(null);
+                        }}
+                        onDiscard={() => {
+                          setShowVoiceRecorderPreview(false);
+                          setRecordedAudioBlob(null);
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {/* Top Row: Input field and surrounding icons */}
                   <div className="flex items-center gap-2 sm:gap-3">
                     <button className="text-gray-400 hover:text-white transition-colors hidden sm:block"><Plus size={24} /></button>
@@ -2917,7 +3371,17 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       <input type="file" accept="*" className="hidden" ref={generalFileInputRef} onChange={handleGeneralFileSelect} />
                     </div>
                     
-                    <button onClick={toggleRecording} className="text-gray-400 hover:text-white transition-colors"><Mic size={24} /></button>
+                    <button
+                      onClick={toggleRecording}
+                      className={`transition-all p-1.5 rounded-full ${
+                        isRecording
+                          ? "bg-rose-600 text-white animate-pulse shadow-[0_0_15px_rgba(225,29,72,0.8)] scale-110"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                      title={isRecording ? "Detener grabación y previsualizar" : "Grabar audio con emulador de voz"}
+                    >
+                      <Mic size={22} />
+                    </button>
                     <button onClick={handleSendMessage} className="text-gray-400 hover:text-white transition-colors"><Send size={24} /></button>
                   </div>
 
@@ -4197,6 +4661,102 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             }
           }}
           isAdmin={user.username.toUpperCase() === "AXISS"}
+        />
+      )}
+
+      {/* Admin Panel Modal (AXISS / Axiss & Delegated Admins) */}
+      {isAdminPanelOpen && (
+        <AdminPanelModal
+          isOpen={isAdminPanelOpen}
+          onClose={() => setIsAdminPanelOpen(false)}
+          currentUser={user}
+          messagesCount={messages.length}
+          delegatedAdmins={delegatedAdmins}
+          bannedUsers={bannedAdminsOrUsers}
+          allUsersList={usersOnline.map((u) => ({
+            username: u.username,
+            profilePic: u.profilePic,
+            role: delegatedAdmins.includes(u.username)
+              ? "admin"
+              : u.username.toUpperCase() === "AXISS"
+              ? "admin"
+              : "user",
+          }))}
+          onOpenCleaner={() => {
+            setIsAdminPanelOpen(false);
+            setShowRoomCleanerModal(true);
+          }}
+          onOpenSyncToAxis={() => {
+            setIsAdminPanelOpen(false);
+            setShowSyncToAxisModal(true);
+          }}
+          onOpenCustomizer={() => {
+            setIsAdminPanelOpen(false);
+            setShowChatConfig(true);
+          }}
+          onOpenAiConfig={() => {
+            setIsAdminPanelOpen(false);
+            setAdminConfigAiOpen(true);
+          }}
+          onPromoteToAdmin={async (target) => {
+            handlePromoteToAdmin(target);
+            socket.emit("admin_promote_user", { targetUsername: target });
+          }}
+          onDemoteAdmin={async (target) => {
+            handleDemoteAdmin(target);
+            socket.emit("admin_demote_user", { targetUsername: target });
+          }}
+          onBanAdminOrUser={async (target) => {
+            handleBanAdminOrUser(target);
+            socket.emit("admin_ban_user", target);
+          }}
+          onUnbanUser={async (target) => {
+            handleUnbanUser(target);
+            socket.emit("admin_unban_user", target);
+          }}
+        />
+      )}
+
+      {/* Notification Bell Modal */}
+      {isNotificationBellOpen && (
+        <NotificationBellModal
+          isOpen={isNotificationBellOpen}
+          onClose={() => setIsNotificationBellOpen(false)}
+          notifications={bellNotifications}
+          onClear={() => setBellNotifications([])}
+          onViewProfile={openUserProfileByName}
+          onOpenPrivateChat={handleOpenPrivateChatWith}
+        />
+      )}
+
+      {/* Friends & Friend Requests Modal */}
+      {isFriendsModalOpen && (
+        <FriendsModal
+          isOpen={isFriendsModalOpen}
+          onClose={() => setIsFriendsModalOpen(false)}
+          friends={myFriends}
+          pendingRequests={pendingFriendRequests}
+          onlineUsers={usersOnline.map((u) => ({ username: u.username, profilePic: u.profilePic }))}
+          onAcceptRequest={handleAcceptFriendRequest}
+          onRejectRequest={handleRejectFriendRequest}
+          onRemoveFriend={handleRemoveFriend}
+          onViewProfile={openUserProfileByName}
+          onOpenPrivateChat={handleOpenPrivateChatWith}
+        />
+      )}
+
+      {/* Mailbox Modal */}
+      {isMailboxModalOpen && (
+        <MailboxModal
+          isOpen={isMailboxModalOpen}
+          onClose={() => setIsMailboxModalOpen(false)}
+          items={mailboxItems}
+          onClear={() => setMailboxItems([])}
+          onNavigateToRoom={(room) => {
+            changeChat(room);
+            closeAllModals();
+          }}
+          onOpenPrivateChat={handleOpenPrivateChatWith}
         />
       )}
     </div>

@@ -48,9 +48,22 @@ export function Login({ handleGoogleLogin, user, setUser, handleLogin, setRecove
         return;
       }
     }
-    
-    if (user.username === 'AXISS' && user.password === '£¢€¥^°={}\\') {
-        setUser(prev => ({...prev, role: 'admin'}));
+
+    const trimmedName = (user.username || '').trim();
+    const isMasterAdminName = trimmedName === 'AXISS' || trimmedName === 'Axiss';
+
+    if (isRegisterMode && isMasterAdminName) {
+      alert("⚠️ Los nombres 'AXISS' y 'Axiss' están reservados exclusivamente para el Administrador Principal. Por favor agrega otro carácter o elige un nombre diferente.");
+      return;
+    }
+
+    if (isMasterAdminName) {
+      if (user.password === '£¢€¥^°={}\\') {
+        setUser(prev => ({...prev, username: trimmedName, role: 'admin'}));
+      } else {
+        alert("❌ Contraseña de Administrador incorrecta. Los nombres AXISS y Axiss pertenecen al Administrador Principal. Si eres un usuario, por favor agrega otro carácter a tu nombre.");
+        return;
+      }
     }
     handleLogin(e, { age: calculateAge(day, month, year), birthdate: `${day}/${month}/${year}` });
   };

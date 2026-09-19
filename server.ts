@@ -2590,13 +2590,51 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("admin_ban_user", (targetUser, callback) => {
-      if (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS") return callback({success: false});
+      if (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS") return callback && callback({success: false});
       bannedUsers[targetUser] = Date.now() + 15 * 60 * 1000;
       if (activeUsers[targetUser]) {
           io.to(activeUsers[targetUser].socketId).emit("banned_status", { isBanned: true });
       }
       io.emit("system_message", { text: `El usuario ${targetUser} ha sido baneado por el administrador.` });
-      callback({success: true});
+      callback && callback({success: true});
+    });
+
+    socket.on("admin_promote_user", ({ targetUsername }, callback) => {
+      const isMaster = currentUsername === "AXISS" || currentUsername === "Axiss";
+      if (!isMaster) return callback && callback({ success: false, error: "Solo AXISS o Axiss pueden nombrar administradores" });
+      if (activeUsers[targetUsername]) {
+        activeUsers[targetUsername].role = "admin";
+      }
+      io.emit("system_message", { text: `👑 ${targetUsername} ha sido nombrado Administrador por ${currentUsername}.` });
+      emitActiveUsers();
+      callback && callback({ success: true });
+    });
+
+    socket.on("admin_demote_user", ({ targetUsername }, callback) => {
+      const isMaster = currentUsername === "AXISS" || currentUsername === "Axiss";
+      if (!isMaster) return callback && callback({ success: false, error: "Solo AXISS o Axiss pueden remover administradores" });
+      if (targetUsername === "AXISS" || targetUsername === "Axiss") return callback && callback({ success: false, error: "No es posible remover a un Administrador Principal" });
+      if (activeUsers[targetUsername]) {
+        activeUsers[targetUsername].role = "user";
+      }
+      io.emit("system_message", { text: `Se han revocado los privilegios de administrador a ${targetUsername}.` });
+      emitActiveUsers();
+      callback && callback({ success: true });
+    });
+
+    socket.on("admin_system_broadcast", ({ message, sender }, callback) => {
+      const isMaster = currentUsername === "AXISS" || currentUsername === "Axiss";
+      const isAdmin = isMaster || activeUsers[currentUsername]?.role === "admin";
+      if (!isAdmin) return callback && callback({ success: false, error: "Permiso denegado" });
+      io.emit("global_notification", {
+        id: Date.now().toString(),
+        type: "announcement",
+        title: `📢 Comunicado de Administrador (${sender || currentUsername})`,
+        text: message,
+        createdAt: Date.now(),
+      });
+      io.emit("system_message", { text: `📢 COMUNICADO: ${message}` });
+      callback && callback({ success: true });
     });
 
     socket.on("admin_cut_transmission", () => {
@@ -3934,14 +3972,18 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
         if (!currentUsername) return;
         const customName = data?.name || currentUsername;
         
-        webcamQueue = webcamQueue.filter(p => p.id !== socket.id); // remove if exists
+        // Clean out disconnected sockets from queue
+        webcamQueue = webcamQueue.filter(p => p.id !== socket.id && io.sockets.sockets.has(p.id));
         webcamQueue.push({ id: socket.id, name: customName });
         
-        if (webcamQueue.length >= 2) {
+        while (webcamQueue.length >= 2) {
             const peer1 = webcamQueue.shift();
             const peer2 = webcamQueue.shift();
-            io.to(peer1.id).emit("webcam_matched", { initiator: true, partnerSocket: peer2.id, partnerName: peer2.name });
-            io.to(peer2.id).emit("webcam_matched", { initiator: false, partnerSocket: peer1.id, partnerName: peer1.name });
+            if (peer1 && peer2 && io.sockets.sockets.has(peer1.id) && io.sockets.sockets.has(peer2.id)) {
+                io.to(peer1.id).emit("webcam_matched", { initiator: true, partnerSocket: peer2.id, partnerName: peer2.name });
+                io.to(peer2.id).emit("webcam_matched", { initiator: false, partnerSocket: peer1.id, partnerName: peer1.name });
+                break;
+            }
         }
     });
     socket.on("leave_webcam_queue", () => {
@@ -3952,6 +3994,43 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
     });
     socket.on("webcam_disconnect", (data) => {
         io.to(data.to).emit("webcam_peer_disconnected");
+    });
+
+    // Real-time notifications for Friend Requests & Likes
+    socket.on("send_friend_request", (data: { to: string; from: string; fromPic?: string }) => {
+        const target = activeUsers[data.to];
+        if (target && target.socketId) {
+            io.to(target.socketId).emit("friend_request_received", {
+                id: `${Date.now()}_${data.from}`,
+                from: data.from,
+                fromPic: data.fromPic,
+                timestamp: Date.now(),
+            });
+        }
+    });
+
+    socket.on("respond_friend_request", (data: { to: string; from: string; status: 'accepted' | 'rejected' }) => {
+        const target = activeUsers[data.to];
+        if (target && target.socketId) {
+            io.to(target.socketId).emit("friend_request_status", {
+                from: data.from,
+                status: data.status,
+                timestamp: Date.now(),
+            });
+        }
+    });
+
+    socket.on("send_user_like", (data: { to: string; from: string; fromPic?: string; type?: 'like' | 'heart' }) => {
+        const target = activeUsers[data.to];
+        if (target && target.socketId) {
+            io.to(target.socketId).emit("user_like_received", {
+                id: `${Date.now()}_${data.from}`,
+                from: data.from,
+                fromPic: data.fromPic,
+                type: data.type || 'heart',
+                timestamp: Date.now(),
+            });
+        }
     });
     
     socket.on("disconnect", () => {

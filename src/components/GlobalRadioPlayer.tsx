@@ -174,10 +174,6 @@ export function GlobalRadioPlayer({
   const handleSelectStation = (index: number) => {
     if (index === stationIndex) return;
     setStationIndex(index);
-    const nextSt = RADIO_STATIONS[index];
-    if (onToast) {
-      onToast(`📻 Estación: ${nextSt.name}`);
-    }
   };
 
   const handleNextStation = () => {
