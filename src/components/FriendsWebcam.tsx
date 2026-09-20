@@ -3,29 +3,6 @@ import { socket } from "../socket";
 import { Webcam, Video, VideoOff, Mic, MicOff, PhoneOff, User, RefreshCw, ShieldAlert } from "lucide-react";
 
 export function FriendsWebcam({ user, onClose }: { user: any; onClose: () => void }) {
-    const isMasterAdmin = user?.username === "AXISS" || user?.username === "Axiss";
-
-    // Strict access control: only AXISS and Axiss
-    if (!isMasterAdmin) {
-        return (
-            <div className="fixed inset-0 bg-[#0B0D17] z-[170] flex flex-col items-center justify-center p-6 text-center">
-                <div className="w-16 h-16 rounded-3xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 mb-4 shadow-[0_0_25px_rgba(239,68,68,0.4)]">
-                    <ShieldAlert size={32} />
-                </div>
-                <h3 className="text-xl font-bold text-white mb-2">Acceso Exclusivo de Administrador</h3>
-                <p className="text-sm text-gray-400 max-w-md mb-6">
-                    La sección de Friends Webcam (Cámara de amigos en directo) está reservada exclusivamente para la administración principal (AXISS y Axiss).
-                </p>
-                <button
-                    onClick={onClose}
-                    className="px-6 py-2.5 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-sm transition-all"
-                >
-                    Volver al Chat
-                </button>
-            </div>
-        );
-    }
-
     const [state, setState] = useState<'idle' | 'searching' | 'matched'>('idle');
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);

@@ -45,6 +45,8 @@ export function WelcomeLanding({
   setRecoveryModalOpen,
 }: WelcomeLandingProps) {
   const [isRegisterMode, setIsRegisterMode] = useState(true);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
+  const [termsAgreedCheckbox, setTermsAgreedCheckbox] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,6 +111,10 @@ export function WelcomeLanding({
   const handleCustomLogin = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (isRegisterMode) {
+      if (!hasAcceptedTerms) {
+        alert('Debes aceptar los Términos y Condiciones y la Política de Privacidad para registrarte.');
+        return;
+      }
       if (!user.username || !user.password || !user.gender || !day || !month || !year) {
         alert('Por favor, completa todos los campos (Nombre, Contraseña, Género y Fecha de Nacimiento) para registrarte.');
         return;
@@ -282,6 +288,25 @@ export function WelcomeLanding({
               <p className="text-sm sm:text-base text-gray-300 leading-relaxed max-w-2xl">
                 Bienvenido a <strong>Chat-Liz</strong>, un ecosistema de comunicación en vivo creado para conectar personas de todo el mundo. Disfruta de salas de chat globales y privadas, videollamadas con cámara web, mini-juegos de ajedrez multijugador, radio en vivo y la asistencia continua de <strong>Elizabeth</strong>, una IA conversacional avanzada diseñada para responder preguntas y mantener debates constructivos.
               </p>
+
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <a
+                  href="#acceso"
+                  onClick={() => setIsRegisterMode(true)}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-black font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+                >
+                  <span>Aceptar Términos y Registrarse</span>
+                  <ArrowRight size={14} />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => openLegal('terms')}
+                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-bold text-xs border border-white/10 flex items-center gap-1.5 transition-all"
+                >
+                  <FileText size={14} className="text-purple-400" />
+                  <span>Ver Términos y Condiciones</span>
+                </button>
+              </div>
             </div>
 
             {/* Quick Metrics / Community Badges */}
@@ -392,239 +417,349 @@ export function WelcomeLanding({
                 </div>
 
                 <h2 className="text-xl font-black text-white tracking-tight">
-                  {isRegisterMode ? 'Crear tu Cuenta Gratuita' : 'Bienvenido de Nuevo'}
+                  {isRegisterMode
+                    ? hasAcceptedTerms
+                      ? 'Crear tu Cuenta Gratuita'
+                      : 'Aceptación de Términos y Condiciones'
+                    : 'Bienvenido de Nuevo'}
                 </h2>
                 <p className="text-xs text-gray-400 mt-1">
                   {isRegisterMode
-                    ? 'Únete a miles de personas en Chat-Liz en segundos'
+                    ? hasAcceptedTerms
+                      ? 'Únete a miles de personas en Chat-Liz en segundos'
+                      : 'Por favor acepta nuestros términos y condiciones para pasar a la zona de registro'
                     : 'Ingresa tus credenciales para acceder a tus chats'}
                 </p>
               </div>
 
-              {/* 1-Click Google Login Option */}
-              {handleGoogleLogin && (
-                <div className="mb-5">
+              {isRegisterMode && !hasAcceptedTerms ? (
+                /* PASO DE ACEPTACIÓN DE TÉRMINOS Y CONDICIONES */
+                <div className="space-y-4 text-left animate-in fade-in duration-300">
+                  <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 space-y-3">
+                    <div className="flex items-center gap-2 text-cyan-300 font-bold text-sm">
+                      <Shield size={18} className="text-cyan-400 shrink-0" />
+                      <span>Condiciones de Uso y Privacidad</span>
+                    </div>
+                    <p className="text-xs text-gray-300 leading-relaxed">
+                      Bienvenido a <strong>Chat-Liz</strong>. Para garantizar un ambiente seguro y una comunidad respetuosa, debes aceptar nuestras reglas antes de registrarte:
+                    </p>
+                    <ul className="text-[11px] text-gray-300 space-y-2">
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                        <span><strong>Comunidad Respetuosa:</strong> Tolerancia cero al acoso, spam, suplantación o contenido ilícito.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                        <span><strong>Friends Webcam:</strong> Disponible para todos los usuarios. Requiere uso adecuado y voluntario de cámara y micrófono.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                        <span><strong>Protección de Datos:</strong> Cumplimiento con Google AdSense, transparencia de cookies y almacenamiento seguro.</span>
+                      </li>
+                    </ul>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-cyan-500/20">
+                      <button
+                        type="button"
+                        onClick={() => openLegal('terms')}
+                        className="text-[11px] text-cyan-400 hover:text-cyan-300 font-bold underline flex items-center gap-1"
+                      >
+                        <FileText size={12} />
+                        <span>Ver Términos Completos</span>
+                      </button>
+                      <span className="text-gray-600">•</span>
+                      <button
+                        type="button"
+                        onClick={() => openLegal('privacy')}
+                        className="text-[11px] text-purple-400 hover:text-purple-300 font-bold underline flex items-center gap-1"
+                      >
+                        <Shield size={12} />
+                        <span>Ver Política de Privacidad</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checkbox de Aceptación */}
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl bg-black/40 border border-white/10 hover:border-cyan-500/30 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={termsAgreedCheckbox}
+                      onChange={(e) => setTermsAgreedCheckbox(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded bg-black/50 border-white/30 text-cyan-500 focus:ring-0 cursor-pointer shrink-0"
+                    />
+                    <span className="text-xs text-gray-300 select-none leading-relaxed">
+                      He leído, comprendo y <strong>acepto los Términos y Condiciones</strong> y la <strong>Política de Privacidad</strong> de Chat-Liz.
+                    </span>
+                  </label>
+
+                  {/* Botón de Aceptar Términos y Pasar a la Zona de Registro */}
                   <button
                     type="button"
-                    onClick={handleGoogleLogin}
-                    className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-gray-100 text-gray-900 font-bold text-xs flex items-center justify-center gap-2.5 transition-all shadow-md active:scale-95"
+                    onClick={() => {
+                      setTermsAgreedCheckbox(true);
+                      setHasAcceptedTerms(true);
+                    }}
+                    className="w-full bg-gradient-to-r from-cyan-500 via-purple-600 to-pink-500 hover:opacity-95 text-black font-black tracking-wide rounded-xl py-3.5 shadow-lg shadow-cyan-500/25 transition-all text-xs uppercase flex items-center justify-center gap-2 active:scale-95"
                   >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path
-                        fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                      />
-                    </svg>
-                    <span>Continuar con Google</span>
+                    <CheckCircle2 size={16} />
+                    <span>Aceptar Términos y Pasar al Registro</span>
+                    <ChevronRight size={16} />
                   </button>
 
-                  <div className="flex items-center my-4">
-                    <div className="flex-1 border-t border-white/10" />
-                    <span className="px-3 text-[11px] text-gray-400 font-medium">o con tu apodo</span>
-                    <div className="flex-1 border-t border-white/10" />
+                  <div className="text-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsRegisterMode(false)}
+                      className="text-xs text-gray-400 hover:text-cyan-300 transition-colors"
+                    >
+                      ¿Ya tienes una cuenta registrada? Inicia sesión aquí
+                    </button>
                   </div>
                 </div>
-              )}
-
-              {/* Traditional Form */}
-              <form onSubmit={handleCustomLogin} className="flex flex-col items-center">
-                {/* Profile Picture (Register Mode) */}
-                <div
-                  className="w-20 h-20 mb-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden relative cursor-pointer group shadow-inner"
-                  onClick={() => isRegisterMode && fileInputRef.current?.click()}
-                  title={isRegisterMode ? 'Sube tu foto de perfil' : 'Avatar'}
-                >
-                  {user.profilePic ? (
-                    <img src={user.profilePic} alt="Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <svg className="w-12 h-12 text-white/30 mt-3" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                    </svg>
-                  )}
-
-                  {isRegisterMode && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Upload size={18} className="text-white" />
+              ) : (
+                <>
+                  {isRegisterMode && hasAcceptedTerms && (
+                    <div className="mb-4 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs text-emerald-300">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                        <span>Términos y Condiciones Aceptados</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setHasAcceptedTerms(false)}
+                        className="text-[10px] text-gray-400 hover:text-white underline ml-2"
+                      >
+                        Revisar
+                      </button>
                     </div>
                   )}
 
-                  {isRegisterMode && (
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      className="hidden"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                    />
+                  {/* 1-Click Google Login Option */}
+                  {handleGoogleLogin && (
+                    <div className="mb-5">
+                      <button
+                        type="button"
+                        onClick={handleGoogleLogin}
+                        className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-gray-100 text-gray-900 font-bold text-xs flex items-center justify-center gap-2.5 transition-all shadow-md active:scale-95"
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24">
+                          <path
+                            fill="#4285F4"
+                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                          />
+                          <path
+                            fill="#34A853"
+                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                          />
+                          <path
+                            fill="#FBBC05"
+                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                          />
+                          <path
+                            fill="#EA4335"
+                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                          />
+                        </svg>
+                        <span>Continuar con Google</span>
+                      </button>
+
+                      <div className="flex items-center my-4">
+                        <div className="flex-1 border-t border-white/10" />
+                        <span className="px-3 text-[11px] text-gray-400 font-medium">o con tu apodo</span>
+                        <div className="flex-1 border-t border-white/10" />
+                      </div>
+                    </div>
                   )}
-                </div>
 
-                <div className="w-full space-y-4">
-                  {/* Name Input */}
-                  <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
-                    <User size={16} className="text-cyan-400 mr-2.5 shrink-0" />
-                    <input
-                      className="w-full bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none focus:ring-0 text-sm"
-                      placeholder="Nombre de Usuario (Apodo)"
-                      value={user.username || ''}
-                      onChange={(e) => setUser({ ...user, username: e.target.value })}
-                    />
-                  </div>
+                  {/* Traditional Form */}
+                  <form onSubmit={handleCustomLogin} className="flex flex-col items-center">
+                    {/* Profile Picture (Register Mode) */}
+                    <div
+                      className="w-20 h-20 mb-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden relative cursor-pointer group shadow-inner"
+                      onClick={() => isRegisterMode && fileInputRef.current?.click()}
+                      title={isRegisterMode ? 'Sube tu foto de perfil' : 'Avatar'}
+                    >
+                      {user.profilePic ? (
+                        <img src={user.profilePic} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        <svg className="w-12 h-12 text-white/30 mt-3" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                        </svg>
+                      )}
 
-                  {/* Password Input */}
-                  <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
-                    <Lock size={16} className="text-cyan-400 mr-2.5 shrink-0" />
-                    <input
-                      className="w-full bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none focus:ring-0 text-sm"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="Contraseña"
-                      value={user.password || ''}
-                      onChange={(e) => setUser({ ...user, password: e.target.value })}
-                    />
+                      {isRegisterMode && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Upload size={18} className="text-white" />
+                        </div>
+                      )}
+
+                      {isRegisterMode && (
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="hidden"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                        />
+                      )}
+                    </div>
+
+                    <div className="w-full space-y-4">
+                      {/* Name Input */}
+                      <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
+                        <User size={16} className="text-cyan-400 mr-2.5 shrink-0" />
+                        <input
+                          className="w-full bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none focus:ring-0 text-sm"
+                          placeholder="Nombre de Usuario (Apodo)"
+                          value={user.username || ''}
+                          onChange={(e) => setUser({ ...user, username: e.target.value })}
+                        />
+                      </div>
+
+                      {/* Password Input */}
+                      <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
+                        <Lock size={16} className="text-cyan-400 mr-2.5 shrink-0" />
+                        <input
+                          className="w-full bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none focus:ring-0 text-sm"
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="Contraseña"
+                          value={user.password || ''}
+                          onChange={(e) => setUser({ ...user, password: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="text-gray-400 hover:text-white text-xs ml-2"
+                        >
+                          {showPassword ? 'Ocultar' : 'Ver'}
+                        </button>
+                      </div>
+
+                      {/* Registration Specific Fields */}
+                      {isRegisterMode && (
+                        <div className="space-y-4 animate-in fade-in duration-200">
+                          {/* Gender */}
+                          <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
+                            <Users size={16} className="text-cyan-400 mr-2.5 shrink-0" />
+                            <select
+                              className="w-full bg-transparent border-none p-0 text-white focus:outline-none focus:ring-0 text-sm"
+                              value={user.gender || ''}
+                              onChange={(e) => setUser({ ...user, gender: e.target.value })}
+                            >
+                              <option value="" className="bg-[#131728] text-gray-400">
+                                Seleccionar Género
+                              </option>
+                              <option value="Male" className="bg-[#131728] text-white">
+                                Hombre (Male)
+                              </option>
+                              <option value="Female" className="bg-[#131728] text-white">
+                                Mujer (Female)
+                              </option>
+                              <option value="Other" className="bg-[#131728] text-white">
+                                Otro / Prefiero no decir
+                              </option>
+                            </select>
+                          </div>
+
+                          {/* Date of Birth */}
+                          <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
+                            <Calendar size={16} className="text-cyan-400 mr-2.5 shrink-0" />
+                            <div className="flex w-full items-center gap-1.5 text-sm">
+                              <input
+                                className="w-1/3 bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none text-center"
+                                placeholder="Día"
+                                maxLength={2}
+                                value={day}
+                                onChange={(e) => setDay(e.target.value.replace(/[^0-9]/g, ''))}
+                              />
+                              <span className="text-gray-500">/</span>
+                              <input
+                                className="w-1/3 bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none text-center"
+                                placeholder="Mes"
+                                maxLength={2}
+                                value={month}
+                                onChange={(e) => setMonth(e.target.value.replace(/[^0-9]/g, ''))}
+                              />
+                              <span className="text-gray-500">/</span>
+                              <input
+                                className="w-1/3 bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none text-center"
+                                placeholder="Año"
+                                maxLength={4}
+                                value={year}
+                                onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, ''))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Options row */}
+                      <div className="flex justify-between items-center text-xs text-gray-400 pt-1">
+                        <label className="flex items-center gap-1.5 cursor-pointer hover:text-gray-200">
+                          <input
+                            type="checkbox"
+                            defaultChecked
+                            className="w-3.5 h-3.5 rounded bg-black/40 border-white/20 text-cyan-500 focus:ring-0"
+                          />
+                          <span>Recordarme</span>
+                        </label>
+                        {!isRegisterMode && (
+                          <button
+                            type="button"
+                            onClick={() => setRecoveryModalOpen(true)}
+                            className="hover:text-cyan-400 transition-colors"
+                          >
+                            ¿Olvidaste tu contraseña?
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Submit Button */}
+                      <button
+                        type="submit"
+                        className="w-full bg-gradient-to-r from-cyan-500 via-purple-600 to-pink-500 hover:opacity-95 text-black font-black tracking-wide rounded-xl py-3 shadow-lg shadow-cyan-500/20 transition-all text-xs uppercase flex items-center justify-center gap-2"
+                      >
+                        <span>{isRegisterMode ? 'CREAR CUENTA GRATIS' : 'ENTRAR AL CHAT'}</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Toggle switch text */}
+                  <div className="mt-5 text-center">
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="text-gray-400 hover:text-white text-xs ml-2"
+                      onClick={() => setIsRegisterMode(!isRegisterMode)}
+                      className="text-xs text-gray-400 hover:text-cyan-300 transition-colors"
                     >
-                      {showPassword ? 'Ocultar' : 'Ver'}
+                      {isRegisterMode
+                        ? '¿Ya tienes una cuenta registrada? Inicia sesión aquí'
+                        : '¿Nuevo en Chat-Liz? Crea tu cuenta en 10 segundos'}
                     </button>
                   </div>
 
-                  {/* Registration Specific Fields */}
-                  {isRegisterMode && (
-                    <div className="space-y-4 animate-in fade-in duration-200">
-                      {/* Gender */}
-                      <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
-                        <Users size={16} className="text-cyan-400 mr-2.5 shrink-0" />
-                        <select
-                          className="w-full bg-transparent border-none p-0 text-white focus:outline-none focus:ring-0 text-sm"
-                          value={user.gender || ''}
-                          onChange={(e) => setUser({ ...user, gender: e.target.value })}
-                        >
-                          <option value="" className="bg-[#131728] text-gray-400">
-                            Seleccionar Género
-                          </option>
-                          <option value="Male" className="bg-[#131728] text-white">
-                            Hombre (Male)
-                          </option>
-                          <option value="Female" className="bg-[#131728] text-white">
-                            Mujer (Female)
-                          </option>
-                          <option value="Other" className="bg-[#131728] text-white">
-                            Otro / Prefiero no decir
-                          </option>
-                        </select>
-                      </div>
-
-                      {/* Date of Birth */}
-                      <div className="relative bg-black/30 border border-white/10 rounded-xl px-3 py-2 flex items-center focus-within:border-cyan-400 transition-colors">
-                        <Calendar size={16} className="text-cyan-400 mr-2.5 shrink-0" />
-                        <div className="flex w-full items-center gap-1.5 text-sm">
-                          <input
-                            className="w-1/3 bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none text-center"
-                            placeholder="Día"
-                            maxLength={2}
-                            value={day}
-                            onChange={(e) => setDay(e.target.value.replace(/[^0-9]/g, ''))}
-                          />
-                          <span className="text-gray-500">/</span>
-                          <input
-                            className="w-1/3 bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none text-center"
-                            placeholder="Mes"
-                            maxLength={2}
-                            value={month}
-                            onChange={(e) => setMonth(e.target.value.replace(/[^0-9]/g, ''))}
-                          />
-                          <span className="text-gray-500">/</span>
-                          <input
-                            className="w-1/3 bg-transparent border-none p-0 text-white placeholder-gray-400 focus:outline-none text-center"
-                            placeholder="Año"
-                            maxLength={4}
-                            value={year}
-                            onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, ''))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Options row */}
-                  <div className="flex justify-between items-center text-xs text-gray-400 pt-1">
-                    <label className="flex items-center gap-1.5 cursor-pointer hover:text-gray-200">
-                      <input
-                        type="checkbox"
-                        defaultChecked
-                        className="w-3.5 h-3.5 rounded bg-black/40 border-white/20 text-cyan-500 focus:ring-0"
-                      />
-                      <span>Recordarme</span>
-                    </label>
-                    {!isRegisterMode && (
-                      <button
-                        type="button"
-                        onClick={() => setRecoveryModalOpen(true)}
-                        className="hover:text-cyan-400 transition-colors"
-                      >
-                        ¿Olvidaste tu contraseña?
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Submit Button */}
-                  <button
-                    type="submit"
-                    className="w-full bg-gradient-to-r from-cyan-500 via-purple-600 to-pink-500 hover:opacity-95 text-black font-black tracking-wide rounded-xl py-3 shadow-lg shadow-cyan-500/20 transition-all text-xs uppercase flex items-center justify-center gap-2"
-                  >
-                    <span>{isRegisterMode ? 'CREAR CUENTA GRATIS' : 'ENTRAR AL CHAT'}</span>
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </form>
-
-              {/* Toggle switch text */}
-              <div className="mt-5 text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsRegisterMode(!isRegisterMode)}
-                  className="text-xs text-gray-400 hover:text-cyan-300 transition-colors"
-                >
-                  {isRegisterMode
-                    ? '¿Ya tienes una cuenta registrada? Inicia sesión aquí'
-                    : '¿Nuevo en Chat-Liz? Crea tu cuenta en 10 segundos'}
-                </button>
-              </div>
-
-              {/* Notice regarding terms acceptance */}
-              <p className="text-[10px] text-gray-500 text-center mt-4 leading-relaxed">
-                Al ingresar o registrarte en Chat-Liz, aceptas nuestros{' '}
-                <button
-                  type="button"
-                  onClick={() => openLegal('terms')}
-                  className="text-cyan-400 hover:underline"
-                >
-                  Términos
-                </button>{' '}
-                y confirmas haber leído nuestra{' '}
-                <button
-                  type="button"
-                  onClick={() => openLegal('privacy')}
-                  className="text-cyan-400 hover:underline"
-                >
-                  Política de Privacidad
-                </button>
-                .
-              </p>
+                  {/* Notice regarding terms acceptance */}
+                  <p className="text-[10px] text-gray-500 text-center mt-4 leading-relaxed">
+                    Al ingresar o registrarte en Chat-Liz, aceptas nuestros{' '}
+                    <button
+                      type="button"
+                      onClick={() => openLegal('terms')}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      Términos
+                    </button>{' '}
+                    y confirmas haber leído nuestra{' '}
+                    <button
+                      type="button"
+                      onClick={() => openLegal('privacy')}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      Política de Privacidad
+                    </button>
+                    .
+                  </p>
+                </>
+              )}
             </div>
           </section>
         </div>

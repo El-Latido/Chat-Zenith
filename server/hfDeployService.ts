@@ -33,9 +33,9 @@ export async function deployToHuggingFaceSpace(
     throw new Error(`Error de autenticación con Hugging Face: ${msg}`);
   }
 
-  // 2. Recolectar archivos del proyecto Chat-Zenith
+  // 2. Recolectar archivos del proyecto Chat-Liz
   const rootDir = process.cwd();
-  const allowedRoots = new Set(["src", "public"]);
+  const allowedRoots = new Set(["src", "public", "server"]);
   const allowedRootFiles = new Set([
     "Dockerfile",
     "README.md",
@@ -47,7 +47,8 @@ export async function deployToHuggingFaceSpace(
     "tsconfig.node.json",
     "index.html",
     "metadata.json",
-    "components.json"
+    "components.json",
+    "firebase-applet-config.json"
   ]);
 
   const fileList: string[] = [];
