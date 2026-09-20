@@ -1,9 +1,9 @@
 import React from 'react';
-import { Bell, Heart, ThumbsUp, MessageSquare, X, Trash2, CheckCircle2, User, ArrowRight } from 'lucide-react';
+import { Bell, Heart, ThumbsUp, MessageSquare, X, Trash2, CheckCircle2, User, ArrowRight, UserPlus } from 'lucide-react';
 
 export interface NotificationItem {
   id: string;
-  type: 'like' | 'heart' | 'private_msg' | 'friend_accepted' | 'friend_rejected';
+  type: 'like' | 'heart' | 'private_msg' | 'friend_accepted' | 'friend_rejected' | 'friend_request' | 'profile_comment';
   sender: string;
   senderPic?: string;
   text?: string;
@@ -131,6 +131,8 @@ export function NotificationBellModal({
                         <Heart size={11} className="text-pink-400 fill-pink-400" />
                       ) : n.type === 'like' ? (
                         <ThumbsUp size={11} className="text-cyan-400 fill-cyan-400" />
+                      ) : n.type === 'friend_request' ? (
+                        <UserPlus size={11} className="text-emerald-400" />
                       ) : (
                         <MessageSquare size={11} className="text-purple-400" />
                       )}
@@ -143,6 +145,8 @@ export function NotificationBellModal({
                       <span className="text-[10px] text-gray-400 font-normal">
                         {n.type === 'heart' && 'te envió un corazoncito ❤️'}
                         {n.type === 'like' && 'le dio like a tu perfil 👍'}
+                        {n.type === 'friend_request' && 'te envió una solicitud de amistad 🤝'}
+                        {n.type === 'profile_comment' && 'comentó en tu perfil 💬'}
                         {n.type === 'private_msg' && 'te envió un mensaje privado 💬'}
                         {n.type === 'friend_accepted' && 'aceptó tu solicitud de amistad ✨'}
                         {n.type === 'friend_rejected' && 'rechazó la solicitud de amistad'}

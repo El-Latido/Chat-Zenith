@@ -1990,32 +1990,94 @@ socket.on("buy_decoration", async (data, callback) => {
       }
     });
 
-    socket.on("like_user", async (targetUser) => {
-      if (!currentUsername) return;
+    socket.on("like_user", async (targetUser, callback) => {
+      if (!currentUsername) {
+        if (typeof callback === "function") callback({ success: false, message: "No autenticado" });
+        return;
+      }
+      if (currentUsername === targetUser) {
+        if (typeof callback === "function") callback({ success: false, message: "No puedes darte like a ti mismo" });
+        return;
+      }
+
+      let newLikes = 0;
+      let isLiked = false;
+      let likedBy: string[] = [];
+
       if (fdb) {
         try {
           const uRef = doc(fdb, "users", targetUser);
           const snap = await getDoc(uRef);
           if (snap.exists()) {
-            const currentLikes = snap.data().profileLikes || 0;
-            await updateDoc(uRef, { profileLikes: currentLikes + 1 });
+            const data = snap.data();
+            likedBy = Array.isArray(data.profileLikedBy) ? [...data.profileLikedBy] : [];
+            const idx = likedBy.indexOf(currentUsername);
+            if (idx > -1) {
+              // Already liked: toggle off (remove like)
+              likedBy.splice(idx, 1);
+              isLiked = false;
+            } else {
+              // Not liked yet: add strictly one like
+              likedBy.push(currentUsername);
+              isLiked = true;
+            }
+            newLikes = likedBy.length;
+            await updateDoc(uRef, { profileLikes: newLikes, profileLikedBy: likedBy });
             if (activeUsers[targetUser]) {
-              activeUsers[targetUser].profileLikes = currentLikes + 1;
+              activeUsers[targetUser].profileLikes = newLikes;
+              activeUsers[targetUser].profileLikedBy = likedBy;
               emitActiveUsers();
-              io.to(activeUsers[targetUser].socketId).emit("user_liked", currentUsername);
+              if (isLiked) {
+                io.to(activeUsers[targetUser].socketId).emit("user_liked", currentUsername);
+                io.to(activeUsers[targetUser].socketId).emit("user_like_received", {
+                  id: `${Date.now()}_${currentUsername}`,
+                  from: currentUsername,
+                  fromPic: activeUsers[currentUsername]?.profilePic || "",
+                  type: 'like',
+                  timestamp: Date.now()
+                });
+              }
             }
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error("Error in like_user fdb:", e);
+        }
       } else {
         if (fallbackState.users[targetUser]) {
-          fallbackState.users[targetUser].profileLikes =
-            (fallbackState.users[targetUser].profileLikes || 0) + 1;
-          if (activeUsers[targetUser])
-            activeUsers[targetUser].profileLikes =
-              fallbackState.users[targetUser].profileLikes;
+          likedBy = Array.isArray(fallbackState.users[targetUser].profileLikedBy)
+            ? [...fallbackState.users[targetUser].profileLikedBy]
+            : [];
+          const idx = likedBy.indexOf(currentUsername);
+          if (idx > -1) {
+            likedBy.splice(idx, 1);
+            isLiked = false;
+          } else {
+            likedBy.push(currentUsername);
+            isLiked = true;
+          }
+          newLikes = likedBy.length;
+          fallbackState.users[targetUser].profileLikes = newLikes;
+          fallbackState.users[targetUser].profileLikedBy = likedBy;
+          if (activeUsers[targetUser]) {
+            activeUsers[targetUser].profileLikes = newLikes;
+            activeUsers[targetUser].profileLikedBy = likedBy;
+          }
           saveFallbackDB();
           emitActiveUsers();
+          if (isLiked && activeUsers[targetUser]) {
+            io.to(activeUsers[targetUser].socketId).emit("user_liked", currentUsername);
+            io.to(activeUsers[targetUser].socketId).emit("user_like_received", {
+              id: `${Date.now()}_${currentUsername}`,
+              from: currentUsername,
+              fromPic: activeUsers[currentUsername]?.profilePic || "",
+              type: 'like',
+              timestamp: Date.now()
+            });
+          }
         }
+      }
+      if (typeof callback === "function") {
+        callback({ success: true, liked: isLiked, likes: newLikes, likedBy });
       }
     });
     socket.on("toggle_block_user", async (targetUser) => {
@@ -3129,36 +3191,52 @@ ${eliMsg.text}`,
         }
       }
     });
-    socket.on("send_friend_request", async (targetUser, callback) => {
-      if (!currentUsername) return callback({ success: false });
-      if (targetUser === currentUsername) return callback({ success: false });
+    socket.on("send_friend_request", async (arg, callback) => {
+      const targetUser = typeof arg === "string" ? arg : arg?.to;
+      const fromUser = typeof arg === "object" && arg?.from ? arg.from : currentUsername;
+      const fromPic = typeof arg === "object" && arg?.fromPic ? arg.fromPic : (activeUsers[fromUser]?.profilePic || "");
+
+      if (!fromUser || !targetUser || targetUser === fromUser) {
+        if (typeof callback === "function") callback({ success: false, message: "Usuario inválido" });
+        return;
+      }
+
       if (fdb) {
-        const uRef = doc(fdb, "users", targetUser);
-        const docSnap = await getDoc(uRef);
-        if (docSnap.exists()) {
-          let requests = docSnap.data().friend_requests || [];
-          if (!requests.includes(currentUsername)) {
-            requests.push(currentUsername);
-            await updateDoc(uRef, { friend_requests: requests });
+        try {
+          const uRef = doc(fdb, "users", targetUser);
+          const docSnap = await getDoc(uRef);
+          if (docSnap.exists()) {
+            let requests = docSnap.data().friend_requests || [];
+            if (!requests.includes(fromUser)) {
+              requests.push(fromUser);
+              await updateDoc(uRef, { friend_requests: requests });
+            }
           }
+        } catch (e) {
+          console.error("Error updating friend_requests in fdb:", e);
         }
       } else {
         if (fallbackState.users[targetUser]) {
           let requests = fallbackState.users[targetUser].friend_requests || [];
-          if (!requests.includes(currentUsername)) {
-            requests.push(currentUsername);
+          if (!requests.includes(fromUser)) {
+            requests.push(fromUser);
             fallbackState.users[targetUser].friend_requests = requests;
             saveFallbackDB();
           }
         }
       }
-      if (activeUsers[targetUser]) {
-        io.to(activeUsers[targetUser].socketId).emit(
-          "new_friend_request",
-          currentUsername,
-        );
+
+      const target = activeUsers[targetUser];
+      if (target && target.socketId) {
+        io.to(target.socketId).emit("new_friend_request", fromUser);
+        io.to(target.socketId).emit("friend_request_received", {
+          id: `${Date.now()}_${fromUser}`,
+          from: fromUser,
+          fromPic: fromPic,
+          timestamp: Date.now(),
+        });
       }
-      callback({ success: true });
+      if (typeof callback === "function") callback({ success: true });
     });
     socket.on("accept_friend_request", async (targetUser, callback) => {
       if (!currentUsername) return callback({ success: false });
@@ -4012,18 +4090,6 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
     });
 
     // Real-time notifications for Friend Requests & Likes
-    socket.on("send_friend_request", (data: { to: string; from: string; fromPic?: string }) => {
-        const target = activeUsers[data.to];
-        if (target && target.socketId) {
-            io.to(target.socketId).emit("friend_request_received", {
-                id: `${Date.now()}_${data.from}`,
-                from: data.from,
-                fromPic: data.fromPic,
-                timestamp: Date.now(),
-            });
-        }
-    });
-
     socket.on("respond_friend_request", (data: { to: string; from: string; status: 'accepted' | 'rejected' }) => {
         const target = activeUsers[data.to];
         if (target && target.socketId) {

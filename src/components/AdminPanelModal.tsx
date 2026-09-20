@@ -260,6 +260,124 @@ export function AdminPanelModal({
                 Configurar IA
               </button>
             </div>
+
+            {/* Admin-only Default Chat Background */}
+            <div className="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                  <Palette size={20} />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-xs flex items-center gap-2">
+                    <span>Fondo Predeterminado de la App (Global)</span>
+                    <span className="text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30">
+                      Solo Admin
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    Establece el fondo de pantalla predeterminado para todos los usuarios del chat
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="https://ejemplo.com/fondo-predeterminado.jpg"
+                  defaultValue={localStorage.getItem("chatliz_app_default_bg") || ""}
+                  id="admin-default-bg-input"
+                  className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById("admin-default-bg-input") as HTMLInputElement;
+                    if (el) {
+                      localStorage.setItem("chatliz_app_default_bg", el.value.trim());
+                      window.dispatchEvent(new Event("chatliz_ui_update"));
+                      alert("✅ Fondo predeterminado de la app actualizado correctamente");
+                    }
+                  }}
+                  className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition-all shrink-0"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+
+            {/* Admin-only SDK Backgrounds */}
+            <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-xs flex items-center gap-2">
+                    <span>Fondos SDK de Publicidad & Video</span>
+                    <span className="text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30">
+                      Solo Admin
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    Fondo visual para las pantallas del reproductor SDK de videos recompensados
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="https://ejemplo.com/fondo-sdk.jpg"
+                  defaultValue={localStorage.getItem("chatliz_sdk_bg") || ""}
+                  id="admin-sdk-bg-input"
+                  className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById("admin-sdk-bg-input") as HTMLInputElement;
+                    if (el) {
+                      localStorage.setItem("chatliz_sdk_bg", el.value.trim());
+                      window.dispatchEvent(new Event("chatliz_ui_update"));
+                      alert("✅ Fondo del SDK publicitario actualizado");
+                    }
+                  }}
+                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition-all shrink-0"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+
+            {/* Admin-only Video Monetization & AI Tokens Permission */}
+            <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  <CheckCircle2 size={20} />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-xs flex items-center gap-2">
+                    <span>Permiso de Reproducción de Videos (Tokens IA & Monetización)</span>
+                    <span className="text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30">
+                      Solo Admin
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    Habilita videos publicitarios para recargar tokens cuando las IA se queden sin saldo
+                  </div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  defaultChecked={localStorage.getItem("chatliz_video_monetization_enabled") !== "false"}
+                  onChange={(e) => {
+                    localStorage.setItem("chatliz_video_monetization_enabled", e.target.checked.toString());
+                    window.dispatchEvent(new Event("chatliz_ui_update"));
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+              </label>
+            </div>
           </div>
         )}
 

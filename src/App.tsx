@@ -63,6 +63,7 @@ import { FriendsModal, FriendRequest, FriendUser } from "./components/FriendsMod
 import { MailboxModal, MailboxItem } from "./components/MailboxModal";
 import { AdminPanelModal } from "./components/AdminPanelModal";
 import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModal";
+import { WelcomeLanding } from "./components/WelcomeLanding";
 
 const DECORATIONS = [
   // Ajedrez (Themes & Efectos)
@@ -521,7 +522,7 @@ function MainApp() {
     }
   });
 
-  const isMasterAdmin = user?.username === "AXISS" || user?.username === "Axiss";
+  const isMasterAdmin = (user?.username || "").trim().toLowerCase() === "axiss";
   const isUserAdmin = isMasterAdmin || delegatedAdmins.includes(user?.username) || user?.role === "admin";
 
   useEffect(() => {
@@ -1427,26 +1428,57 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     socket.on("user_liked", (fromUser: string) => {
         playNotifySound();
-        setNotifications(prev => [{
-            id: Date.now().toString(),
+        setBellNotifications(prev => [{
+            id: `${Date.now()}_like_${fromUser}`,
             type: 'like',
+            sender: fromUser,
             text: `A ${fromUser} le gustó tu perfil`,
-            fromUser,
-            read: false,
-            timestamp: Date.now()
-        }, ...prev]);
+            timestamp: Date.now(),
+            read: false
+        }, ...prev.filter(n => !(n.type === 'like' && n.sender === fromUser))]);
+        setToasts(prev => [...prev, {
+            id: Date.now(),
+            type: "Me Gusta",
+            sender: fromUser,
+            text: `¡A ${fromUser} le ha gustado tu perfil!`
+        }]);
+    });
+
+    socket.on("user_like_received", (data: { id?: string; from: string; fromPic?: string; type?: string; timestamp?: number }) => {
+        playNotifySound();
+        setBellNotifications(prev => [{
+            id: data.id || `${Date.now()}_like_${data.from}`,
+            type: 'like',
+            sender: data.from,
+            senderPic: data.fromPic,
+            text: `A ${data.from} le gustó tu perfil`,
+            timestamp: data.timestamp || Date.now(),
+            read: false
+        }, ...prev.filter(n => !(n.type === 'like' && n.sender === data.from))]);
+        setToasts(prev => [...prev, {
+            id: Date.now(),
+            type: "Me Gusta",
+            sender: data.from,
+            text: `¡A ${data.from} le ha gustado tu perfil!`
+        }]);
     });
     
     socket.on("new_profile_comment", (data: { fromUser: string, comment: any }) => {
         playNotifySound();
-        setNotifications(prev => [{
-            id: Date.now().toString(),
+        setBellNotifications(prev => [{
+            id: `${Date.now()}_comment_${data.fromUser}`,
             type: 'profile_comment',
-            text: `${data.fromUser} comentó en tu perfil: "${data.comment.text}"`,
-            fromUser: data.fromUser,
-            read: false,
-            timestamp: Date.now()
+            sender: data.fromUser,
+            text: `${data.fromUser} comentó en tu perfil: "${data.comment?.text || ''}"`,
+            timestamp: Date.now(),
+            read: false
         }, ...prev]);
+        setToasts(prev => [...prev, {
+            id: Date.now(),
+            type: "Comentario",
+            sender: data.fromUser,
+            text: `${data.fromUser} comentó en tu perfil.`
+        }]);
     });
 
     socket.on("out_of_tokens", (data: { aiName: string }) => {
@@ -1529,15 +1561,52 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     });
 
     socket.on("friend_request_received", (req: FriendRequest) => {
+      playNotifySound();
       setPendingFriendRequests(prev => {
         if (prev.some(r => r.id === req.id || r.from === req.from)) return prev;
         return [req, ...prev];
       });
+      setBellNotifications(prev => [{
+        id: req.id || `${Date.now()}_fr_${req.from}`,
+        type: 'friend_request',
+        sender: req.from,
+        senderPic: req.fromPic,
+        text: 'Te envió una solicitud de amistad',
+        timestamp: req.timestamp || Date.now(),
+        read: false
+      }, ...prev.filter(n => !(n.type === 'friend_request' && n.sender === req.from))]);
       setToasts(prev => [...prev, {
         id: Date.now(),
         type: "Amigo",
         sender: req.from,
         text: `${req.from} te envió una solicitud de amistad.`
+      }]);
+    });
+
+    socket.on("new_friend_request", (fromUser: string) => {
+      playNotifySound();
+      const newReq: FriendRequest = {
+        id: `${Date.now()}_${fromUser}`,
+        from: fromUser,
+        timestamp: Date.now()
+      };
+      setPendingFriendRequests(prev => {
+        if (prev.some(r => r.from === fromUser)) return prev;
+        return [newReq, ...prev];
+      });
+      setBellNotifications(prev => [{
+        id: newReq.id,
+        type: 'friend_request',
+        sender: fromUser,
+        text: 'Te envió una solicitud de amistad',
+        timestamp: Date.now(),
+        read: false
+      }, ...prev.filter(n => !(n.type === 'friend_request' && n.sender === fromUser))]);
+      setToasts(prev => [...prev, {
+        id: Date.now(),
+        type: "Amigo",
+        sender: fromUser,
+        text: `${fromUser} te envió una solicitud de amistad.`
       }]);
     });
 
@@ -1815,14 +1884,63 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                   : data.type,
           };
         });
-        setNotifications((prev) => {
-          if (
-            msgs.filter((m) => !m.read).length >
-            prev.filter((p) => !p.read).length
-          )
-            playNotifySound();
-          const localNotifs = prev.filter((p) => !p.recipientUid); // Keep local socket notifications
-          return [...msgs.filter((m) => !m.read), ...localNotifs];
+
+        msgs.forEach((m: any) => {
+          if (!m.read) {
+            const sender = m.senderName || m.from || "Usuario";
+            if (m.type === "like") {
+              setBellNotifications(prev => {
+                if (prev.some(p => p.id === m.id || (p.type === 'like' && p.sender === sender))) return prev;
+                return [{
+                  id: m.id,
+                  type: 'like',
+                  sender,
+                  text: m.text,
+                  timestamp: m.timestamp || Date.now(),
+                  read: false
+                }, ...prev];
+              });
+            } else if (m.type === "friend_request" || m.type === "REQUEST") {
+              setPendingFriendRequests(prev => {
+                if (prev.some(p => p.from === sender)) return prev;
+                return [{ id: m.id, from: sender, timestamp: m.timestamp || Date.now() }, ...prev];
+              });
+              setBellNotifications(prev => {
+                if (prev.some(p => p.id === m.id || (p.type === 'friend_request' && p.sender === sender))) return prev;
+                return [{
+                  id: m.id,
+                  type: 'friend_request',
+                  sender,
+                  text: m.text,
+                  timestamp: m.timestamp || Date.now(),
+                  read: false
+                }, ...prev];
+              });
+            } else if (m.type === "MESSAGE" || m.type === "private_msg") {
+              setMailboxItems(prev => {
+                if (prev.some(p => p.id === m.id)) return prev;
+                return [{
+                  id: m.id,
+                  type: 'private_chat',
+                  sender,
+                  text: m.text,
+                  timestamp: m.timestamp || Date.now(),
+                  read: false
+                }, ...prev];
+              });
+              setBellNotifications(prev => {
+                if (prev.some(p => p.id === m.id)) return prev;
+                return [{
+                  id: m.id,
+                  type: 'private_msg',
+                  sender,
+                  text: m.text,
+                  timestamp: m.timestamp || Date.now(),
+                  read: false
+                }, ...prev];
+              });
+            }
+          }
         });
       });
 
@@ -2349,8 +2467,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     }
     return (
       <>
-        
-        <Login
+        <WelcomeLanding
           handleGoogleLogin={handleGoogleLogin}
           user={user}
           setUser={setUser}
@@ -2459,18 +2576,6 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
            )}
 
            <button className="hover:text-white transition-colors hidden sm:block"><Calendar size={22} /></button>
-
-           {/* Políticas de Privacidad, Términos y Contacto (Google AdSense) */}
-           <button
-             onClick={() => {
-               setLegalTab("privacy");
-               setLegalModalOpen(true);
-             }}
-             className="relative hover:text-cyan-300 text-white/75 transition-colors p-1"
-             title="Políticas de Privacidad, Términos y Contacto"
-           >
-             <Shield size={20} className="text-cyan-400" />
-           </button>
 
            {/* Buzón (MessageSquare) */}
            <button
@@ -2685,24 +2790,20 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                 Sala Global
               </div>
             </button>
-            {isMasterAdmin && (
-              <button
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "friends_webcam" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
-                onClick={() => {
-                  closeAllModals();
-                  setIsSidebarOpen(false);
-                  setActiveChat("friends_webcam");
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <Webcam size={18} className={activeChat === "friends_webcam" ? "animate-pulse" : ""} />
-                  Friends Webcam
-                  <span className="text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30">
-                    Admin
-                  </span>
-                </div>
-              </button>
-            )}
+            {/* Friends Webcam: Available for all users */}
+            <button
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "friends_webcam" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
+              onClick={() => {
+                closeAllModals();
+                setIsSidebarOpen(false);
+                setActiveChat("friends_webcam");
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Webcam size={18} className={activeChat === "friends_webcam" ? "animate-pulse" : ""} />
+                Friends Webcam
+              </div>
+            </button>
             <button
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "custom_rooms" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
               onClick={() => {
@@ -4247,20 +4348,77 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     >
                       <MessageCircle size={18} /> Chat
                     </button>
-                    <button
-                      onClick={() => {
-                        socket.emit("like_user", selectedUserModal.username);
-                        setSelectedUserModal((prev) => prev ? { ...prev, profileLikes: (prev.profileLikes || 0) + 1 } : null);
-                        notifyOwner(selectedUserModal.username, "LIKE", user.username);
-                      }}
-                      className="flex items-center justify-center gap-2 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border border-pink-500/20 p-3 rounded-xl font-bold transition-colors"
-                    >
-                      <Heart size={18} /> Like
-                    </button>
-                    
-                    {!user.friends_list?.includes(selectedUserModal.username) ? (
+                    {(() => {
+                      const isAlreadyLiked = Array.isArray(selectedUserModal.profileLikedBy)
+                        ? selectedUserModal.profileLikedBy.includes(user.username)
+                        : false;
+                      return (
                         <button
                           onClick={() => {
+                            if (isAlreadyLiked) {
+                              // Toggle off
+                              setSelectedUserModal((prev) => prev ? {
+                                ...prev,
+                                profileLikes: Math.max(0, (prev.profileLikes || 1) - 1),
+                                profileLikedBy: (prev.profileLikedBy || []).filter((u: string) => u !== user.username)
+                              } : null);
+                              socket.emit("like_user", selectedUserModal.username, (res: any) => {
+                                if (res && res.success) {
+                                  setSelectedUserModal((prev) => prev ? {
+                                    ...prev,
+                                    profileLikes: res.likes,
+                                    profileLikedBy: res.likedBy
+                                  } : null);
+                                }
+                              });
+                            } else {
+                              // Add one like strictly
+                              setSelectedUserModal((prev) => prev ? {
+                                ...prev,
+                                profileLikes: (prev.profileLikes || 0) + 1,
+                                profileLikedBy: [...(prev.profileLikedBy || []), user.username]
+                              } : null);
+                              socket.emit("like_user", selectedUserModal.username, (res: any) => {
+                                if (res && res.success) {
+                                  setSelectedUserModal((prev) => prev ? {
+                                    ...prev,
+                                    profileLikes: res.likes,
+                                    profileLikedBy: res.likedBy
+                                  } : null);
+                                }
+                              });
+                              notifyOwner(selectedUserModal.username, "LIKE", user.username);
+                              socket.emit("send_user_like", {
+                                to: selectedUserModal.username,
+                                from: user.username,
+                                fromPic: user.profilePic || "",
+                                type: "heart"
+                              });
+                            }
+                          }}
+                          className={`flex items-center justify-center gap-2 p-3 rounded-xl font-bold transition-all border ${
+                            isAlreadyLiked
+                              ? "bg-pink-500 text-white border-pink-400 shadow-[0_0_15px_rgba(236,72,153,0.35)]"
+                              : "bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border-pink-500/20"
+                          }`}
+                        >
+                          <Heart size={18} className={isAlreadyLiked ? "fill-current" : ""} />
+                          {isAlreadyLiked ? "Te gusta" : "Like"}
+                        </button>
+                      );
+                    })()}
+                    
+                    {!user.friends_list?.includes(selectedUserModal.username) && !myFriends?.some(f => f.username === selectedUserModal.username) ? (
+                        <button
+                          onClick={() => {
+                            // Emit real-time socket event
+                            socket.emit("send_friend_request", {
+                              to: selectedUserModal.username,
+                              from: user.username,
+                              fromPic: user.profilePic || "",
+                            });
+
+                            // Save to Firestore
                             addDoc(collection(db, "friendRequests"), {
                               from: user.username,
                               to: selectedUserModal.username,
@@ -4269,9 +4427,10 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               createdAt: Date.now(),
                             }).then((docRef) => {
                               notifyOwner(selectedUserModal.username, "REQUEST", user.username, { frData: { from: user.username, docId: docRef.id } });
-                            });
+                            }).catch(() => {});
+
                             setSelectedUserModal(null);
-                            alert("Solicitud de amistad enviada");
+                            alert("✅ Solicitud de amistad enviada correctamente");
                           }}
                           className="col-span-2 flex items-center justify-center gap-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 p-3 rounded-xl font-bold transition-colors"
                         >

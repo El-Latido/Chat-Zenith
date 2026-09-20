@@ -30,6 +30,7 @@ export interface UserObj {
   uid?: string;
   googleUid?: string;
   profileLikes?: number;
+  profileLikedBy?: string[];
   profileComments?: { author: string, text: string, timestamp: number, stars?: number }[];
   bubbleColor?: string;
   bubbleBorder?: string;
