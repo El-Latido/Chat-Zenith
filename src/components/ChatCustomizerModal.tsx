@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { UniversalBackground } from "./UniversalBackground";
 import {
   Palette,
   X,
@@ -316,22 +317,7 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                 </label>
                 <div className="relative w-full h-32 rounded-2xl border border-white/15 overflow-hidden bg-[#090d16] flex items-center justify-center group shadow-inner">
                   {backgroundBase64 ? (
-                    backgroundBase64.match(/\.(mp4|webm|ogg)$/i) ? (
-                      <video
-                        src={backgroundBase64}
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <img
-                        src={backgroundBase64}
-                        alt="Fondo actual"
-                        className="w-full h-full object-cover"
-                      />
-                    )
+                    <UniversalBackground url={backgroundBase64} opacity={0.85} />
                   ) : (
                     <div className="text-center text-white/40 flex flex-col items-center">
                       <ImageIcon size={32} className="mb-1 opacity-50" />

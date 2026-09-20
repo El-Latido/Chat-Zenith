@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -16,7 +16,11 @@ import {
   RefreshCw,
   Flame,
   CheckCircle2,
+  Link,
+  Play,
+  Film,
 } from 'lucide-react';
+import { parseBackgroundMedia } from './UniversalBackground';
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -34,6 +38,7 @@ interface AdminPanelModalProps {
   onDemoteAdmin: (username: string) => Promise<void>;
   onBanAdminOrUser: (username: string) => Promise<void>;
   onUnbanUser: (username: string) => Promise<void>;
+  onSetGlobalBackground?: (url: string) => void;
 }
 
 export function AdminPanelModal({
@@ -52,9 +57,13 @@ export function AdminPanelModal({
   onDemoteAdmin,
   onBanAdminOrUser,
   onUnbanUser,
+  onSetGlobalBackground,
 }: AdminPanelModalProps) {
   const [activeTab, setActiveTab] = useState<'tools' | 'admins' | 'bans'>('tools');
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [defaultBgInput, setDefaultBgInput] = useState(() => localStorage.getItem("chatliz_app_default_bg") || "");
+
+  const detectedBgMedia = useMemo(() => parseBackgroundMedia(defaultBgInput), [defaultBgInput]);
 
   if (!isOpen) return null;
 
@@ -275,32 +284,73 @@ export function AdminPanelModal({
                     </span>
                   </div>
                   <div className="text-[11px] text-gray-400 mt-0.5">
-                    Establece el fondo de pantalla predeterminado para todos los usuarios del chat
+                    Establece el fondo para todos los usuarios. Compatible con <strong>YouTube, Pinterest, videos (MP4/WebM), imágenes, avatares o enlaces web</strong>.
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="https://ejemplo.com/fondo-predeterminado.jpg"
-                  defaultValue={localStorage.getItem("chatliz_app_default_bg") || ""}
-                  id="admin-default-bg-input"
-                  className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById("admin-default-bg-input") as HTMLInputElement;
-                    if (el) {
-                      localStorage.setItem("chatliz_app_default_bg", el.value.trim());
+
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Pega URL de YouTube, Pinterest, video MP4, imagen o enlace web..."
+                    value={defaultBgInput}
+                    onChange={(e) => setDefaultBgInput(e.target.value)}
+                    id="admin-default-bg-input"
+                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const trimmed = defaultBgInput.trim();
+                      localStorage.setItem("chatliz_app_default_bg", trimmed);
+                      if (onSetGlobalBackground) {
+                        onSetGlobalBackground(trimmed);
+                      }
                       window.dispatchEvent(new Event("chatliz_ui_update"));
-                      alert("✅ Fondo predeterminado de la app actualizado correctamente");
-                    }
-                  }}
-                  className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition-all shrink-0"
-                >
-                  Guardar
-                </button>
+                      alert(`✅ Fondo predeterminado actualizado correctamente (${detectedBgMedia.label})`);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition-all shrink-0 flex items-center gap-1.5"
+                  >
+                    <span>Guardar Global</span>
+                  </button>
+                  {defaultBgInput && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDefaultBgInput("");
+                        localStorage.removeItem("chatliz_app_default_bg");
+                        if (onSetGlobalBackground) {
+                          onSetGlobalBackground("");
+                        }
+                        window.dispatchEvent(new Event("chatliz_ui_update"));
+                      }}
+                      className="px-2.5 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-300 text-xs transition-colors"
+                      title="Quitar fondo"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Media format detection badge */}
+                {defaultBgInput.trim() && (
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 text-[11px]">
+                    <span className="text-base">{detectedBgMedia.icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-semibold text-blue-300">{detectedBgMedia.label}</span>
+                      <p className="text-[10px] text-gray-400 truncate">
+                        {detectedBgMedia.type === 'youtube'
+                          ? 'Se reproducirá en bucle continuo de fondo silenciado automáticamente para todo el chat.'
+                          : detectedBgMedia.type === 'pinterest'
+                          ? 'Contenido de Pinterest adaptado para el fondo.'
+                          : detectedBgMedia.type === 'video'
+                          ? 'Video continuo en bucle adaptado a la pantalla.'
+                          : 'Listo para proyectarse en el chat de todos los usuarios.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

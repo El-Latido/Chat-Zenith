@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key } from "lucide-react";
 import { collection,
   onSnapshot,
   query,
@@ -21,6 +21,7 @@ import { collection,
   deleteDoc,
   arrayUnion,
   getDoc,
+  getDocs,
   setDoc
 } from "firebase/firestore";
 import { ChatCustomizerModal, ChatConfig } from "./components/ChatCustomizerModal";
@@ -64,6 +65,7 @@ import { MailboxModal, MailboxItem } from "./components/MailboxModal";
 import { AdminPanelModal } from "./components/AdminPanelModal";
 import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModal";
 import { WelcomeLanding } from "./components/WelcomeLanding";
+import { UniversalBackground, parseBackgroundMedia } from "./components/UniversalBackground";
 
 const DECORATIONS = [
   // Ajedrez (Themes & Efectos)
@@ -1561,6 +1563,10 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     });
 
     socket.on("friend_request_received", (req: FriendRequest) => {
+      // If already friends, discard and do not add to pending
+      const alreadyFriends = user.friends_list?.includes(req.from) || myFriends.some(f => f.username === req.from);
+      if (alreadyFriends) return;
+
       playNotifySound();
       setPendingFriendRequests(prev => {
         if (prev.some(r => r.id === req.id || r.from === req.from)) return prev;
@@ -1583,38 +1589,23 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       }]);
     });
 
-    socket.on("new_friend_request", (fromUser: string) => {
-      playNotifySound();
-      const newReq: FriendRequest = {
-        id: `${Date.now()}_${fromUser}`,
-        from: fromUser,
-        timestamp: Date.now()
-      };
-      setPendingFriendRequests(prev => {
-        if (prev.some(r => r.from === fromUser)) return prev;
-        return [newReq, ...prev];
-      });
-      setBellNotifications(prev => [{
-        id: newReq.id,
-        type: 'friend_request',
-        sender: fromUser,
-        text: 'Te envió una solicitud de amistad',
-        timestamp: Date.now(),
-        read: false
-      }, ...prev.filter(n => !(n.type === 'friend_request' && n.sender === fromUser))]);
-      setToasts(prev => [...prev, {
-        id: Date.now(),
-        type: "Amigo",
-        sender: fromUser,
-        text: `${fromUser} te envió una solicitud de amistad.`
-      }]);
-    });
-
     socket.on("friend_request_status", (data: { from: string; status: 'accepted' | 'rejected' }) => {
+      // Remove any pending request from this user
+      setPendingFriendRequests(prev => prev.filter(r => r.from !== data.from));
+
       if (data.status === 'accepted') {
         setMyFriends(prev => {
           if (prev.some(f => f.username === data.from)) return prev;
           return [{ username: data.from, addedAt: Date.now() }, ...prev];
+        });
+        setUser(prev => {
+          const cur = prev.friends_list || [];
+          const updated = cur.includes(data.from) ? cur : [...cur, data.from];
+          return {
+            ...prev,
+            friends_list: updated,
+            friend_requests: (prev.friend_requests || []).filter(r => r !== data.from)
+          };
         });
         setBellNotifications(prev => [{
           id: Date.now().toString(),
@@ -1623,7 +1614,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           text: 'Solicitud de amistad aceptada',
           timestamp: Date.now(),
           read: false
-        }, ...prev]);
+        }, ...prev.filter(n => !(n.type === 'friend_request' && n.sender === data.from))]);
         setToasts(prev => [...prev, {
           id: Date.now(),
           type: "Amigo",
@@ -1638,19 +1629,25 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           text: 'Solicitud de amistad rechazada',
           timestamp: Date.now(),
           read: false
-        }, ...prev]);
+        }, ...prev.filter(n => !(n.type === 'friend_request' && n.sender === data.from))]);
       }
     });
 
     socket.on("user_like_received", (data: { from: string; fromPic?: string; type?: 'like' | 'heart' }) => {
-      setBellNotifications(prev => [{
-        id: `${Date.now()}_${data.from}`,
-        type: data.type || 'heart',
-        sender: data.from,
-        senderPic: data.fromPic,
-        timestamp: Date.now(),
-        read: false
-      }, ...prev]);
+      setBellNotifications(prev => {
+        // Prevent duplicate notification from same user within 20s
+        if (prev.some(p => (p.type === 'heart' || p.type === 'like') && p.sender === data.from && (Date.now() - p.timestamp < 20000))) {
+          return prev;
+        }
+        return [{
+          id: `${Date.now()}_${data.from}`,
+          type: data.type || 'heart',
+          sender: data.from,
+          senderPic: data.fromPic,
+          timestamp: Date.now(),
+          read: false
+        }, ...prev];
+      });
       setToasts(prev => [...prev, {
         id: Date.now(),
         type: "Like",
@@ -1885,10 +1882,15 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           };
         });
 
+        const handledSet = getHandledNotifIds(user.username);
+
         msgs.forEach((m: any) => {
-          if (!m.read) {
+          if (!m.read && !handledSet.has(m.id)) {
             const sender = m.senderName || m.from || "Usuario";
-            if (m.type === "like") {
+
+            if (m.type === "like" || m.type === "LIKE" || m.type === "heart") {
+              if (handledSet.has(`like_${sender}`)) return;
+
               setBellNotifications(prev => {
                 if (prev.some(p => p.id === m.id || (p.type === 'like' && p.sender === sender))) return prev;
                 return [{
@@ -1901,6 +1903,15 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                 }, ...prev];
               });
             } else if (m.type === "friend_request" || m.type === "REQUEST") {
+              // If already friends or already handled, dismiss and mark read immediately
+              const isAlreadyFriend = (user.friends_list || []).includes(sender) || myFriends.some(f => f.username === sender);
+              if (isAlreadyFriend || handledSet.has(`fr_${sender}`)) {
+                if (db && m.id && !m.id.startsWith("local_")) {
+                  updateDoc(doc(db, "notifications", m.id), { isRead: true }).catch(() => {});
+                }
+                return;
+              }
+
               setPendingFriendRequests(prev => {
                 if (prev.some(p => p.from === sender)) return prev;
                 return [{ id: m.id, from: sender, timestamp: m.timestamp || Date.now() }, ...prev];
@@ -2128,17 +2139,128 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     ]);
   };
 
+  const getHandledNotifIds = (username: string): Set<string> => {
+    try {
+      const raw = localStorage.getItem(`chatliz_handled_notifs_${username}`);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  };
+
+  const markNotificationAsHandled = (id?: string, extraKey?: string) => {
+    if (!user?.username) return;
+    try {
+      const set = getHandledNotifIds(user.username);
+      if (id) set.add(id);
+      if (extraKey) set.add(extraKey);
+      const arr = Array.from(set).slice(-300);
+      localStorage.setItem(`chatliz_handled_notifs_${user.username}`, JSON.stringify(arr));
+    } catch (e) {}
+  };
+
+  const handleClearNotifications = () => {
+    setBellNotifications([]);
+    bellNotifications.forEach((n) => {
+      markNotificationAsHandled(n.id, n.sender);
+      if (db && n.id && !n.id.startsWith("local_")) {
+        updateDoc(doc(db, "notifications", n.id), { isRead: true }).catch(() => {});
+      }
+    });
+    if (db && user?.username) {
+      const q = query(
+        collection(db, "notifications"),
+        where("recipientUid", "==", user.username)
+      );
+      getDocs(q).then((snap) => {
+        snap.forEach((d) => {
+          updateDoc(d.ref, { isRead: true }).catch(() => {});
+        });
+      }).catch(() => {});
+    }
+  };
+
+  const handleDismissNotification = (notifId: string) => {
+    setBellNotifications((prev) => prev.filter((n) => n.id !== notifId));
+    markNotificationAsHandled(notifId);
+    if (db && notifId && !notifId.startsWith("local_")) {
+      updateDoc(doc(db, "notifications", notifId), { isRead: true }).catch(() => {});
+    }
+  };
+
+  const handleSetGlobalBackground = (url: string) => {
+    try {
+      localStorage.setItem("chatliz_app_default_bg", url);
+      setGlobalChatConfig((prev) => ({
+        ...prev,
+        backgroundUrl: url,
+        backgroundBase64: url,
+      }));
+      socket.emit("change_global_chat_config", {
+        backgroundUrl: url,
+        backgroundBase64: url,
+      });
+      if (db) {
+        setDoc(doc(db, "settings", "globalBg"), { url, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+      }
+      window.dispatchEvent(new Event("chatliz_ui_update"));
+    } catch (e) {
+      console.error("Error setting global background:", e);
+    }
+  };
+
   const handleAcceptFriendRequest = (req: FriendRequest) => {
+    // 1. Remove from pending and bell notifications
     setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id && r.from !== req.from));
+    setBellNotifications((prev) =>
+      prev.filter((n) => !(n.type === "friend_request" && (n.sender === req.from || n.id === req.id)))
+    );
+
+    // 2. Add to friends state
     setMyFriends((prev) => {
       if (prev.some((f) => f.username === req.from)) return prev;
       return [{ username: req.from, profilePic: req.fromPic, addedAt: Date.now() }, ...prev];
     });
+
+    // 3. Update user object friends_list and remove from friend_requests
+    setUser((prev) => {
+      const cur = prev.friends_list || [];
+      const updated = cur.includes(req.from) ? cur : [...cur, req.from];
+      return {
+        ...prev,
+        friends_list: updated,
+        friend_requests: (prev.friend_requests || []).filter((r) => r !== req.from),
+      };
+    });
+
+    // 4. Mark as handled locally
+    markNotificationAsHandled(req.id, `fr_${req.from}`);
+
+    // 5. Emit socket events (both respond and accept for full sync)
     socket.emit("respond_friend_request", {
       to: req.from,
       from: user.username,
       status: "accepted",
     });
+    socket.emit("accept_friend_request", req.from);
+
+    // 6. Persist in Firestore
+    if (db) {
+      if (req.id && !req.id.startsWith("local_")) {
+        updateDoc(doc(db, "notifications", req.id), { isRead: true }).catch(() => {});
+      }
+      const qReq = query(
+        collection(db, "friendRequests"),
+        where("from", "==", req.from),
+        where("to", "==", user.username)
+      );
+      getDocs(qReq).then((snap) => {
+        snap.forEach((d) => {
+          updateDoc(d.ref, { status: "accepted", isRead: true }).catch(() => {});
+        });
+      }).catch(() => {});
+    }
+
     setToasts((t) => [
       ...t,
       {
@@ -2151,16 +2273,53 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   };
 
   const handleRejectFriendRequest = (req: FriendRequest) => {
+    // 1. Remove from pending and bell notifications
     setPendingFriendRequests((prev) => prev.filter((r) => r.id !== req.id && r.from !== req.from));
+    setBellNotifications((prev) =>
+      prev.filter((n) => !(n.type === "friend_request" && (n.sender === req.from || n.id === req.id)))
+    );
+
+    // 2. Remove from user object
+    setUser((prev) => ({
+      ...prev,
+      friend_requests: (prev.friend_requests || []).filter((r) => r !== req.from),
+    }));
+
+    // 3. Mark as handled locally
+    markNotificationAsHandled(req.id, `fr_${req.from}`);
+
+    // 4. Emit socket event
     socket.emit("respond_friend_request", {
       to: req.from,
       from: user.username,
       status: "rejected",
     });
+
+    // 5. Persist in Firestore
+    if (db) {
+      if (req.id && !req.id.startsWith("local_")) {
+        updateDoc(doc(db, "notifications", req.id), { isRead: true }).catch(() => {});
+      }
+      const qReq = query(
+        collection(db, "friendRequests"),
+        where("from", "==", req.from),
+        where("to", "==", user.username)
+      );
+      getDocs(qReq).then((snap) => {
+        snap.forEach((d) => {
+          updateDoc(d.ref, { status: "rejected", isRead: true }).catch(() => {});
+        });
+      }).catch(() => {});
+    }
   };
 
   const handleRemoveFriend = (targetUsername: string) => {
     setMyFriends((prev) => prev.filter((f) => f.username !== targetUsername));
+    setUser((prev) => ({
+      ...prev,
+      friends_list: (prev.friends_list || []).filter((f) => f !== targetUsername),
+    }));
+    socket.emit("remove_friend", targetUsername);
   };
 
   const openUserProfileByName = (targetUsername: string) => {
@@ -2956,22 +3115,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         {/* Main Chat Container */}
         <main
           className="flex-1 min-w-0 min-h-0 relative flex flex-col bg-transparent overflow-hidden"
-          style={
-            chatBg && !chatBg.match(/\.(mp4|webm|ogg)$/i)
-              ? { background: `url(${chatBg}) center/cover no-repeat` }
-              : undefined
-          }
         >
-          {chatBg && chatBg.match(/\.(mp4|webm|ogg)$/i) && (
-            <video
-              autoPlay
-              loop
-              muted
-              playsInline
-              src={chatBg}
-              className="absolute inset-0 w-full h-full object-cover z-[-1] opacity-60"
-            />
-          )}
+          {chatBg && <UniversalBackground url={chatBg} />}
 
           {/* Chat Content Wrapper */}
           <div className="flex-1 min-h-0 min-w-0 flex flex-col relative z-0">
@@ -4408,7 +4553,50 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       );
                     })()}
                     
-                    {!user.friends_list?.includes(selectedUserModal.username) && !myFriends?.some(f => f.username === selectedUserModal.username) ? (
+                     {(() => {
+                      const isFriend =
+                        user.friends_list?.includes(selectedUserModal.username) ||
+                        myFriends?.some((f) => f.username === selectedUserModal.username);
+
+                      if (isFriend) {
+                        return (
+                          <button
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `¿Estás seguro que quieres eliminar a ${selectedUserModal.username} de tus amigos?`
+                                )
+                              ) {
+                                handleRemoveFriend(selectedUserModal.username);
+                                setSelectedUserModal(null);
+                              }
+                            }}
+                            className="col-span-2 flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 p-3 rounded-xl font-bold transition-colors"
+                          >
+                            <UserMinus size={18} /> Eliminar Amigo
+                          </button>
+                        );
+                      }
+
+                      const incomingRequest = pendingFriendRequests.find(
+                        (r) => r.from === selectedUserModal.username
+                      );
+
+                      if (incomingRequest) {
+                        return (
+                          <button
+                            onClick={() => {
+                              handleAcceptFriendRequest(incomingRequest);
+                              setSelectedUserModal(null);
+                            }}
+                            className="col-span-2 flex items-center justify-center gap-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 p-3 rounded-xl font-bold transition-colors"
+                          >
+                            <UserCheck size={18} /> Aceptar Solicitud Pendiente
+                          </button>
+                        );
+                      }
+
+                      return (
                         <button
                           onClick={() => {
                             // Emit real-time socket event
@@ -4425,9 +4613,13 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               status: "pending",
                               timestamp: Date.now(),
                               createdAt: Date.now(),
-                            }).then((docRef) => {
-                              notifyOwner(selectedUserModal.username, "REQUEST", user.username, { frData: { from: user.username, docId: docRef.id } });
-                            }).catch(() => {});
+                            })
+                              .then((docRef) => {
+                                notifyOwner(selectedUserModal.username, "REQUEST", user.username, {
+                                  frData: { from: user.username, docId: docRef.id },
+                                });
+                              })
+                              .catch(() => {});
 
                             setSelectedUserModal(null);
                             alert("✅ Solicitud de amistad enviada correctamente");
@@ -4436,20 +4628,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         >
                           <UserPlus size={18} /> Enviar Solicitud de Amistad
                         </button>
-                    ) : (
-                       <button
-                          onClick={() => {
-                            if (window.confirm(`¿Estás seguro que quieres eliminar a ${selectedUserModal.username} de tus amigos?`)) {
-                              socket.emit("remove_friend", selectedUserModal.username);
-                              setUser((prev) => ({ ...prev, friends_list: prev.friends_list?.filter((f) => f !== selectedUserModal.username) }));
-                              setSelectedUserModal(null);
-                            }
-                          }}
-                          className="col-span-2 flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 p-3 rounded-xl font-bold transition-colors"
-                        >
-                          <UserMinus size={18} /> Eliminar Amigo
-                        </button>
-                    )}
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -4953,6 +5133,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             handleUnbanUser(target);
             socket.emit("admin_unban_user", target);
           }}
+          onSetGlobalBackground={handleSetGlobalBackground}
         />
       )}
 
@@ -4962,7 +5143,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           isOpen={isNotificationBellOpen}
           onClose={() => setIsNotificationBellOpen(false)}
           notifications={bellNotifications}
-          onClear={() => setBellNotifications([])}
+          onClear={handleClearNotifications}
+          onDismissNotification={handleDismissNotification}
           onViewProfile={openUserProfileByName}
           onOpenPrivateChat={handleOpenPrivateChatWith}
         />

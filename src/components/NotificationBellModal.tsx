@@ -18,6 +18,7 @@ interface NotificationBellModalProps {
   onClear: () => void;
   onViewProfile: (username: string) => void;
   onOpenPrivateChat: (username: string) => void;
+  onDismissNotification?: (id: string) => void;
 }
 
 export function NotificationBellModal({
@@ -27,10 +28,14 @@ export function NotificationBellModal({
   onClear,
   onViewProfile,
   onOpenPrivateChat,
+  onDismissNotification,
 }: NotificationBellModalProps) {
   if (!isOpen) return null;
 
   const handleItemClick = (n: NotificationItem) => {
+    if (onDismissNotification) {
+      onDismissNotification(n.id);
+    }
     onClose();
     if (n.type === 'like' || n.type === 'heart') {
       // Derivar automáticamente a ver el perfil del usuario que envió like o corazón
@@ -161,8 +166,23 @@ export function NotificationBellModal({
                   </div>
                 </div>
 
-                <div className="text-gray-400 hover:text-white shrink-0 p-1">
-                  <ArrowRight size={14} />
+                <div className="flex items-center gap-1 shrink-0">
+                  {onDismissNotification && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDismissNotification(n.id);
+                      }}
+                      className="text-gray-500 hover:text-rose-400 p-1 rounded-lg hover:bg-white/5 transition-colors"
+                      title="Eliminar notificación"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                  <div className="text-gray-400 hover:text-white p-1">
+                    <ArrowRight size={14} />
+                  </div>
                 </div>
               </div>
             ))

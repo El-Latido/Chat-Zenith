@@ -3206,7 +3206,13 @@ ${eliMsg.text}`,
           const uRef = doc(fdb, "users", targetUser);
           const docSnap = await getDoc(uRef);
           if (docSnap.exists()) {
-            let requests = docSnap.data().friend_requests || [];
+            const data = docSnap.data();
+            const friends = data.friends_list || [];
+            if (friends.includes(fromUser)) {
+              if (typeof callback === "function") callback({ success: false, message: "Ya son amigos" });
+              return;
+            }
+            let requests = data.friend_requests || [];
             if (!requests.includes(fromUser)) {
               requests.push(fromUser);
               await updateDoc(uRef, { friend_requests: requests });
@@ -3217,6 +3223,11 @@ ${eliMsg.text}`,
         }
       } else {
         if (fallbackState.users[targetUser]) {
+          const friends = fallbackState.users[targetUser].friends_list || [];
+          if (friends.includes(fromUser)) {
+            if (typeof callback === "function") callback({ success: false, message: "Ya son amigos" });
+            return;
+          }
           let requests = fallbackState.users[targetUser].friend_requests || [];
           if (!requests.includes(fromUser)) {
             requests.push(fromUser);
@@ -3228,7 +3239,7 @@ ${eliMsg.text}`,
 
       const target = activeUsers[targetUser];
       if (target && target.socketId) {
-        io.to(target.socketId).emit("new_friend_request", fromUser);
+        // Emit a single unified real-time event with full data
         io.to(target.socketId).emit("friend_request_received", {
           id: `${Date.now()}_${fromUser}`,
           from: fromUser,
@@ -4090,7 +4101,7 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
     });
 
     // Real-time notifications for Friend Requests & Likes
-    socket.on("respond_friend_request", (data: { to: string; from: string; status: 'accepted' | 'rejected' }) => {
+    socket.on("respond_friend_request", async (data: { to: string; from: string; status: 'accepted' | 'rejected' }) => {
         const target = activeUsers[data.to];
         if (target && target.socketId) {
             io.to(target.socketId).emit("friend_request_status", {
@@ -4098,6 +4109,60 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
                 status: data.status,
                 timestamp: Date.now(),
             });
+        }
+
+        // Persist resolution in Firestore or fallback database
+        try {
+          const userA = data.from; // accepting / rejecting user
+          const userB = data.to;   // original requester
+
+          if (fdb) {
+            // Update User A
+            const aRef = doc(fdb, "users", userA);
+            const aSnap = await getDoc(aRef);
+            if (aSnap.exists()) {
+              let reqs = (aSnap.data().friend_requests || []).filter((r: string) => r !== userB);
+              let friends = aSnap.data().friends_list || [];
+              if (data.status === 'accepted' && !friends.includes(userB)) {
+                friends.push(userB);
+              }
+              await updateDoc(aRef, { friend_requests: reqs, friends_list: friends });
+            }
+            // Update User B
+            const bRef = doc(fdb, "users", userB);
+            const bSnap = await getDoc(bRef);
+            if (bSnap.exists()) {
+              let reqs = (bSnap.data().friend_requests || []).filter((r: string) => r !== userA);
+              let friends = bSnap.data().friends_list || [];
+              if (data.status === 'accepted' && !friends.includes(userA)) {
+                friends.push(userA);
+              }
+              await updateDoc(bRef, { friend_requests: reqs, friends_list: friends });
+            }
+          } else {
+            // Update in fallbackState
+            if (fallbackState.users[userA]) {
+              fallbackState.users[userA].friend_requests = (fallbackState.users[userA].friend_requests || []).filter((r: string) => r !== userB);
+              if (data.status === 'accepted') {
+                fallbackState.users[userA].friends_list = fallbackState.users[userA].friends_list || [];
+                if (!fallbackState.users[userA].friends_list.includes(userB)) {
+                  fallbackState.users[userA].friends_list.push(userB);
+                }
+              }
+            }
+            if (fallbackState.users[userB]) {
+              fallbackState.users[userB].friend_requests = (fallbackState.users[userB].friend_requests || []).filter((r: string) => r !== userA);
+              if (data.status === 'accepted') {
+                fallbackState.users[userB].friends_list = fallbackState.users[userB].friends_list || [];
+                if (!fallbackState.users[userB].friends_list.includes(userA)) {
+                  fallbackState.users[userB].friends_list.push(userA);
+                }
+              }
+            }
+            saveFallbackDB();
+          }
+        } catch (err) {
+          console.error("Error persisting respond_friend_request:", err);
         }
     });
 
