@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key } from "lucide-react";
 import { collection,
   onSnapshot,
   query,
@@ -62,6 +62,7 @@ import { NotificationBellModal, NotificationItem } from "./components/Notificati
 import { FriendsModal, FriendRequest, FriendUser } from "./components/FriendsModal";
 import { MailboxModal, MailboxItem } from "./components/MailboxModal";
 import { AdminPanelModal } from "./components/AdminPanelModal";
+import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModal";
 
 const DECORATIONS = [
   // Ajedrez (Themes & Efectos)
@@ -444,6 +445,31 @@ function MainApp() {
   const [isNotificationBellOpen, setIsNotificationBellOpen] = useState(false);
   const [isFriendsModalOpen, setIsFriendsModalOpen] = useState(false);
   const [isMailboxModalOpen, setIsMailboxModalOpen] = useState(false);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab>("privacy");
+
+  // Google AdSense direct hash navigation (#privacy, #terms, #contact, #about)
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#privacy' || hash === '#privacidad') {
+        setLegalTab('privacy');
+        setLegalModalOpen(true);
+      } else if (hash === '#terms' || hash === '#terminos') {
+        setLegalTab('terms');
+        setLegalModalOpen(true);
+      } else if (hash === '#contact' || hash === '#contacto') {
+        setLegalTab('contact');
+        setLegalModalOpen(true);
+      } else if (hash === '#about' || hash === '#nosotros') {
+        setLegalTab('about');
+        setLegalModalOpen(true);
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   // Audio Recording & Voice Emulator
   const [showVoiceRecorderPreview, setShowVoiceRecorderPreview] = useState(false);
@@ -2434,6 +2460,18 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
            <button className="hover:text-white transition-colors hidden sm:block"><Calendar size={22} /></button>
 
+           {/* Políticas de Privacidad, Términos y Contacto (Google AdSense) */}
+           <button
+             onClick={() => {
+               setLegalTab("privacy");
+               setLegalModalOpen(true);
+             }}
+             className="relative hover:text-cyan-300 text-white/75 transition-colors p-1"
+             title="Políticas de Privacidad, Términos y Contacto"
+           >
+             <Shield size={20} className="text-cyan-400" />
+           </button>
+
            {/* Buzón (MessageSquare) */}
            <button
              onClick={() => {
@@ -2780,6 +2818,38 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                 </div>
               );
             })}
+            {/* Pie de Políticas y Términos para Google AdSense */}
+            <div className="p-2.5 border-t border-white/5 bg-black/40 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[11px] text-white/50">
+              <button
+                onClick={() => {
+                  setLegalTab("privacy");
+                  setLegalModalOpen(true);
+                }}
+                className="hover:text-cyan-300 transition-colors"
+              >
+                Privacidad
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => {
+                  setLegalTab("terms");
+                  setLegalModalOpen(true);
+                }}
+                className="hover:text-cyan-300 transition-colors"
+              >
+                Términos
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => {
+                  setLegalTab("contact");
+                  setLegalModalOpen(true);
+                }}
+                className="hover:text-cyan-300 transition-colors"
+              >
+                Contacto
+              </button>
+            </div>
           </div>
         </aside>
         {/* Main Chat Container */}
@@ -2849,44 +2919,47 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      <button
-                        onClick={() => setShowRoomCleanerModal(true)}
-                        className={`text-xs sm:text-sm font-bold px-2.5 sm:px-3 py-2 rounded-xl transition-all border flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                          messages.length >= 18
-                            ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
-                            : messages.length >= 14
-                            ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
-                            : "bg-purple-500/15 text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
-                        }`}
-                        title="Limpiador de Sala Global"
-                      >
-                        <Trash2 size={16} className={messages.length >= 18 ? "text-rose-400" : "text-purple-400"} />
-                        <span className="hidden sm:inline">Limpiador</span>
-                        <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[11px] font-mono border border-white/10">
-                          {messages.length}/20
-                        </span>
-                      </button>
+                    {/* Opciones de Administración: Limpiador, Hugging Face, Personalizar (Solo visibles para Administradores) */}
+                    {isUserAdmin && (
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <button
+                          onClick={() => setShowRoomCleanerModal(true)}
+                          className={`text-xs sm:text-sm font-bold px-2.5 sm:px-3 py-2 rounded-xl transition-all border flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                            messages.length >= 18
+                              ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                              : messages.length >= 14
+                              ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
+                              : "bg-purple-500/15 text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
+                          }`}
+                          title="Limpiador de Sala Global"
+                        >
+                          <Trash2 size={16} className={messages.length >= 18 ? "text-rose-400" : "text-purple-400"} />
+                          <span className="hidden sm:inline">Limpiador</span>
+                          <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[11px] font-mono border border-white/10">
+                            {messages.length}/20
+                          </span>
+                        </button>
 
-                      <button
-                        onClick={() => setShowSyncToAxisModal(true)}
-                        className="text-xs sm:text-sm font-bold text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-emerald-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
-                        title="Pasar nuevas actualizaciones a Hugging Face (chatliz-online-chatliz.hf.space) con tu Token"
-                      >
-                        <Key size={15} className="text-emerald-400 animate-pulse" />
-                        <span className="hidden sm:inline">Pasar a Hugging Face</span>
-                        <span className="sm:hidden">Token HF</span>
-                      </button>
+                        <button
+                          onClick={() => setShowSyncToAxisModal(true)}
+                          className="text-xs sm:text-sm font-bold text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 px-2.5 sm:px-3 py-2 rounded-xl transition-all border border-emerald-500/35 flex items-center gap-1.5 shadow-sm active:scale-95"
+                          title="Pasar nuevas actualizaciones a Hugging Face (chatliz-online-chatliz.hf.space) con tu Token"
+                        >
+                          <Key size={15} className="text-emerald-400 animate-pulse" />
+                          <span className="hidden sm:inline">Pasar a Hugging Face</span>
+                          <span className="sm:hidden">Token HF</span>
+                        </button>
 
-                      <button
-                        onClick={() => setShowChatConfig(true)}
-                        className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
-                        title="Personalizar Chat Global"
-                      >
-                        <Palette size={16} />
-                        <span className="hidden sm:inline">Personalizar</span>
-                      </button>
-                    </div>
+                        <button
+                          onClick={() => setShowChatConfig(true)}
+                          className="text-xs sm:text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-2 rounded-xl transition-all border border-cyan-500/30 flex items-center gap-1.5 shadow-sm"
+                          title="Personalizar Chat Global"
+                        >
+                          <Palette size={16} />
+                          <span className="hidden sm:inline">Personalizar</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   (() => {
@@ -3003,13 +3076,16 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => setShowChatConfig(true)}
-                          className="text-sm font-bold text-white/80 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-xl transition-colors border border-white/20 flex items-center justify-center mr-2"
-                          title="Personalizar este chat"
-                        >
-                          <Palette size={20} />
-                        </button>
+                        {/* Botón de Personalizar: Solo para Administradores */}
+                        {isUserAdmin && (
+                          <button
+                            onClick={() => setShowChatConfig(true)}
+                            className="text-sm font-bold text-white/80 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-xl transition-colors border border-white/20 flex items-center justify-center mr-2"
+                            title="Personalizar este chat"
+                          >
+                            <Palette size={20} />
+                          </button>
+                        )}
                         <button
                           onClick={() => setActiveChat("global")}
 
@@ -3807,7 +3883,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         />
       )}
       
-      {adminConfigAiOpen && (
+      {adminConfigAiOpen && isUserAdmin && (
         <AdminConfigAiModal
           aiUsername={currentAdminAi}
           setAdminConfigAiOpen={setAdminConfigAiOpen}
@@ -3815,6 +3891,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           setAiProfileForm={setAiProfileForm}
         />
       )}
+
+      <LegalAndPrivacyModal
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+        initialTab={legalTab}
+      />
 
       {/* Toasts Notifications */}
       <div className="fixed top-20 right-4 z-[200] flex flex-col gap-2 pointer-events-none">
@@ -4079,9 +4161,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
               {/* Avatar */}
               <div className="absolute -top-16 left-1/2 -translate-x-1/2">
                   <div
-                    className={`w-32 h-32 rounded-full border-4 border-[#0f111a] relative shadow-lg ${selectedUserModal.isAi && user.username.trim() === "Axiss" ? "cursor-pointer group" : ""}`}
+                    className={`w-32 h-32 rounded-full border-4 border-[#0f111a] relative shadow-lg ${selectedUserModal.isAi && isUserAdmin ? "cursor-pointer group" : ""}`}
                     onClick={() => {
-                      if (selectedUserModal.isAi && user.username.trim() === "Axiss") {
+                      if (selectedUserModal.isAi && isUserAdmin) {
                         setAiProfileForm({
                           profilePic: selectedUserModal.profilePic || "",
                           statusMessage: selectedUserModal.statusMessage || "Inteligencia Artificial",
@@ -4103,7 +4185,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       className="w-full h-full bg-white/5"
                       alt={selectedUserModal.username}
                     />
-                    {selectedUserModal.isAi && user.username.trim() === "Axiss" && (
+                    {selectedUserModal.isAi && isUserAdmin && (
                       <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <Bot size={24} className="text-white/80 mb-1" />
                         <span className="text-white text-xs font-bold text-center px-2">Configurar IA</span>

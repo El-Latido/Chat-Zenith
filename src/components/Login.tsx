@@ -1,10 +1,42 @@
-import React, { useRef, useState } from 'react';
-import { User, Lock, Mail, Eye, EyeOff, Calendar, Users, Upload } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { User, Lock, Mail, Eye, EyeOff, Calendar, Users, Upload, Shield, FileText, Info } from 'lucide-react';
+import { LegalAndPrivacyModal, LegalTab } from './LegalAndPrivacyModal';
 
 export function Login({ handleGoogleLogin, user, setUser, handleLogin, setRecoveryModalOpen }: any) {
   const [isRegisterMode, setIsRegisterMode] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab>('privacy');
+
+  // Auto-open modal if URL hash matches #privacy, #terms, #contact, or #about (Google AdSense crawler friendly)
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#privacy' || hash === '#privacidad') {
+        setLegalTab('privacy');
+        setLegalModalOpen(true);
+      } else if (hash === '#terms' || hash === '#terminos') {
+        setLegalTab('terms');
+        setLegalModalOpen(true);
+      } else if (hash === '#contact' || hash === '#contacto') {
+        setLegalTab('contact');
+        setLegalModalOpen(true);
+      } else if (hash === '#about' || hash === '#nosotros') {
+        setLegalTab('about');
+        setLegalModalOpen(true);
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  const openLegal = (tab: LegalTab) => {
+    setLegalTab(tab);
+    setLegalModalOpen(true);
+  };
 
   const [day, setDay] = useState("");
   const [month, setMonth] = useState("");
@@ -208,7 +240,48 @@ export function Login({ handleGoogleLogin, user, setUser, handleLogin, setRecove
             {isRegisterMode ? 'Already have an account? Login' : "Don't have an account? Sign Up"}
           </button>
         </div>
+
+        {/* Public Legal & Contact Footer (Visible without Login for Google AdSense compliance) */}
+        <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[11px] text-white/50">
+          <button
+            type="button"
+            onClick={() => openLegal('privacy')}
+            className="hover:text-cyan-300 underline transition-colors"
+          >
+            Política de Privacidad
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => openLegal('terms')}
+            className="hover:text-cyan-300 underline transition-colors"
+          >
+            Términos y Condiciones
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => openLegal('contact')}
+            className="hover:text-cyan-300 underline transition-colors"
+          >
+            Contacto
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => openLegal('about')}
+            className="hover:text-cyan-300 underline transition-colors"
+          >
+            Sobre Chat-Liz
+          </button>
+        </div>
       </div>
+
+      <LegalAndPrivacyModal
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+        initialTab={legalTab}
+      />
     </div>
   );
 }
