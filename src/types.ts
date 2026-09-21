@@ -13,6 +13,7 @@ export interface UserObj {
   friends_list?: string[];
   blocked_list?: string[];
   is_friends_public?: boolean;
+  incognito?: boolean;
   gender?: string;
   mood?: string;
   is_first_time?: boolean;

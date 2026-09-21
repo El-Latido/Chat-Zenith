@@ -7,6 +7,7 @@ export interface UniversalBackgroundProps {
   opacity?: number;
   className?: string;
   enableSound?: boolean;
+  isContainer?: boolean;
 }
 
 export type MediaBackgroundType =
@@ -171,6 +172,7 @@ export function UniversalBackground({
   opacity = 0.65,
   className = '',
   enableSound = false,
+  isContainer = false,
 }: UniversalBackgroundProps) {
   const targetMedia = useMemo(() => parseBackgroundMedia(url), [url]);
   const [displayedMedia, setDisplayedMedia] = useState<ParsedBackgroundMedia>(targetMedia);
@@ -267,28 +269,46 @@ export function UniversalBackground({
   }
 
   const isVideoWithSoundCandidate = media.type === 'video' || media.type === 'youtube';
+  const containerClasses = isContainer
+    ? `absolute inset-0 w-full h-full pointer-events-none overflow-hidden select-none transition-opacity duration-500 ease-in-out ${className}`
+    : `fixed inset-0 w-screen h-screen min-w-full min-h-full pointer-events-none overflow-hidden select-none z-[-1] transition-opacity duration-700 ease-in-out ${className}`;
 
   return (
     <div
-      className={`fixed inset-0 w-screen h-screen min-w-full min-h-full pointer-events-none overflow-hidden select-none z-[-1] transition-opacity duration-700 ease-in-out ${className}`}
+      className={containerClasses}
       style={{ opacity }}
     >
       {/* Loading state indicator during background switch/buffer */}
       {isLoading && (
-        <div className="absolute top-4 right-4 z-30 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-md border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-pulse">
-          <Loader2 size={13} className="animate-spin text-cyan-400" />
-          <span>Optimizando fondo...</span>
-        </div>
+        isContainer ? (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/80 border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-lg">
+              <Loader2 size={14} className="animate-spin text-cyan-400" />
+              <span>Cargando fondo...</span>
+            </div>
+            {/* Shimmer bar */}
+            <div className="w-24 h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse w-2/3" />
+            </div>
+          </div>
+        ) : (
+          <div className="absolute top-4 right-4 z-30 pointer-events-none flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-cyan-500/50 text-cyan-300 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-pulse">
+            <Loader2 size={13} className="animate-spin text-cyan-400" />
+            <span>Optimizando fondo...</span>
+          </div>
+        )
       )}
+
       {/* 1. YouTube Video Embed */}
       {media.type === 'youtube' && (
         <div className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden">
           <iframe
             src={`${media.src}&mute=${isAudioMuted ? 1 : 0}`}
             title="Chat-Liz Background Video"
-            className="w-[125vw] h-[125vh] min-w-[125vw] min-h-[125vh] -translate-x-[12.5vw] -translate-y-[12.5vh] border-0 pointer-events-none object-cover"
+            className={isContainer ? "w-full h-full border-0 pointer-events-none object-cover" : "w-[125vw] h-[125vh] min-w-[125vw] min-h-[125vh] -translate-x-[12.5vw] -translate-y-[12.5vh] border-0 pointer-events-none object-cover"}
             allow="autoplay; encrypted-media; picture-in-picture"
             tabIndex={-1}
+            onLoad={() => setIsLoading(false)}
           />
         </div>
       )}
@@ -303,6 +323,10 @@ export function UniversalBackground({
           muted={isAudioMuted}
           src={media.src}
           className="absolute inset-0 w-full h-full object-cover min-w-full min-h-full"
+          onWaiting={() => setIsLoading(true)}
+          onCanPlay={() => setIsLoading(false)}
+          onPlaying={() => setIsLoading(false)}
+          onLoadedData={() => setIsLoading(false)}
           onEnded={(e) => {
             // Guarantee infinite loop without pause
             try {
@@ -310,20 +334,27 @@ export function UniversalBackground({
               e.currentTarget.play();
             } catch {}
           }}
-          onError={(e) => {
-            console.warn("Background video error, attempting reload:", e);
+          onError={() => {
+            setIsLoading(false);
           }}
         />
       )}
 
-      {/* 3. Image, Animated GIF or WebP - Preserves animated frames & perfect aspect ratio */}
+      {/* 3. Image, Animated GIF or WebP - Preserves animated frames & perfect aspect ratio with lazy loading */}
       {media.type === 'image' && (
         <div className="absolute inset-0 w-full h-full overflow-hidden">
           <img
             src={media.src}
             alt="Fondo Chat-Liz"
+            loading="lazy"
+            decoding="async"
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover min-w-full min-h-full transition-opacity duration-300 pointer-events-none select-none"
+            onLoad={() => setIsLoading(false)}
+            onError={(e) => {
+              setIsLoading(false);
+              (e.currentTarget as HTMLElement).style.display = 'none';
+            }}
           />
         </div>
       )}
@@ -338,6 +369,7 @@ export function UniversalBackground({
             allow="autoplay; encrypted-media"
             sandbox="allow-scripts allow-same-origin"
             tabIndex={-1}
+            onLoad={() => setIsLoading(false)}
           />
         </div>
       )}
@@ -345,8 +377,8 @@ export function UniversalBackground({
       {/* Dark gradient overlay to preserve chat readability */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/60 pointer-events-none" />
 
-      {/* Floating Sound Toggle for Video Backgrounds */}
-      {isVideoWithSoundCandidate && (
+      {/* Floating Sound Toggle for Video Backgrounds (Only in full app background, not inside modal preview containers) */}
+      {!isContainer && isVideoWithSoundCandidate && (
         <div className="absolute bottom-4 right-4 pointer-events-auto z-20">
           <button
             onClick={toggleSound}

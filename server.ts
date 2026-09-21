@@ -704,29 +704,65 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     }, "setupUsersListener");
     setupUsersListener();
   }
+  const mapUserObj = (u: any, isTargetAdmin = false) => ({
+    username: u.username,
+    profilePic: u.profilePic,
+    statusMessage: u.statusMessage,
+    role: u.role,
+    is_friends_public: u.is_friends_public,
+    friends_list: u.is_friends_public ? u.friends_list : void 0,
+    awards: u.awards || [],
+    lizCoins: u.lizCoins || 0,
+    activeDecoration: u.activeDecoration || null,
+    ownedDecorations: u.ownedDecorations || [],
+    frameId: u.frameId || null,
+    bubbleColor: u.bubbleColor || null,
+    bubbleBorder: u.bubbleBorder || null,
+    bubbleShape: u.bubbleShape || null,
+    bubbleTexture: u.bubbleTexture || null,
+    preferred_background: u.preferred_background || null,
+    preferred_theme: u.preferred_theme || null,
+    incognito: isTargetAdmin ? !!u.incognito : (u.incognito ? true : void 0),
+  });
+
+  const getActiveUsersForSocket = (clientUsername?: string, isAdmin = false) => {
+    const list: any[] = [];
+    // Solo Elizabeth aparece como conectada entre los personajes IA
+    if (aiUserTempCache["Elizabeth"]) {
+      list.push(aiUserTempCache["Elizabeth"]);
+    }
+
+    const allActives = Object.values(activeUsers);
+    for (const u of allActives) {
+      const isSelf = !!(clientUsername && u.username && u.username.toLowerCase() === clientUsername.toLowerCase());
+      if (isAdmin) {
+        // Los administradores ven a TODOS los usuarios (incluyendo incógnitos) con el flag incognito: true
+        list.push(mapUserObj(u, true));
+      } else if (!u.incognito) {
+        // Usuarios normales solo ven a otros usuarios NO incógnitos
+        list.push(mapUserObj(u, false));
+      } else if (isSelf) {
+        // Si el usuario normal está en modo incógnito, él puede ver su propio estado incógnito
+        list.push(mapUserObj(u, true));
+      }
+    }
+    return list;
+  };
+
   const emitActiveUsers = __name(() => {
-    const usersList = Object.values(activeUsers).filter(u => !u.incognito).map((u) => ({
-      username: u.username,
-      profilePic: u.profilePic,
-      statusMessage: u.statusMessage,
-      role: u.role,
-      is_friends_public: u.is_friends_public,
-      friends_list: u.is_friends_public ? u.friends_list : void 0,
-      awards: u.awards || [],
-      lizCoins: u.lizCoins || 0,
-      activeDecoration: u.activeDecoration || null,
-      ownedDecorations: u.ownedDecorations || [],
-      frameId: u.frameId || null,
-      bubbleColor: u.bubbleColor || null,
-      bubbleBorder: u.bubbleBorder || null,
-      bubbleShape: u.bubbleShape || null,
-      bubbleTexture: u.bubbleTexture || null,
-      preferred_background: u.preferred_background || null,
-      preferred_theme: u.preferred_theme || null,
-    }));
-        // Solo Elizabeth aparece como conectada entre los personajes IA
-        if (aiUserTempCache["Elizabeth"]) { usersList.unshift(aiUserTempCache["Elizabeth"]); }
-    io.emit("active_users", usersList);
+    for (const [socketId, socketInstance] of io.sockets.sockets) {
+      const socketUsername = (socketInstance as any).currentUsername ||
+        Object.values(activeUsers).find((u: any) => u.socketId === socketId)?.username;
+      
+      const socketUser = socketUsername ? activeUsers[socketUsername] : null;
+      const isAdmin = socketUser && (
+        socketUser.role === "admin" ||
+        socketUser.username?.toUpperCase() === "AXISS"
+      );
+
+      const tailoredList = getActiveUsersForSocket(socketUsername, !!isAdmin);
+      socketInstance.emit("active_users", tailoredList);
+    }
   }, "emitActiveUsers");
   let recoveryCodes = {};
 
@@ -864,20 +900,12 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     socket.on("request_initial_state", () => {
       if (currentUsername) {
         // Send active users
-        const usersList = Object.values(activeUsers).filter(u => !u.incognito).map((u) => ({
-          username: u.username,
-          profilePic: u.profilePic,
-          statusMessage: u.statusMessage,
-          role: u.role,
-          is_friends_public: u.is_friends_public,
-          friends_list: u.is_friends_public ? u.friends_list : void 0,
-          awards: u.awards || [],
-          lizCoins: u.lizCoins || 0,
-          activeDecoration: u.activeDecoration || null,
-          ownedDecorations: u.ownedDecorations || [],
-        }));
-        // Solo Elizabeth aparece como conectada entre los personajes IA
-        if (aiUserTempCache["Elizabeth"]) { usersList.unshift(aiUserTempCache["Elizabeth"]); }
+        const socketUser = activeUsers[currentUsername];
+        const isAdmin = socketUser && (
+          socketUser.role === "admin" ||
+          socketUser.username?.toUpperCase() === "AXISS"
+        );
+        const usersList = getActiveUsersForSocket(currentUsername, !!isAdmin);
         socket.emit("active_users", usersList);
         
         // Send radio state

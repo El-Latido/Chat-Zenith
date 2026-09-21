@@ -107,10 +107,7 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
 
     try {
       const img = new Image();
-      // Handle cross-origin if external
-      if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-        img.crossOrigin = 'anonymous';
-      }
+      img.decoding = 'async';
 
       img.onload = () => {
         if (!isSettled) {

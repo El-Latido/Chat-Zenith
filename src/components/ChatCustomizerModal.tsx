@@ -24,7 +24,9 @@ import {
   Flower2,
   Rocket,
   Headphones,
-  Bot
+  Bot,
+  Loader2,
+  AlertCircle
 } from "lucide-react";
 
 export interface ChatConfig {
@@ -135,34 +137,48 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
   const [bubbleStyle, setBubbleStyle] = useState<string>(currentConfig?.bubbleStyle || "default");
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [isBgLoading, setIsBgLoading] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string>("");
 
   if (!isOpen) return null;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadError("");
 
-    // Check size limit (max 8MB)
-    if (file.size > 8 * 1024 * 1024) {
-      alert("El archivo no debe exceder 8MB.");
+    // Check size limit (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError("El archivo no debe exceder 10MB.");
       return;
     }
 
+    setIsBgLoading(true);
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const result = event.target?.result as string;
-      setBackgroundBase64(result);
-      if (result) preloadMedia(result).catch(() => {});
+      if (result) {
+        setBackgroundBase64(result);
+        await preloadMedia(result).catch(() => {});
+      }
+      setIsBgLoading(false);
+    };
+    reader.onerror = () => {
+      setIsBgLoading(false);
+      setUploadError("Error al leer el archivo. Intenta con otra imagen o GIF.");
     };
     reader.readAsDataURL(file);
   };
 
-  const handleApplyUrl = () => {
+  const handleApplyUrl = async () => {
     if (!urlInput.trim()) return;
     const targetUrl = urlInput.trim();
+    setUploadError("");
+    setIsBgLoading(true);
     setBackgroundBase64(targetUrl);
-    preloadMedia(targetUrl).catch(() => {});
     setUrlInput("");
+    await preloadMedia(targetUrl).catch(() => {});
+    setIsBgLoading(false);
   };
 
   const handleSave = async () => {
@@ -319,12 +335,36 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
             <div className="space-y-4 animate-in fade-in duration-150">
               {/* Current Preview */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-cyan-300 mb-2">
-                  Vista Previa del Fondo
+                <label className="block text-xs font-semibold uppercase tracking-wider text-cyan-300 mb-2 flex items-center justify-between">
+                  <span>Vista Previa del Fondo</span>
+                  {isBgLoading && (
+                    <span className="text-cyan-400 text-[11px] font-normal flex items-center gap-1.5 animate-pulse">
+                      <Loader2 size={12} className="animate-spin" />
+                      Optimizando medio...
+                    </span>
+                  )}
                 </label>
-                <div className="relative w-full h-32 rounded-2xl border border-white/15 overflow-hidden bg-[#090d16] flex items-center justify-center group shadow-inner">
+                <div className="relative w-full h-36 rounded-2xl border border-white/15 overflow-hidden bg-[#090d16] flex items-center justify-center group shadow-inner">
+                  {/* Skeleton / Loading state indicator */}
+                  {isBgLoading && (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm pointer-events-none animate-in fade-in duration-150">
+                      <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                        <Loader2 size={15} className="animate-spin text-cyan-400" />
+                        <span>Pre-cargando y optimizando fondo...</span>
+                      </div>
+                      <div className="w-32 h-1 bg-white/10 rounded-full mt-2.5 overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse w-2/3" />
+                      </div>
+                    </div>
+                  )}
+
                   {backgroundBase64 ? (
-                    <UniversalBackground url={backgroundBase64} opacity={0.85} />
+                    <UniversalBackground
+                      url={backgroundBase64}
+                      opacity={0.85}
+                      isContainer={true}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
                   ) : (
                     <div className="text-center text-white/40 flex flex-col items-center">
                       <ImageIcon size={32} className="mb-1 opacity-50" />
@@ -332,7 +372,7 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                     </div>
                   )}
 
-                  {backgroundBase64 && (
+                  {backgroundBase64 && !isBgLoading && (
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <button
                         onClick={() => setBackgroundBase64("")}
@@ -344,6 +384,14 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* Upload error display */}
+              {uploadError && (
+                <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-300 text-xs flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle size={15} className="flex-shrink-0 text-red-400" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
 
               {/* Upload file or enter URL */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -379,9 +427,10 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                     />
                     <button
                       onClick={handleApplyUrl}
-                      className="bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 px-3 py-1.5 rounded-xl text-xs font-bold border border-cyan-500/30 transition-all"
+                      disabled={isBgLoading}
+                      className="bg-cyan-500/20 hover:bg-cyan-500/30 disabled:opacity-50 text-cyan-300 px-3 py-1.5 rounded-xl text-xs font-bold border border-cyan-500/30 transition-all"
                     >
-                      OK
+                      {isBgLoading ? <Loader2 size={12} className="animate-spin" /> : "OK"}
                     </button>
                   </div>
                 </div>
@@ -396,9 +445,11 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                   {PRESET_WALLPAPERS.map((preset) => (
                     <button
                       key={preset.name}
-                      onClick={() => {
+                      onClick={async () => {
+                        setIsBgLoading(true);
                         setBackgroundBase64(preset.url);
-                        preloadMedia(preset.url).catch(() => {});
+                        await preloadMedia(preset.url).catch(() => {});
+                        setIsBgLoading(false);
                       }}
                       className={`relative h-18 rounded-xl overflow-hidden border transition-all text-left group ${
                         backgroundBase64 === preset.url
@@ -409,6 +460,7 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                       <img
                         src={preset.thumb}
                         alt={preset.name}
+                        loading="lazy"
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-1.5">
