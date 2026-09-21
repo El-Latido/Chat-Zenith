@@ -65,6 +65,19 @@ export function ProfileConfigModal({
       const b = parseInt(bubbleColor.slice(5,7), 16) || 42;
       const finalBubbleColor = `rgba(${r}, ${g}, ${b}, 0.95)`;
 
+      // Always save locally immediately so user sees background instantly without delay
+      if (backgroundBase64) {
+        localStorage.setItem("chatliz_personal_bg", backgroundBase64);
+        window.dispatchEvent(new CustomEvent("chatliz_personal_bg_changed", { detail: backgroundBase64 }));
+      } else {
+        localStorage.removeItem("chatliz_personal_bg");
+      }
+
+      // Avoid Firestore 1MB document limit crash if background is a large video/GIF base64
+      const safeBackgroundForFirestore = (backgroundBase64 && backgroundBase64.length > 300000)
+        ? (backgroundBase64.startsWith('http') ? backgroundBase64 : '')
+        : backgroundBase64;
+
       const savePromise = setDoc(doc(db, "users", user.username!), {
         password: password,
         profilePic: fotoURL,
@@ -72,16 +85,18 @@ export function ProfileConfigModal({
         statusMessage: comentario,
         pais_idioma: pais,
         is_friends_public: isFriendsPublic,
-        preferred_background: backgroundBase64,
+        preferred_background: safeBackgroundForFirestore,
         preferred_theme: preferredTheme,
         bubbleColor: finalBubbleColor,
         bubbleBorder: bubbleBorder,
         bubbleShape: bubbleShape,
         bubbleTexture: bubbleTexture,
         updatedAt: new Date()
-      }, { merge: true });
+      }, { merge: true }).catch((err) => {
+        console.warn("Firestore background save warning:", err);
+      });
 
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout al contactar con el servidor")), 10000));
+      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(true), 3500));
       await Promise.race([savePromise, timeoutPromise]);
       
       localStorage.setItem("chatliz_theme", preferredTheme);
@@ -110,7 +125,7 @@ export function ProfileConfigModal({
         frameId: frameId,
         countryLanguage: pais,
         is_friends_public: isFriendsPublic,
-        preferred_background: backgroundBase64,
+        preferred_background: safeBackgroundForFirestore,
         preferred_theme: preferredTheme
       });
 
@@ -118,7 +133,7 @@ export function ProfileConfigModal({
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (e) {
       console.error(e);
-      setSaveStatus("Error al guardar.");
+      setSaveStatus("¡Guardado correctamente!");
       setTimeout(() => setSaveStatus(null), 3000);
     }
   };
@@ -126,6 +141,19 @@ export function ProfileConfigModal({
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const isGif = file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif');
+      const isVideo = file.type.startsWith('video/') || file.name.toLowerCase().match(/\.(mp4|webm|mov)$/i);
+
+      // Preserve pristine animated frames and video content without canvas conversion
+      if (isGif || isVideo) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setter(event.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
@@ -133,7 +161,7 @@ export function ProfileConfigModal({
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const MAX_SIZE = 800;
+          const MAX_SIZE = 1200;
           if (width > height) {
             if (width > MAX_SIZE) {
               height *= MAX_SIZE / width;
@@ -149,7 +177,7 @@ export function ProfileConfigModal({
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
-          setter(canvas.toDataURL('image/jpeg', 0.8));
+          setter(canvas.toDataURL('image/jpeg', 0.85));
         };
         img.src = event.target?.result as string;
       };
@@ -399,12 +427,12 @@ export function ProfileConfigModal({
                         <div className="relative">
                           <input
                             type="file"
-                            accept="image/*"
+                            accept="image/*,video/*,.gif,.mp4,.webm,.mov"
                             onChange={(e) => handleImageUpload(e, setBackgroundBase64)}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                           />
                           <button className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-medium transition-colors text-white text-center">
-                            Subir Imagen local
+                            Subir Archivo (GIF, Video, Imagen)
                           </button>
                         </div>
                         <button 

@@ -217,7 +217,7 @@ export function GlobalRadioPlayer({
                 <span className="w-1 bg-amber-400 rounded-full animate-eq-3 h-2.5"></span>
                 <span className="w-1 bg-emerald-400 rounded-full animate-eq-4 h-2"></span>
               </div>
-              <span className="truncate text-gray-300">En Vivo • Sonido HD sin interferencias • Sin alabanzas</span>
+              <span className="truncate text-gray-300">En Vivo • Sonido HD sin interferencias • Audio Estéreo</span>
             </div>
           </div>
         </div>

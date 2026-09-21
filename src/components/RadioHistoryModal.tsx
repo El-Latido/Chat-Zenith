@@ -47,42 +47,31 @@ export function RadioHistoryModal({
     }
 
     try {
-      // Direct binary fetch to convert to Blob for mobile download (never opens YouTube)
-      const response = await fetch(downloadUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = `${safeTitle}.mp3`;
-      document.body.appendChild(link);
-      link.click();
-
-      setTimeout(() => {
-        window.URL.revokeObjectURL(blobUrl);
-        link.remove();
-      }, 1000);
-
-      setCompletedDownloads((prev) => ({ ...prev, [songKey]: true }));
-      if (onToast) {
-        onToast(`✅ ¡"${safeTitle}.mp3" guardado en las descargas de tu móvil!`);
-      }
-    } catch (err) {
-      console.warn("Direct blob download fallback to native download link:", err);
+      // Create native download anchor to trigger device download manager
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `${safeTitle}.mp3`;
+      link.setAttribute('download', `${safeTitle}.mp3`);
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
       document.body.appendChild(link);
       link.click();
-      setTimeout(() => link.remove(), 1000);
-      setCompletedDownloads((prev) => ({ ...prev, [songKey]: true }));
+      
+      setTimeout(() => {
+        link.remove();
+        setCompletedDownloads((prev) => ({ ...prev, [songKey]: true }));
+        if (onToast) {
+          onToast(`✅ ¡Descargando "${safeTitle}.mp3" a tu dispositivo!`);
+        }
+      }, 800);
+    } catch (err) {
+      console.error("Error triggering download:", err);
+      if (onToast) {
+        onToast(`⚠️ Error al iniciar la descarga de "${safeTitle}". Intenta de nuevo.`);
+      }
     } finally {
       setTimeout(() => {
         setDownloadingId((prev) => (prev === songKey ? null : prev));
-      }, 2500);
+      }, 3000);
     }
   };
 
@@ -181,9 +170,7 @@ export function RadioHistoryModal({
                       <p className="text-[11px] text-gray-400 flex items-center gap-1.5 mt-0.5">
                         <span className="text-cyan-400 font-medium">MP3 Directo</span>
                         <span>•</span>
-                        <span>Audio HD</span>
-                        <span>•</span>
-                        <span className="text-emerald-400">Sin Alabanzas</span>
+                        <span>Audio HD Estéreo</span>
                       </p>
                     </div>
                   </div>

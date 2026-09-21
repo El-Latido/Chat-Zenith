@@ -72,6 +72,7 @@ import { AdminPanelModal } from "./components/AdminPanelModal";
 import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModal";
 import { WelcomeLanding } from "./components/WelcomeLanding";
 import { UniversalBackground, parseBackgroundMedia } from "./components/UniversalBackground";
+import { BackgroundSelectorModal } from "./components/BackgroundSelectorModal";
 
 const DECORATIONS = [
   // Ajedrez (Themes & Efectos)
@@ -392,6 +393,8 @@ function MainApp() {
     UserObj & { password?: string; securityEmail?: string }
   >({ username: "", password: "", countryLanguage: "es", securityEmail: "" });
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [isBgModalOpen, setIsBgModalOpen] = useState(false);
+  const [bgModalMode, setBgModalMode] = useState<'global' | 'personal'>('global');
   const [isAiSelectorOpen, setIsAiSelectorOpen] = useState(false);
   const [selectedUserModal, setSelectedUserModal] = useState<UserObj | null>(
     null,
@@ -773,8 +776,18 @@ function MainApp() {
   const activeChatConfig = activeChat === "global" ? globalChatConfig : chatConfig;
   const activeCustomBg = activeChatConfig?.backgroundBase64 || activeChatConfig?.backgroundUrl;
 
+  const [personalBgOverride, setPersonalBgOverride] = useState<string | null>(() => localStorage.getItem("chatliz_personal_bg"));
+
+  useEffect(() => {
+    const handleBgChange = (e: any) => {
+      setPersonalBgOverride(e.detail || null);
+    };
+    window.addEventListener("chatliz_personal_bg_changed", handleBgChange);
+    return () => window.removeEventListener("chatliz_personal_bg_changed", handleBgChange);
+  }, []);
+
   // User personal background isolation: your background only changes for YOU
-  const personalBg = user?.preferred_background || localStorage.getItem("chatliz_personal_bg");
+  const personalBg = personalBgOverride !== null ? personalBgOverride : (user?.preferred_background || localStorage.getItem("chatliz_personal_bg"));
   let chatBg = personalBg || activeCustomBg || chatBgImage;
 
   // Recovery States
@@ -2087,6 +2100,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     setIsNotificationBellOpen(false);
     setIsFriendsModalOpen(false);
     setIsMailboxModalOpen(false);
+    setIsBgModalOpen(false);
   };
 
   const handlePromoteToAdmin = (targetUsername: string) => {
@@ -2888,239 +2902,251 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             <p className="text-white/50 text-xs">Conectado(a)</p>
           </div>
 
-
-          <div className="px-4 mt-2">
-            <button
-              className={`w-full flex items-center justify-center gap-2 text-cyan-400 bg-cyan-500/10 border ${isFriendReqOpen ? "border-cyan-500/50" : "border-cyan-500/20"} px-3 py-2 rounded-2xl hover:bg-cyan-500/20 transition-all text-sm font-medium`}
-              onClick={() => {
-                closeAllModals();
-                setIsFriendReqOpen(!isFriendReqOpen);
-              }}
-            >
-              <UserPlus size={16} strokeWidth={1.5} />
-              Solicitudes de Amistad
-              {(user?.friend_requests && user.friend_requests.length > 0) && (
-                <span className="bg-cyan-500 text-black text-xs font-bold px-2 py-0.5 rounded-full ml-1">{user.friend_requests.length}</span>
-              )}
-            </button>
-          </div>
-
-          {(user?.role === "admin" || user?.username?.toUpperCase() === "AXISS") && (
-            <>
-            <div className="px-4 mt-2 grid grid-cols-2 gap-2">
-              <button
-                className={`flex items-center justify-center gap-2 text-red-400 bg-red-500/10 border ${isBannedListOpen ? "border-red-500/50" : "border-red-500/20"} px-3 py-2 rounded-2xl hover:bg-red-500/20 transition-all text-sm font-medium`}
-                onClick={() => {
-                  closeAllModals();
-                  socket.emit("get_banned_users", (list: any) => setBannedList(list));
-                  setIsBannedListOpen(!isBannedListOpen);
-                }}
-              >
-                <ShieldAlert size={16} strokeWidth={1.5} />
-                Baneados
-              </button>
-              <button
-                className={`flex items-center justify-center gap-2 text-orange-400 bg-orange-500/10 border ${isReportsListOpen ? "border-orange-500/50" : "border-orange-500/20"} px-3 py-2 rounded-2xl hover:bg-orange-500/20 transition-all text-sm font-medium`}
-                onClick={() => {
-                  closeAllModals();
-                  socket.emit("get_reports", (list: any) => setReportsList(list));
-                  setIsReportsListOpen(!isReportsListOpen);
-                }}
-              >
-                <AlertTriangle size={16} strokeWidth={1.5} />
-                Reportes
-              </button>
-              
-              <button
-                className="flex items-center justify-center gap-2 text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-2xl hover:bg-red-500/20 transition-all text-sm font-medium"
-                onClick={() => {
-                  if(window.confirm("¿Estás seguro de limpiar el chat global? Esta acción no se puede deshacer.")) {
-                    socket.emit("clear_global_chat");
-                  }
-                }}
-              >
-                <Trash2 size={16} strokeWidth={1.5} />
-                Limpiar Global
-              </button>
-              <button
-                className="flex items-center justify-center gap-2 text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3 py-2 rounded-2xl hover:bg-blue-500/20 transition-all text-sm font-medium"
-                onClick={() => {
-                  const url = window.prompt("Ingresa la URL de la imagen o video para el fondo global (deja en blanco para restablecer):");
-                  if(url !== null) {
-                    socket.emit("set_global_bg", url);
-                  }
-                }}
-              >
-                <ImageIcon size={16} strokeWidth={1.5} />
-                Fondo Global
-              </button>
-            </div>
-            </>
-          )}
-          {user?.username?.toUpperCase() === "AXISS" && (
+          {/* Cuerpo del Sidebar - Completamente scrolleable para navegar salas, IAs y usuarios conectados */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin flex flex-col">
             <div className="px-4 mt-2">
               <button
-                className={`w-full flex items-center justify-center gap-2 text-green-400 bg-green-500/10 border ${isMonetizationOpen ? "border-green-500/50" : "border-green-500/20"} px-3 py-2 rounded-2xl hover:bg-green-500/20 transition-all text-sm font-medium`}
+                className={`w-full flex items-center justify-center gap-2 text-cyan-400 bg-cyan-500/10 border ${isFriendReqOpen ? "border-cyan-500/50" : "border-cyan-500/20"} px-3 py-2 rounded-2xl hover:bg-cyan-500/20 transition-all text-sm font-medium`}
                 onClick={() => {
                   closeAllModals();
-                  socket.emit("get_monetization_stats", (stats: any) => setMonetizationStats(stats));
-                  setIsMonetizationOpen(!isMonetizationOpen);
+                  setIsFriendReqOpen(!isFriendReqOpen);
                 }}
               >
-                <DollarSign size={16} strokeWidth={1.5} />
-                Ingresos SDK
+                <UserPlus size={16} strokeWidth={1.5} />
+                Solicitudes de Amistad
+                {(user?.friend_requests && user.friend_requests.length > 0) && (
+                  <span className="bg-cyan-500 text-black text-xs font-bold px-2 py-0.5 rounded-full ml-1">{user.friend_requests.length}</span>
+                )}
               </button>
             </div>
-          )}
 
-          <div className="w-full h-px bg-white/5 my-2"></div>
-
-          {/* Salas */}
-          <div className="px-4 py-2 flex flex-col gap-2">
-            <button
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "global" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
-              onClick={() => {
-                closeAllModals();
-                setIsSidebarOpen(false);
-                setActiveChat("global");
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Globe size={18} className={activeChat === "global" ? "animate-pulse" : ""} />
-                Sala Global
-              </div>
-            </button>
-            {/* Friends Webcam: Available for all users */}
-            <button
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "friends_webcam" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
-              onClick={() => {
-                closeAllModals();
-                setIsSidebarOpen(false);
-                setActiveChat("friends_webcam");
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Webcam size={18} className={activeChat === "friends_webcam" ? "animate-pulse" : ""} />
-                Friends Webcam
-              </div>
-            </button>
-            <button
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "custom_rooms" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
-              onClick={() => {
-                closeAllModals();
-                setIsSidebarOpen(false);
-                setActiveChat("custom_rooms");
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Hash size={18} />
-                Crear Sala
-              </div>
-            </button>
-          </div>
-
-
-          {/* AI Characters Button */}
-          <div className="px-4 py-2">
-            <button
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white px-3 py-2.5 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
-              onClick={() => {
-                closeAllModals();
-                setIsAiSelectorOpen(true);
-              }}
-            >
-              <Bot size={18} />
-              Personajes IA
-            </button>
-          </div>
-          {/* User Search */}
-          <div className="px-4 py-2">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const q = (e.target as any).elements.searchQuery.value.trim();
-                if (q) {
-                  socket.emit("search_user", q, (res: any) => {
-                    if (res.success) {
-                      setSelectedUserModal(res.user);
-                    } else {
-                      alert("Usuario no encontrado");
-                    }
-                  });
-                }
-              }}
-              className="relative"
-            >
-              <input
-                name="searchQuery"
-                type="text"
-                placeholder="Buscar por UID o Nombre..."
-                className="w-full bg-[#12141c] text-sm text-white px-3 py-2 pl-8 rounded-xl border border-white/10 focus:border-[#D4AF37] focus:outline-none placeholder-gray-500"
-              />
-              <Search
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500"
-                size={14}
-              />
-            </form>
-          </div>
-
-          {/* Users List */}
-          <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 scrollbar-thin">
-            {usersOnline.map((u) => {
-              if (
-                ["Elizabeth", "Sensei", "Shadow", "Neko"].includes(u.username)
-              )
-                return null;
-              return (
-                <div
-                  key={u.username}
-                  className="bg-white/[0.03] border border-white/10 backdrop-blur-md hover:border-white/20 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden group cursor-pointer hover:bg-white/5 transition-colors"
+            {(user?.role === "admin" || user?.username?.toUpperCase() === "AXISS") && (
+              <>
+              <div className="px-4 mt-2 grid grid-cols-2 gap-2">
+                <button
+                  className={`flex items-center justify-center gap-2 text-red-400 bg-red-500/10 border ${isBannedListOpen ? "border-red-500/50" : "border-red-500/20"} px-3 py-2 rounded-2xl hover:bg-red-500/20 transition-all text-sm font-medium`}
                   onClick={() => {
                     closeAllModals();
-                    setSelectedUserModal(u as any);
+                    socket.emit("get_banned_users", (list: any) => setBannedList(list));
+                    setIsBannedListOpen(!isBannedListOpen);
                   }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full border border-white/10 flex-shrink-0">
-                      <Avatar
-                        src={
-                          u.profilePic ||
-                          `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`
-                        }
-                        frameId={u.frameId}
-                        alt={u.username}
-                        className="w-full h-full"
-                      />
-                      {u.activeDecoration && (
-                        <div className="absolute inset-0 pointer-events-none scale-125 z-10 flex items-center justify-center">
-                          <img
-                            referrerPolicy="no-referrer"
-                            src={u.activeDecoration}
-                            alt="marco"
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-bold text-sm truncate flex items-center gap-1.5">
-                        {u.username}{" "}
-                        {u.username.toUpperCase() === "AXISS" && (
-                          <span className="bg-red-500/20 text-red-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
-                            Admin
-                          </span>
+                  <ShieldAlert size={16} strokeWidth={1.5} />
+                  Baneados
+                </button>
+                <button
+                  className={`flex items-center justify-center gap-2 text-orange-400 bg-orange-500/10 border ${isReportsListOpen ? "border-orange-500/50" : "border-orange-500/20"} px-3 py-2 rounded-2xl hover:bg-orange-500/20 transition-all text-sm font-medium`}
+                  onClick={() => {
+                    closeAllModals();
+                    socket.emit("get_reports", (list: any) => setReportsList(list));
+                    setIsReportsListOpen(!isReportsListOpen);
+                  }}
+                >
+                  <AlertTriangle size={16} strokeWidth={1.5} />
+                  Reportes
+                </button>
+                
+                <button
+                  className="flex items-center justify-center gap-2 text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-2xl hover:bg-red-500/20 transition-all text-sm font-medium"
+                  onClick={() => {
+                    if(window.confirm("¿Estás seguro de limpiar el chat global? Esta acción no se puede deshacer.")) {
+                      socket.emit("clear_global_chat");
+                    }
+                  }}
+                >
+                  <Trash2 size={16} strokeWidth={1.5} />
+                  Limpiar Global
+                </button>
+                <button
+                  className="flex items-center justify-center gap-2 text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3 py-2 rounded-2xl hover:bg-blue-500/20 transition-all text-sm font-medium"
+                  onClick={() => {
+                    closeAllModals();
+                    setBgModalMode("global");
+                    setIsBgModalOpen(true);
+                  }}
+                  title="Configurar Fondo Global con Video, GIF, Imagen o YouTube"
+                >
+                  <ImageIcon size={16} strokeWidth={1.5} />
+                  Fondo Global
+                </button>
+              </div>
+              </>
+            )}
+            {user?.username?.toUpperCase() === "AXISS" && (
+              <div className="px-4 mt-2">
+                <button
+                  className={`w-full flex items-center justify-center gap-2 text-green-400 bg-green-500/10 border ${isMonetizationOpen ? "border-green-500/50" : "border-green-500/20"} px-3 py-2 rounded-2xl hover:bg-green-500/20 transition-all text-sm font-medium`}
+                  onClick={() => {
+                    closeAllModals();
+                    socket.emit("get_monetization_stats", (stats: any) => setMonetizationStats(stats));
+                    setIsMonetizationOpen(!isMonetizationOpen);
+                  }}
+                >
+                  <DollarSign size={16} strokeWidth={1.5} />
+                  Ingresos SDK
+                </button>
+              </div>
+            )}
+
+            <div className="w-full h-px bg-white/5 my-2"></div>
+
+            {/* Salas */}
+            <div className="px-4 py-1 flex flex-col gap-1.5">
+              <button
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "global" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
+                onClick={() => {
+                  closeAllModals();
+                  setIsSidebarOpen(false);
+                  setActiveChat("global");
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Globe size={18} className={activeChat === "global" ? "animate-pulse" : ""} />
+                  Sala Global
+                </div>
+              </button>
+              {/* Friends Webcam: Available for all users */}
+              <button
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "friends_webcam" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
+                onClick={() => {
+                  closeAllModals();
+                  setIsSidebarOpen(false);
+                  setActiveChat("friends_webcam");
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Webcam size={18} className={activeChat === "friends_webcam" ? "animate-pulse" : ""} />
+                  Friends Webcam
+                </div>
+              </button>
+              <button
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold transition-all ${activeChat === "custom_rooms" ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-transparent text-white/50 hover:bg-white/10 hover:text-white transition-all"}`}
+                onClick={() => {
+                  closeAllModals();
+                  setIsSidebarOpen(false);
+                  setActiveChat("custom_rooms");
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Hash size={18} />
+                  Crear Sala
+                </div>
+              </button>
+            </div>
+
+            {/* AI Characters Button */}
+            <div className="px-4 py-2">
+              <button
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white px-3 py-2.5 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
+                onClick={() => {
+                  closeAllModals();
+                  setIsAiSelectorOpen(true);
+                }}
+              >
+                <Bot size={18} />
+                Personajes IA
+              </button>
+            </div>
+
+            {/* User Search */}
+            <div className="px-4 py-1">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const q = (e.target as any).elements.searchQuery.value.trim();
+                  if (q) {
+                    socket.emit("search_user", q, (res: any) => {
+                      if (res.success) {
+                        setSelectedUserModal(res.user);
+                      } else {
+                        alert("Usuario no encontrado");
+                      }
+                    });
+                  }
+                }}
+                className="relative"
+              >
+                <input
+                  name="searchQuery"
+                  type="text"
+                  placeholder="Buscar por UID o Nombre..."
+                  className="w-full bg-[#12141c] text-sm text-white px-3 py-2 pl-8 rounded-xl border border-white/10 focus:border-[#D4AF37] focus:outline-none placeholder-gray-500"
+                />
+                <Search
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                  size={14}
+                />
+              </form>
+            </div>
+
+            {/* Conectados Header */}
+            <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Users size={14} className="text-cyan-400" />
+                Conectados ({usersOnline.filter((u) => !["Elizabeth", "Sensei", "Shadow", "Neko"].includes(u.username)).length})
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            </div>
+
+            {/* Users List */}
+            <div className="px-4 py-1 space-y-2">
+              {usersOnline.map((u) => {
+                if (
+                  ["Elizabeth", "Sensei", "Shadow", "Neko"].includes(u.username)
+                )
+                  return null;
+                return (
+                  <div
+                    key={u.username}
+                    className="bg-white/[0.03] border border-white/10 backdrop-blur-md hover:border-white/20 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden group cursor-pointer hover:bg-white/5 transition-colors"
+                    onClick={() => {
+                      closeAllModals();
+                      setSelectedUserModal(u as any);
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full border border-white/10 flex-shrink-0 relative">
+                        <Avatar
+                          src={
+                            u.profilePic ||
+                            `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`
+                          }
+                          frameId={u.frameId}
+                          alt={u.username}
+                          className="w-full h-full"
+                        />
+                        {u.activeDecoration && (
+                          <div className="absolute inset-0 pointer-events-none scale-125 z-10 flex items-center justify-center">
+                            <img
+                              referrerPolicy="no-referrer"
+                              src={u.activeDecoration}
+                              alt="marco"
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
                         )}
-                      </p>
-                      <p className="text-white/50 text-xs truncate">
-                        En línea
-                      </p>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold text-sm truncate flex items-center gap-1.5">
+                          {u.username}{" "}
+                          {u.username.toUpperCase() === "AXISS" && (
+                            <span className="bg-red-500/20 text-red-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                              Admin
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-white/50 text-xs truncate">
+                          En línea
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
             {/* Pie de Políticas y Términos para Google AdSense */}
-            <div className="p-2.5 border-t border-white/5 bg-black/40 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[11px] text-white/50">
+            <div className="mt-auto p-2.5 border-t border-white/5 bg-black/40 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[11px] text-white/50">
               <button
                 onClick={() => {
                   setLegalTab("privacy");
@@ -4180,6 +4206,25 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         isOpen={showSyncToAxisModal}
         onClose={() => setShowSyncToAxisModal(false)}
         currentGlobalConfig={globalChatConfig}
+        onToast={addSystemToast}
+      />
+
+      <BackgroundSelectorModal
+        isOpen={isBgModalOpen}
+        onClose={() => setIsBgModalOpen(false)}
+        currentBg={chatBg}
+        isAdmin={user?.role === "admin" || user?.username?.toUpperCase() === "AXISS"}
+        defaultMode={bgModalMode}
+        onApplyPersonalBg={(url) => {
+          if (url) {
+            localStorage.setItem("chatliz_personal_bg", url);
+            window.dispatchEvent(new CustomEvent("chatliz_personal_bg_changed", { detail: url }));
+          } else {
+            localStorage.removeItem("chatliz_personal_bg");
+            window.dispatchEvent(new CustomEvent("chatliz_personal_bg_changed", { detail: null }));
+          }
+          setUser((prev) => ({ ...prev, preferred_background: url }));
+        }}
         onToast={addSystemToast}
       />
       {isConfigOpen && (
