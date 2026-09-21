@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key, Sliders } from "lucide-react";
 import { collection,
   onSnapshot,
   query,
@@ -59,6 +59,12 @@ import { AiSelectorModal } from "./components/AiSelectorModal";
 import { RoomCleanerModal } from "./components/RoomCleanerModal";
 import { SocialFeed } from "./components/social/SocialFeed";
 import { VoiceRecorderPreview } from "./components/VoiceRecorderPreview";
+import { VoiceModulatorPanel } from "./components/VoiceModulatorPanel";
+import {
+  RealtimeModulationConfig,
+  DEFAULT_MODULATION_CONFIG,
+  getGlobalVoiceModulator,
+} from "./utils/audioContextModulator";
 import { NotificationBellModal, NotificationItem } from "./components/NotificationBellModal";
 import { FriendsModal, FriendRequest, FriendUser } from "./components/FriendsModal";
 import { MailboxModal, MailboxItem } from "./components/MailboxModal";
@@ -477,6 +483,23 @@ function MainApp() {
   // Audio Recording & Voice Emulator
   const [showVoiceRecorderPreview, setShowVoiceRecorderPreview] = useState(false);
   const [recordedAudioBlob, setRecordedAudioBlob] = useState<Blob | null>(null);
+
+  // Real-time Voice Modulator in Microphone Area
+  const [showVoiceModulator, setShowVoiceModulator] = useState(false);
+  const [voiceModulatorConfig, setVoiceModulatorConfig] = useState<RealtimeModulationConfig>(() => {
+    try {
+      const saved = localStorage.getItem("chatliz_voice_modulator_config");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { ...DEFAULT_MODULATION_CONFIG };
+  });
+
+  const handleUpdateModulatorConfig = (newConfig: RealtimeModulationConfig) => {
+    setVoiceModulatorConfig(newConfig);
+    try {
+      localStorage.setItem("chatliz_voice_modulator_config", JSON.stringify(newConfig));
+    } catch {}
+  };
 
   // Notifications, Friends & Mailbox Collections
   const [bellNotifications, setBellNotifications] = useState<NotificationItem[]>(() => {
@@ -2531,8 +2554,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         audio: {
           sampleRate: 44100,
           echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          noiseSuppression: false,
+          autoGainControl: false,
         },
       });
 
@@ -2550,7 +2573,19 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         mimeType = "audio/ogg;codecs=opus";
       }
 
-      mediaRecorderRef.current = new MediaRecorder(stream, {
+      // If real-time voice modulation is enabled, route stream through AudioContext
+      let recordStream = stream;
+      if (voiceModulatorConfig.enabled) {
+        try {
+          const engine = getGlobalVoiceModulator();
+          const { modulatedStream } = engine.connectStream(stream, voiceModulatorConfig);
+          recordStream = modulatedStream;
+        } catch (modErr) {
+          console.warn("AudioContext stream modulation fallback to direct stream:", modErr);
+        }
+      }
+
+      mediaRecorderRef.current = new MediaRecorder(recordStream, {
         mimeType,
         ...options,
       });
@@ -2562,6 +2597,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         const blob = new Blob(audioChunks.current, { type: mimeType });
         setRecordedAudioBlob(blob);
         setShowVoiceRecorderPreview(true);
+        try {
+          getGlobalVoiceModulator().disconnect();
+        } catch {}
       };
       mediaRecorderRef.current.start();
       setIsRecording(true);
@@ -2608,6 +2646,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     if (recordingStream) {
       recordingStream.getTracks().forEach((t) => t.stop());
     }
+    try {
+      getGlobalVoiceModulator().disconnect();
+    } catch {}
     setIsRecording(false);
     setRecordingStream(null);
   };
@@ -3649,6 +3690,18 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     />
                   )}
 
+                  {/* Real-time Voice Modulator Panel */}
+                  {showVoiceModulator && (
+                    <div className="relative">
+                      <VoiceModulatorPanel
+                        isOpen={showVoiceModulator}
+                        onClose={() => setShowVoiceModulator(false)}
+                        config={voiceModulatorConfig}
+                        onChangeConfig={handleUpdateModulatorConfig}
+                      />
+                    </div>
+                  )}
+
                   {/* Voice Recording Preview & Voice Emulator */}
                   {showVoiceRecorderPreview && recordedAudioBlob && (
                     <div className="mb-2.5">
@@ -3691,6 +3744,29 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       <input type="file" accept="*" className="hidden" ref={generalFileInputRef} onChange={handleGeneralFileSelect} />
                     </div>
                     
+                    {/* Voice Modulation AudioContext Controls Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowVoiceModulator((prev) => !prev)}
+                      className={`relative transition-all p-1.5 rounded-full ${
+                        showVoiceModulator
+                          ? "bg-cyan-500/25 text-cyan-300 border border-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.5)] scale-105"
+                          : voiceModulatorConfig.enabled
+                          ? "text-cyan-400 hover:text-cyan-300 hover:bg-white/10"
+                          : "text-gray-400 hover:text-white hover:bg-white/5"
+                      }`}
+                      title="Modulador de Voz AudioContext: Desliza Frecuencia (Pitch) y Ganancia en tiempo real"
+                      id="voice-modulator-btn"
+                    >
+                      <Sliders size={21} />
+                      {voiceModulatorConfig.enabled && (
+                        <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500 border border-[#18181b]"></span>
+                        </span>
+                      )}
+                    </button>
+
                     <button
                       onClick={toggleRecording}
                       className={`transition-all p-1.5 rounded-full ${
@@ -3699,6 +3775,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                           : "text-gray-400 hover:text-white"
                       }`}
                       title={isRecording ? "Detener grabación y previsualizar" : "Grabar audio con emulador de voz"}
+                      id="chat-mic-record-btn"
                     >
                       <Mic size={22} />
                     </button>
