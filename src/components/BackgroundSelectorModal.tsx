@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, Image as ImageIcon, Video, Sparkles, Upload, Check, Volume2, VolumeX, Globe, User, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Image as ImageIcon, Video, Sparkles, Upload, Check, Volume2, VolumeX, Globe, User, RotateCcw, Loader2 } from 'lucide-react';
 import { socket } from '../socket';
+import { preloadMedia, preloadMediaBatch } from '../utils/mediaPreloader';
 
 export interface BackgroundSelectorModalProps {
   isOpen: boolean;
@@ -77,6 +78,14 @@ export function BackgroundSelectorModal({
     return localStorage.getItem('chatliz_bg_muted') === 'false';
   });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+
+  // Pre-cache all preset backgrounds in memory as soon as modal opens
+  useEffect(() => {
+    if (isOpen) {
+      preloadMediaBatch(PRESET_BACKGROUNDS.map((p) => p.url));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -98,13 +107,16 @@ export function BackgroundSelectorModal({
         return;
       }
 
+      // Pre-warm cache for the uploaded media
+      preloadMedia(dataResult).catch(() => {});
+
       // For GIF and Video: preserve pristine 100% animated frames without converting to canvas
       if (isGif || isVideo) {
         setSelectedBg(dataResult);
         setMediaPreview(dataResult);
         setCustomUrl('');
         setIsProcessing(false);
-        if (onToast) onToast(`✨ Archivo ${isGif ? 'GIF animado' : 'Video'} cargado con éxito`);
+        if (onToast) onToast(`✨ Archivo ${isGif ? 'GIF animado' : 'Video'} cargado y optimizado`);
         return;
       }
 
@@ -113,7 +125,7 @@ export function BackgroundSelectorModal({
       setMediaPreview(dataResult);
       setCustomUrl('');
       setIsProcessing(false);
-      if (onToast) onToast('✨ Imagen lista para aplicar');
+      if (onToast) onToast('✨ Imagen lista y precargada');
     };
 
     reader.onerror = () => {
@@ -124,11 +136,17 @@ export function BackgroundSelectorModal({
     reader.readAsDataURL(file);
   };
 
-  const handleApply = () => {
+  const handleApply = async () => {
     const finalBg = customUrl.trim() || selectedBg;
+    setIsApplying(true);
 
     // Apply audio preference
     localStorage.setItem('chatliz_bg_muted', isSoundEnabled ? 'false' : 'true');
+
+    // Pre-cache media to eliminate transition delay
+    if (finalBg) {
+      await preloadMedia(finalBg).catch(() => {});
+    }
 
     if (targetScope === 'global' && isAdmin) {
       // Emit to server to update room background for all users
@@ -145,6 +163,7 @@ export function BackgroundSelectorModal({
       if (onToast) onToast('🎨 ¡Tu fondo personal ha sido actualizado!');
     }
 
+    setIsApplying(false);
     onClose();
   };
 
@@ -426,10 +445,20 @@ export function BackgroundSelectorModal({
             <button
               type="button"
               onClick={handleApply}
-              className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-cyan-500/25 transition-all flex items-center gap-1.5"
+              disabled={isApplying}
+              className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-cyan-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Check size={16} />
-              Aplicar Ahora
+              {isApplying ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>Optimizando...</span>
+                </>
+              ) : (
+                <>
+                  <Check size={16} />
+                  <span>Aplicar Ahora</span>
+                </>
+              )}
             </button>
           </div>
         </div>

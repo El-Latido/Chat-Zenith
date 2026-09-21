@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { UserObj } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
+import { preloadMedia } from '../utils/mediaPreloader';
 
 interface ProfileConfigModalProps {
   user: UserObj & { password?: string };
@@ -148,7 +149,9 @@ export function ProfileConfigModal({
       if (isGif || isVideo) {
         const reader = new FileReader();
         reader.onload = (event) => {
-          setter(event.target?.result as string);
+          const res = event.target?.result as string;
+          setter(res);
+          if (res) preloadMedia(res).catch(() => {});
         };
         reader.readAsDataURL(file);
         return;

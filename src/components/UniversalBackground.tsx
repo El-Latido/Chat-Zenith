@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { preloadMedia } from '../utils/mediaPreloader';
 
 export interface UniversalBackgroundProps {
   url: string | null | undefined;
@@ -171,15 +172,55 @@ export function UniversalBackground({
   className = '',
   enableSound = false,
 }: UniversalBackgroundProps) {
-  const media = useMemo(() => parseBackgroundMedia(url), [url]);
+  const targetMedia = useMemo(() => parseBackgroundMedia(url), [url]);
+  const [displayedMedia, setDisplayedMedia] = useState<ParsedBackgroundMedia>(targetMedia);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  
+
   // Sound state: user preference stored in localStorage
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => {
     if (enableSound) return false;
     const saved = localStorage.getItem('chatliz_bg_muted');
     return saved === null ? true : saved === 'true';
   });
+
+  // Preload new background seamlessly before swapping to eliminate delay and black screen
+  useEffect(() => {
+    if (!targetMedia.src || targetMedia.type === 'none') {
+      setDisplayedMedia(targetMedia);
+      setIsLoading(false);
+      return;
+    }
+
+    if (targetMedia.src === displayedMedia.src && targetMedia.type === displayedMedia.type) {
+      return;
+    }
+
+    // Only show loading if swapping between non-trivial backgrounds
+    setIsLoading(true);
+    let isCurrent = true;
+
+    preloadMedia(targetMedia.src)
+      .then(() => {
+        if (isCurrent) {
+          setDisplayedMedia(targetMedia);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        // Fail gracefully without showing error alert
+        if (isCurrent) {
+          setDisplayedMedia(targetMedia);
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [targetMedia]);
+
+  const media = displayedMedia;
 
   // Keep video continuously playing without pausing
   useEffect(() => {
@@ -229,9 +270,16 @@ export function UniversalBackground({
 
   return (
     <div
-      className={`fixed inset-0 w-screen h-screen min-w-full min-h-full pointer-events-none overflow-hidden select-none z-[-1] ${className}`}
+      className={`fixed inset-0 w-screen h-screen min-w-full min-h-full pointer-events-none overflow-hidden select-none z-[-1] transition-opacity duration-700 ease-in-out ${className}`}
       style={{ opacity }}
     >
+      {/* Loading state indicator during background switch/buffer */}
+      {isLoading && (
+        <div className="absolute top-4 right-4 z-30 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-md border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-pulse">
+          <Loader2 size={13} className="animate-spin text-cyan-400" />
+          <span>Optimizando fondo...</span>
+        </div>
+      )}
       {/* 1. YouTube Video Embed */}
       {media.type === 'youtube' && (
         <div className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden">

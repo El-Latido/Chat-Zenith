@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { UniversalBackground } from "./UniversalBackground";
+import { preloadMedia } from "../utils/mediaPreloader";
 import {
   Palette,
   X,
@@ -151,19 +152,25 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
     reader.onload = (event) => {
       const result = event.target?.result as string;
       setBackgroundBase64(result);
+      if (result) preloadMedia(result).catch(() => {});
     };
     reader.readAsDataURL(file);
   };
 
   const handleApplyUrl = () => {
     if (!urlInput.trim()) return;
-    setBackgroundBase64(urlInput.trim());
+    const targetUrl = urlInput.trim();
+    setBackgroundBase64(targetUrl);
+    preloadMedia(targetUrl).catch(() => {});
     setUrlInput("");
   };
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      if (backgroundBase64) {
+        await preloadMedia(backgroundBase64).catch(() => {});
+      }
       const updated: ChatConfig = {
         backgroundBase64: backgroundBase64 || "",
         backgroundUrl: backgroundBase64 || "",
@@ -389,7 +396,10 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                   {PRESET_WALLPAPERS.map((preset) => (
                     <button
                       key={preset.name}
-                      onClick={() => setBackgroundBase64(preset.url)}
+                      onClick={() => {
+                        setBackgroundBase64(preset.url);
+                        preloadMedia(preset.url).catch(() => {});
+                      }}
                       className={`relative h-18 rounded-xl overflow-hidden border transition-all text-left group ${
                         backgroundBase64 === preset.url
                           ? "border-cyan-400 ring-2 ring-cyan-400/40 scale-[1.02]"

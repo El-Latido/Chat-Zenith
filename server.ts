@@ -724,7 +724,8 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       preferred_background: u.preferred_background || null,
       preferred_theme: u.preferred_theme || null,
     }));
-        for (const ai of Object.keys(AI_CHARACTERS)) { usersList.unshift(aiUserTempCache[ai]); }
+        // Solo Elizabeth aparece como conectada entre los personajes IA
+        if (aiUserTempCache["Elizabeth"]) { usersList.unshift(aiUserTempCache["Elizabeth"]); }
     io.emit("active_users", usersList);
   }, "emitActiveUsers");
   let recoveryCodes = {};
@@ -875,7 +876,8 @@ __name(ensureAutoRadio, "ensureAutoRadio");
           activeDecoration: u.activeDecoration || null,
           ownedDecorations: u.ownedDecorations || [],
         }));
-            for (const ai of Object.keys(AI_CHARACTERS)) { usersList.unshift(aiUserTempCache[ai]); }
+        // Solo Elizabeth aparece como conectada entre los personajes IA
+        if (aiUserTempCache["Elizabeth"]) { usersList.unshift(aiUserTempCache["Elizabeth"]); }
         socket.emit("active_users", usersList);
         
         // Send radio state

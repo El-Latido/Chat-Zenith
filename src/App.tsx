@@ -697,9 +697,35 @@ function MainApp() {
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
 
   const [usersOnline, setUsersOnline] = useState<UserObj[]>([
-    { username: "Elizabeth", statusMessage: "Administradora", role: "admin" },
+    { username: "Elizabeth", statusMessage: "Administradora IA", role: "admin", isAi: true },
   ]);
   const [userCache, setUserCache] = useState<Record<string, UserObj>>({});
+
+  // Mantener al usuario actual y a Elizabeth siempre visibles en línea
+  useEffect(() => {
+    if (user.username) {
+      setUsersOnline((prev) => {
+        const disallowedAis = ["Sensei", "Shadow", "Neko"];
+        const filtered = prev.filter((u) => !disallowedAis.includes(u.username));
+        let changed = false;
+        const result = [...filtered];
+        if (!result.some((u) => u.username === user.username)) {
+          result.push(user);
+          changed = true;
+        }
+        if (!result.some((u) => u.username === "Elizabeth")) {
+          result.unshift({
+            username: "Elizabeth",
+            statusMessage: "Administradora IA",
+            role: "admin",
+            isAi: true,
+          });
+          changed = true;
+        }
+        return changed ? result : prev;
+      });
+    }
+  }, [user.username, user.profilePic, user.role]);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRadioOpen, setIsRadioOpen] = useState(false);
@@ -1773,14 +1799,27 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     socket.on("active_users", (usersList: UserObj[]) => {
       socket.emit("check_pending_calls");
-      const aiIds = ["Elizabeth", "Sensei", "Shadow", "Neko"];
-      const ais = usersList
-        .filter((u) => aiIds.includes(u.username))
-        .map((u) => ({ ...u, isAi: true }));
-      const others = usersList.filter(
-        (u) => !aiIds.includes(u.username) && u.username !== user.username,
-      );
-      setUsersOnline([...ais, ...others]);
+      const disallowedAis = ["Sensei", "Shadow", "Neko"];
+      
+      // Filtrar IAs no humanas excepto Elizabeth (la única IA permitida como conectada)
+      const validUsers = usersList.filter((u) => !disallowedAis.includes(u.username));
+      
+      // Asegurar que el usuario conectado siempre esté en la lista
+      const finalOnline = [...validUsers];
+      if (user.username && !finalOnline.some((u) => u.username === user.username)) {
+        finalOnline.push(user);
+      }
+      // Asegurar que Elizabeth aparezca como conectada
+      if (!finalOnline.some((u) => u.username === "Elizabeth")) {
+        finalOnline.unshift({
+          username: "Elizabeth",
+          statusMessage: "Administradora IA",
+          role: "admin",
+          isAi: true,
+        });
+      }
+
+      setUsersOnline(finalOnline);
       setUserCache((prev) => {
         const newCache = { ...prev };
         usersList.forEach((u) => {
@@ -3083,7 +3122,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             <div className="px-4 pt-3 pb-1 flex items-center justify-between">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Users size={14} className="text-cyan-400" />
-                Conectados ({usersOnline.filter((u) => !["Elizabeth", "Sensei", "Shadow", "Neko"].includes(u.username)).length})
+                Conectados ({usersOnline.filter((u) => !["Sensei", "Shadow", "Neko"].includes(u.username)).length})
               </span>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             </div>
@@ -3091,17 +3130,28 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             {/* Users List */}
             <div className="px-4 py-1 space-y-2">
               {usersOnline.map((u) => {
-                if (
-                  ["Elizabeth", "Sensei", "Shadow", "Neko"].includes(u.username)
-                )
+                if (["Sensei", "Shadow", "Neko"].includes(u.username))
                   return null;
+                const isMe = u.username === user.username;
+                const isElizabeth = u.username === "Elizabeth";
                 return (
                   <div
                     key={u.username}
-                    className="bg-white/[0.03] border border-white/10 backdrop-blur-md hover:border-white/20 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden group cursor-pointer hover:bg-white/5 transition-colors"
+                    className={`border backdrop-blur-md rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden group cursor-pointer transition-colors ${
+                      isMe
+                        ? "bg-cyan-500/10 border-cyan-500/30 hover:border-cyan-500/50 hover:bg-cyan-500/15"
+                        : isElizabeth
+                        ? "bg-purple-500/10 border-purple-500/30 hover:border-purple-500/50 hover:bg-purple-500/15"
+                        : "bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/5"
+                    }`}
                     onClick={() => {
                       closeAllModals();
-                      setSelectedUserModal(u as any);
+                      if (isElizabeth) {
+                        setIsSidebarOpen(false);
+                        setActiveChat("Elizabeth");
+                      } else {
+                        setSelectedUserModal(u as any);
+                      }
                     }}
                   >
                     <div className="flex items-center gap-3">
@@ -3109,7 +3159,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         <Avatar
                           src={
                             u.profilePic ||
-                            `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`
+                            (isElizabeth
+                              ? "/elizabeth_avatar.png"
+                              : `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`)
                           }
                           frameId={u.frameId}
                           alt={u.username}
@@ -3128,15 +3180,25 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-white font-bold text-sm truncate flex items-center gap-1.5">
-                          {u.username}{" "}
+                          {u.username}
+                          {isMe && (
+                            <span className="bg-cyan-500/20 text-cyan-300 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider border border-cyan-500/40">
+                              Tú
+                            </span>
+                          )}
                           {u.username.toUpperCase() === "AXISS" && (
                             <span className="bg-red-500/20 text-red-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
                               Admin
                             </span>
                           )}
+                          {isElizabeth && (
+                            <span className="bg-purple-500/20 text-purple-300 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider border border-purple-500/40">
+                              IA Oficial
+                            </span>
+                          )}
                         </p>
                         <p className="text-white/50 text-xs truncate">
-                          En línea
+                          {isElizabeth ? "Administradora IA • En línea" : (u.statusMessage || "En línea")}
                         </p>
                       </div>
                     </div>
@@ -3224,7 +3286,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         </span>
                         <span className="text-white/60 text-xs font-medium flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-green-400 animate-ping inline-block" />
-                          <span className="text-green-400">{usersOnline.length} {t('online')}</span>
+                          <span className="text-green-400">{usersOnline.filter((u) => !["Sensei", "Shadow", "Neko"].includes(u.username)).length} {t('online')}</span>
                           {globalChatConfig?.statusMessage && (
                             <span className="text-cyan-200/90 truncate max-w-[200px] sm:max-w-xs font-semibold">• {globalChatConfig.statusMessage}</span>
                           )}
