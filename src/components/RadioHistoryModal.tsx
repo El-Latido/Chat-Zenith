@@ -37,41 +37,66 @@ export function RadioHistoryModal({
   const handleDownload = async (song: RadioHistorySong, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const songKey = song.id || song.title;
+    if (downloadingId === songKey) return;
     setDownloadingId(songKey);
 
     const safeTitle = song.title.replace(/[^\w\s-]/gi, '').trim() || 'cancion';
     const downloadUrl = `/api/download?url=${encodeURIComponent(song.url)}&title=${encodeURIComponent(safeTitle)}&format=mp3`;
 
     if (onToast) {
-      onToast(`📥 Descargando "${song.title}" en MP3...`);
+      onToast(`⏳ Descargando "${song.title}"... Obteniendo archivo MP3.`);
     }
 
     try {
-      // Create native download anchor to trigger device download manager
+      // Fetch audio file directly as a Blob
+      const response = await fetch(downloadUrl);
+
+      if (!response.ok) {
+        throw new Error(`El servidor respondió con estado ${response.status}`);
+      }
+
+      const blob = await response.blob();
+
+      // Ensure blob has actual content to avoid false success reports
+      if (!blob || blob.size === 0) {
+        throw new Error("El archivo de audio recibido está vacío");
+      }
+
+      // Create a temporary object URL from the downloaded Blob
+      const tempUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = downloadUrl;
+      link.href = tempUrl;
       link.setAttribute('download', `${safeTitle}.mp3`);
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
+      link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
-      
+
+      // Clean up the temporary URL and anchor tag
       setTimeout(() => {
-        link.remove();
-        setCompletedDownloads((prev) => ({ ...prev, [songKey]: true }));
-        if (onToast) {
-          onToast(`✅ ¡Descargando "${safeTitle}.mp3" a tu dispositivo!`);
+        if (link.parentNode) {
+          link.parentNode.removeChild(link);
         }
-      }, 800);
-    } catch (err) {
-      console.error("Error triggering download:", err);
+        window.URL.revokeObjectURL(tempUrl);
+      }, 1500);
+
+      // Only mark as successfully completed once the Blob was fetched and downloaded
+      setCompletedDownloads((prev) => ({ ...prev, [songKey]: true }));
       if (onToast) {
-        onToast(`⚠️ Error al iniciar la descarga de "${safeTitle}". Intenta de nuevo.`);
+        onToast(`✅ ¡"${safeTitle}.mp3" descargado con éxito!`);
+      }
+    } catch (err: any) {
+      console.error("Error al descargar canción de radio:", err);
+      // Remove any completed state if there was an error
+      setCompletedDownloads((prev) => {
+        const next = { ...prev };
+        delete next[songKey];
+        return next;
+      });
+      if (onToast) {
+        onToast(`⚠️ Error al descargar "${safeTitle}": ${err?.message || "Intenta nuevamente"}`);
       }
     } finally {
-      setTimeout(() => {
-        setDownloadingId((prev) => (prev === songKey ? null : prev));
-      }, 3000);
+      setDownloadingId(null);
     }
   };
 

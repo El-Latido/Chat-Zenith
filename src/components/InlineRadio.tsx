@@ -21,6 +21,7 @@ export function InlineRadio({ theme }: InlineRadioProps = {}) {
   const [selectedHistorySong, setSelectedHistorySong] = useState<any>(null);
   const [downloadFormat, setDownloadFormat] = useState<'mp3'|'mp4'>('mp3');
   const [downloadQuality, setDownloadQuality] = useState<'high'|'low'>('high');
+  const [isDownloadingHistory, setIsDownloadingHistory] = useState(false);
   
   const [songQueue, setSongQueue] = useState<any[]>([]);
   const [currentRequestedSong, setCurrentRequestedSong] = useState<any>(null);
@@ -416,10 +417,41 @@ export function InlineRadio({ theme }: InlineRadioProps = {}) {
                   </div>
 
                   <div className="flex flex-col gap-2 mt-2">
-                      <a href={`/api/download?url=${encodeURIComponent(selectedHistorySong.url)}&format=${downloadFormat}&quality=${downloadQuality}`} target="_blank" rel="noopener noreferrer" className="w-full bg-[#D4AF37] hover:bg-[#b5952f] text-black font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-[0_0_15px_rgba(212,175,55,0.4)]">
-                          <Download size={18} />
-                          Descargar {downloadFormat.toUpperCase()}
-                      </a>
+                      <button 
+                        onClick={async () => {
+                          if (!selectedHistorySong || isDownloadingHistory) return;
+                          setIsDownloadingHistory(true);
+                          const safeTitle = selectedHistorySong.title.replace(/[^\w\s-]/gi, '').trim() || 'cancion';
+                          const downloadUrl = `/api/download?url=${encodeURIComponent(selectedHistorySong.url)}&title=${encodeURIComponent(safeTitle)}&format=${downloadFormat}&quality=${downloadQuality}`;
+                          try {
+                            const res = await fetch(downloadUrl);
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            const blob = await res.blob();
+                            if (!blob || blob.size === 0) throw new Error("Archivo vacío");
+                            const tempUrl = window.URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = tempUrl;
+                            link.setAttribute('download', `${safeTitle}.${downloadFormat}`);
+                            link.style.display = 'none';
+                            document.body.appendChild(link);
+                            link.click();
+                            setTimeout(() => {
+                              if (link.parentNode) link.parentNode.removeChild(link);
+                              window.URL.revokeObjectURL(tempUrl);
+                            }, 1500);
+                          } catch (err: any) {
+                            console.error("Download error:", err);
+                            alert(`Error al descargar ${safeTitle}: ${err?.message || "Intenta nuevamente"}`);
+                          } finally {
+                            setIsDownloadingHistory(false);
+                          }
+                        }}
+                        disabled={isDownloadingHistory}
+                        className="w-full bg-[#D4AF37] hover:bg-[#b5952f] disabled:opacity-50 text-black font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-[0_0_15px_rgba(212,175,55,0.4)] cursor-pointer"
+                      >
+                          <Download size={18} className={isDownloadingHistory ? "animate-bounce" : ""} />
+                          {isDownloadingHistory ? "Descargando..." : `Descargar ${downloadFormat.toUpperCase()}`}
+                      </button>
                       
                       <a href={selectedHistorySong.url} target="_blank" rel="noopener noreferrer" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-[0_0_15px_rgba(220,38,38,0.4)]">
                           <Youtube size={18} />
