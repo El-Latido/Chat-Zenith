@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar } from 'lucide-react';
+import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar, Copy, Check, Shield } from 'lucide-react';
 import { socket } from '../socket';
 import { UserObj } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
@@ -30,6 +30,37 @@ export function ProfileConfigModal({
   const [backgroundBase64, setBackgroundBase64] = useState(user.preferred_background || '');
   const [preferredTheme, setPreferredTheme] = useState(user.preferred_theme || localStorage.getItem("chatliz_theme") || "default");
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  const [newUsernameInput, setNewUsernameInput] = useState(user.username || '');
+  const [usernameMsg, setUsernameMsg] = useState<{ text: string, error: boolean } | null>(null);
+  const [isChangingUsername, setIsChangingUsername] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+
+  const handleChangeUsername = () => {
+    const trimmed = (newUsernameInput || '').trim();
+    if (!trimmed) return setUsernameMsg({ text: "El nombre no puede estar vacío.", error: true });
+    if (trimmed === user.username) return setUsernameMsg({ text: "El nombre ingresado es idéntico al actual.", error: true });
+    if (trimmed.length < 3 || trimmed.length > 20) return setUsernameMsg({ text: "El nombre debe tener entre 3 y 20 caracteres.", error: true });
+    if (!/^[a-zA-Z0-9_.-]+$/.test(trimmed)) return setUsernameMsg({ text: "Solo se permiten letras, números, guiones y puntos.", error: true });
+    if (trimmed.toLowerCase() === "elizabeth") return setUsernameMsg({ text: "Ese nombre está reservado para la IA oficial.", error: true });
+    if (trimmed.toUpperCase() === "AXISS" && user.username.toUpperCase() !== "AXISS") return setUsernameMsg({ text: "Ese nombre está reservado para el Super Administrador.", error: true });
+
+    setIsChangingUsername(true);
+    setUsernameMsg(null);
+    socket.emit("change_username", { newUsername: trimmed }, (res: any) => {
+      setIsChangingUsername(false);
+      if (res && res.success) {
+        setUser(prev => {
+          const updated = { ...prev, username: res.newUsername, uid: res.uid || prev.uid };
+          localStorage.setItem("chatliz_user", JSON.stringify(updated));
+          return updated;
+        });
+        setUsernameMsg({ text: `¡Nombre actualizado exitosamente a ${res.newUsername}! Tu ID único #${res.uid || user.uid} se mantiene intacto.`, error: false });
+      } else {
+        setUsernameMsg({ text: res?.error || "Error al cambiar el nombre de usuario.", error: true });
+      }
+    });
+  };
 
   const [bubbleColor, setBubbleColor] = useState(user.bubbleColor || '#121B2A');
   const [bubbleBorder, setBubbleBorder] = useState(user.bubbleBorder || 'border-[#5A52A5]/30');
@@ -252,7 +283,29 @@ export function ProfileConfigModal({
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       />
                    </div>
-                                      <h3 className="text-2xl font-bold text-white">{user.username}</h3>
+                   <h3 className="text-2xl font-bold text-white">{user.username}</h3>
+                   
+                   <div 
+                     onClick={() => {
+                       const idToCopy = user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000');
+                       navigator.clipboard.writeText(idToCopy);
+                       setCopiedId(true);
+                       setTimeout(() => setCopiedId(false), 2000);
+                     }}
+                     title="Haz clic para copiar tu ID permanente único"
+                     className="cursor-pointer group inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-mono text-xs transition-all shadow-sm"
+                   >
+                     <Shield size={12} className="text-cyan-400" />
+                     <span className="font-bold">ID: #{user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000')}</span>
+                     <span className="text-[10px] text-cyan-400/70 group-hover:text-cyan-200">• Fijo (Inmutable)</span>
+                     {copiedId ? (
+                       <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-400 font-bold ml-1">
+                         <Check size={11} /> Copiado
+                       </span>
+                     ) : (
+                       <Copy size={11} className="text-cyan-400/60 group-hover:text-cyan-300 ml-0.5" />
+                     )}
+                   </div>
                    
                    <div className="flex gap-4 text-white/70 text-sm font-medium bg-white/5 px-4 py-2 rounded-full border border-white/10 shadow-inner">
                       {user.gender && <div className="flex items-center gap-1"><Users size={14} className="text-cyan-400"/> {user.gender}</div>}
@@ -603,6 +656,45 @@ export function ProfileConfigModal({
                        />
                        <p className="text-xs text-white/40 mt-1">Este fondo sólo será visible en tu dispositivo.</p>
                    </div>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-white/5">
+                   <div className="flex items-center justify-between">
+                     <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                       <User size={16} className="text-cyan-400" /> Cambiar Nombre de Usuario
+                     </h4>
+                     <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/40 px-2 py-0.5 rounded-full font-bold">
+                       ID Fijo: #{user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000')}
+                     </span>
+                   </div>
+                   
+                   <p className="text-xs text-white/50 leading-relaxed">
+                     Puedes cambiar tu nombre de usuario en cualquier momento. Tu <strong>número de identificación permanente (ID #{user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000')})</strong> es único, fijo e inmutable; nunca cambiará y garantiza que tu cuenta y registros sigan protegidos.
+                   </p>
+
+                   <div className="flex flex-col sm:flex-row gap-2">
+                     <input
+                       type="text"
+                       value={newUsernameInput}
+                       onChange={e => setNewUsernameInput(e.target.value)}
+                       placeholder="Nuevo nombre de usuario..."
+                       className="flex-1 bg-black/30 p-3 rounded-xl border border-white/10 focus:border-cyan-400 outline-none text-white transition-colors text-sm"
+                     />
+                     <button
+                       type="button"
+                       disabled={isChangingUsername || newUsernameInput.trim() === user.username}
+                       onClick={handleChangeUsername}
+                       className="px-4 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:hover:bg-cyan-600 text-white rounded-xl font-bold text-sm transition-all whitespace-nowrap shadow-sm"
+                     >
+                       {isChangingUsername ? "Actualizando..." : "Actualizar Nombre"}
+                     </button>
+                   </div>
+
+                   {usernameMsg && (
+                     <div className={`p-3 rounded-xl text-xs font-semibold border ${usernameMsg.error ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
+                       {usernameMsg.text}
+                     </div>
+                   )}
                 </div>
 
                 <div className="space-y-4 pt-4 border-t border-white/5">

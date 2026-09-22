@@ -1797,6 +1797,16 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         }
     });
 
+    socket.on("username_updated", (data: { oldUsername: string, newUsername: string, uid?: string }) => {
+      if (user.username === data.oldUsername) {
+        setUser(prev => {
+          const updated = { ...prev, username: data.newUsername, uid: data.uid || prev.uid };
+          localStorage.setItem("chatliz_user", JSON.stringify(updated));
+          return updated;
+        });
+      }
+    });
+
     socket.on("active_users", (usersList: UserObj[]) => {
       socket.emit("check_pending_calls");
       const disallowedAis = ["Sensei", "Shadow", "Neko"];
@@ -3217,6 +3227,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               <span>{isMe ? "Incógnito (Tú)" : "Incógnito • No delatar"}</span>
                             </span>
                           )}
+                          <span
+                            title="Identificador Único Permanente (Fijo e Inmutable)"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/10 text-cyan-300/90 border border-cyan-500/20"
+                          >
+                            #{u.uid || (u.username.toUpperCase() === "AXISS" ? "1001" : isElizabeth ? "1000" : "N/A")}
+                          </span>
                         </p>
                         <p className="text-white/50 text-xs truncate">
                           {u.incognito ? (
@@ -4675,6 +4691,16 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     </span>
                   )}
                 </h3>
+
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <span
+                    title="ID único permanente e inmutable. No cambia aunque el usuario cambie su nombre."
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-bold shadow-sm"
+                  >
+                    <span>ID: #{selectedUserModal.uid || (selectedUserModal.username.toUpperCase() === "AXISS" ? "1001" : selectedUserModal.username === "Elizabeth" ? "1000" : "N/A")}</span>
+                    <span className="text-[10px] text-cyan-400/70 font-sans font-medium">• Fijo</span>
+                  </span>
+                </div>
                 
                 {selectedUserModal.incognito && (
                   <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-3 mb-4 mx-2 text-left flex items-start gap-2.5 shadow-md animate-in fade-in">
