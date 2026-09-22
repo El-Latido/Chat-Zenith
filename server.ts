@@ -43,66 +43,233 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import ytSearch from "yt-search";
 import { fdb, fStorage } from "./server/firebase";
-import { updateAiProfileInFirebase } from "./server/firebaseLogic";
+import { updateAiProfileInFirebase, getAiApiConfigFromFirebase, saveAiApiConfigToFirebase } from "./server/firebaseLogic";
 import { AI_CHARACTERS } from "./src/aiCharacters";
 dotenv.config();
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "missing",
   httpOptions: { headers: { "User-Agent": "aistudio-build" } },
 });
-async function safeGenerateContent(aiInstance, params, timeoutMs = 1e4) {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("Timeout")), timeoutMs);
-  });
-  try {
-    const fetchPromise = aiInstance.models.generateContent(params);
-    return await Promise.race([fetchPromise, timeoutPromise]);
-  } catch (error) {
-    console.error("Gemini failed, trying Groq fallback:", error);
-    // Groq Fallback
+
+let aiRuntimeConfig = {
+  groqBackupKey: process.env.GROQ_API_KEY || "",
+  groqBackupName: "ChatLiz-Groq-Backup",
+  geminiKey: process.env.GEMINI_API_KEY || "",
+  preferredProvider: "gemini" as "gemini" | "groq",
+};
+
+const GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
+
+interface AiProviderStatus {
+  lastErrorTime: number;
+  lastErrorMessage: string;
+  isExhausted: boolean;
+}
+
+const providerStatus: Record<"gemini" | "groq", AiProviderStatus> = {
+  gemini: { lastErrorTime: 0, lastErrorMessage: "", isExhausted: false },
+  groq: { lastErrorTime: 0, lastErrorMessage: "", isExhausted: false },
+};
+
+let primaryAiProvider: "gemini" | "groq" = "gemini";
+
+function extractTextAndSystemForGroq(params: any): { promptText: string; systemInstruction: string; messages: Array<{ role: string; content: string }> } {
+  let promptText = "";
+  if (typeof params.contents === "string") {
+    promptText = params.contents;
+  } else if (Array.isArray(params.contents)) {
+    promptText = params.contents.map((p: any) => {
+      if (typeof p === "string") return p;
+      if (p.text) return p.text;
+      if (Array.isArray(p.parts)) {
+        return p.parts.map((pt: any) => pt.text || "").join("\n");
+      }
+      return "";
+    }).filter(Boolean).join("\n");
+  } else if (params.contents && typeof params.contents === "object") {
+    promptText = params.contents.text || (params.contents.parts ? params.contents.parts.map((pt: any) => pt.text || "").join("\n") : "");
+  }
+
+  const systemInstruction = params.config?.systemInstruction || "";
+  const messages: Array<{ role: string; content: string }> = [];
+  if (systemInstruction) {
+    messages.push({ role: "system", content: systemInstruction });
+  }
+  messages.push({ role: "user", content: promptText || "Hola" });
+  return { promptText, systemInstruction, messages };
+}
+
+async function callGroqAi(params: any, timeoutMs = 12000): Promise<{ text: string }> {
+  const { messages } = extractTextAndSystemForGroq(params);
+  let lastErr: any = null;
+  const currentKey = (aiRuntimeConfig.groqBackupKey || process.env.GROQ_API_KEY || "").trim();
+  if (!currentKey) {
+    throw new Error("No hay API Key configurada para " + (aiRuntimeConfig.groqBackupName || "Groq"));
+  }
+
+  for (const model of GROQ_MODELS) {
     try {
-       const groqKey = process.env.GROQ_API_KEY || "";
-       let promptText = "";
-       if (typeof params.contents === "string") {
-         promptText = params.contents;
-       } else if (Array.isArray(params.contents)) {
-         promptText = params.contents.map(p => {
-           if (p.text) return p.text;
-           if (p.parts && p.parts.length > 0 && p.parts[0].text) return p.parts[0].text;
-           return "";
-         }).join("\n");
-       }
-       const systemInstruction = params.config?.systemInstruction || "";
-       const messages = [];
-       if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-       messages.push({ role: "user", content: promptText });
-       
-       const groqReq = fetch("https://api.groq.com/openai/v1/chat/completions", {
-         method: "POST",
-         headers: {
-           "Authorization": `Bearer ${groqKey}`,
-           "Content-Type": "application/json"
-         },
-         body: JSON.stringify({
-           model: "llama-3.3-70b-versatile",
-           messages: messages,
-           temperature: params.config?.temperature || 0.7,
-           response_format: params.config?.responseMimeType === "application/json" ? { type: "json_object" } : undefined
-         })
-       }).then(r => r.json());
-       
-       const groqRes = await Promise.race([groqReq, timeoutPromise]);
-       if (groqRes && groqRes.choices && groqRes.choices.length > 0) {
-          return { text: groqRes.choices[0].message.content };
-       }
-    } catch (groqError) {
-       console.error("Groq fallback also failed:", groqError);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Authorization": `Bearer ${currentKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: params.config?.temperature || 0.7,
+          response_format: params.config?.responseMimeType === "application/json" ? { type: "json_object" } : undefined
+        })
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error?.message || `Groq HTTP ${res.status}`);
+      }
+
+      const data: any = await res.json();
+      if (data?.choices?.[0]?.message?.content) {
+        return { text: data.choices[0].message.content };
+      }
+    } catch (err: any) {
+      lastErr = err;
+      console.warn(`[Groq Model ${model} failed]:`, err.message || err);
     }
-    throw error;
+  }
+
+  throw lastErr || new Error("Todos los modelos de Groq fallaron");
+}
+
+async function callGeminiAi(aiInstance: any, params: any, timeoutMs = 12000): Promise<{ text: string }> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("Gemini request timeout")), timeoutMs);
+  });
+
+  try {
+    const targetModel = (params.model && !params.model.includes("3.6")) ? params.model : "gemini-2.5-flash";
+    const cleanParams = { ...params, model: targetModel };
+    const effectiveAi = (aiRuntimeConfig.geminiKey && aiRuntimeConfig.geminiKey.trim())
+      ? new GoogleGenAI({ apiKey: aiRuntimeConfig.geminiKey.trim(), httpOptions: { headers: { "User-Agent": "aistudio-build" } } })
+      : aiInstance;
+    const fetchPromise = effectiveAi.models.generateContent(cleanParams);
+    const result: any = await Promise.race([fetchPromise, timeoutPromise]);
+    const generatedText = typeof result?.text === "function" ? result.text() : (result?.text || "");
+    return { text: generatedText };
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
+}
+
+async function initAiRuntimeConfig() {
+  try {
+    let saved: any = null;
+    if (fdb) {
+      saved = await getAiApiConfigFromFirebase();
+    }
+    if (!saved && fallbackState?.system_settings?.ai_api_config) {
+      saved = fallbackState.system_settings.ai_api_config;
+    }
+    if (saved) {
+      if (saved.groqBackupKey !== undefined) aiRuntimeConfig.groqBackupKey = saved.groqBackupKey;
+      if (saved.groqBackupName) aiRuntimeConfig.groqBackupName = saved.groqBackupName;
+      if (saved.geminiKey !== undefined) aiRuntimeConfig.geminiKey = saved.geminiKey;
+      if (saved.preferredProvider) {
+        aiRuntimeConfig.preferredProvider = saved.preferredProvider;
+        primaryAiProvider = saved.preferredProvider;
+      }
+      console.log("Configuración de tokens IA cargada desde base de datos:", {
+        groqBackupName: aiRuntimeConfig.groqBackupName,
+        preferredProvider: aiRuntimeConfig.preferredProvider,
+        hasGroqKey: !!aiRuntimeConfig.groqBackupKey,
+        hasGeminiKey: !!aiRuntimeConfig.geminiKey
+      });
+    }
+  } catch (e) {
+    console.error("Error al inicializar aiRuntimeConfig:", e);
+  }
+}
+setTimeout(() => {
+  initAiRuntimeConfig();
+}, 1500);
+
+async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 12000): Promise<{ text: string; response: { text: () => string } }> {
+  const now = Date.now();
+  // Cooldown de 3 minutos para reintentar proveedor marcado como agotado
+  if (providerStatus.gemini.isExhausted && now - providerStatus.gemini.lastErrorTime > 180000) {
+    providerStatus.gemini.isExhausted = false;
+  }
+  if (providerStatus.groq.isExhausted && now - providerStatus.groq.lastErrorTime > 180000) {
+    providerStatus.groq.isExhausted = false;
+  }
+
+  const hasGroq = !!(aiRuntimeConfig.groqBackupKey && aiRuntimeConfig.groqBackupKey.trim());
+  // Orden de prioridad dinámico según tokens disponibles
+  let providersToTry: ("gemini" | "groq")[] = [];
+  if (hasGroq) {
+    providersToTry = primaryAiProvider === "gemini"
+      ? (!providerStatus.gemini.isExhausted ? ["gemini", "groq"] : ["groq", "gemini"])
+      : (!providerStatus.groq.isExhausted ? ["groq", "gemini"] : ["gemini", "groq"]);
+  } else {
+    providersToTry = ["gemini"];
+  }
+
+  let lastError: any = null;
+
+  for (const provider of providersToTry) {
+    try {
+      if (provider === "gemini") {
+        const res = await callGeminiAi(aiInstance, params, timeoutMs);
+        if (primaryAiProvider !== "gemini") {
+          console.log("🔄 [AI Provider] Gemini ha recuperado tokens y vuelve como proveedor activo.");
+          primaryAiProvider = "gemini";
+        }
+        providerStatus.gemini.isExhausted = false;
+        return {
+          text: res.text,
+          response: { text: () => res.text }
+        };
+      } else {
+        const res = await callGroqAi(params, timeoutMs);
+        if (primaryAiProvider !== "groq" && providerStatus.gemini.isExhausted) {
+          console.log("⚡ [AI Provider] Groq (ChatLiz-Groq-Backup) activo como proveedor principal.");
+          primaryAiProvider = "groq";
+        }
+        providerStatus.groq.isExhausted = false;
+        return {
+          text: res.text,
+          response: { text: () => res.text }
+        };
+      }
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err?.message || String(err);
+      console.warn(`⚠️ [AI Failover] Proveedor ${provider.toUpperCase()} falló: ${errMsg}`);
+
+      providerStatus[provider].lastErrorTime = Date.now();
+      providerStatus[provider].lastErrorMessage = errMsg;
+
+      if (
+        errMsg.includes("429") ||
+        errMsg.includes("quota") ||
+        errMsg.includes("resource_exhausted") ||
+        errMsg.includes("rate_limit") ||
+        errMsg.includes("limit")
+      ) {
+        providerStatus[provider].isExhausted = true;
+        primaryAiProvider = provider === "gemini" ? "groq" : "gemini";
+        console.warn(`🔄 [AI Failover] Conmutando automáticamente a proveedor alternativo: ${primaryAiProvider.toUpperCase()}...`);
+      }
+    }
+  }
+
+  console.error("❌ [AI Failover] Ambos proveedores (Gemini y Groq) fallaron.");
+  throw lastError || new Error("Ambos proveedores de IA no están disponibles.");
 }
 __name(safeGenerateContent, "safeGenerateContent");
 const BANNED_WORDS = ["puta", "puto", "mierda", "pendejo", "pendeja", "cabrón", "cabron", "zorra", "idiota", "estúpido", "estupido", "imbécil", "imbecil"];
@@ -2213,8 +2380,161 @@ socket.on("buy_decoration", async (data, callback) => {
         statusMessage: safeStatusMessage,
         systemInstruction: safeSystemInstruction,
       };
+
+      if (data.groqBackupKey !== undefined || data.groqBackupName !== undefined || data.geminiKey !== undefined || data.preferredProvider !== undefined) {
+        if (typeof data.groqBackupKey === "string") aiRuntimeConfig.groqBackupKey = data.groqBackupKey.trim();
+        if (typeof data.groqBackupName === "string" && data.groqBackupName.trim()) aiRuntimeConfig.groqBackupName = data.groqBackupName.trim();
+        if (typeof data.geminiKey === "string") aiRuntimeConfig.geminiKey = data.geminiKey.trim();
+        if (data.preferredProvider === "gemini" || data.preferredProvider === "groq") {
+          aiRuntimeConfig.preferredProvider = data.preferredProvider;
+          primaryAiProvider = data.preferredProvider;
+        }
+        await saveAiApiConfigToFirebase(aiRuntimeConfig);
+        if (!fdb) {
+          fallbackState.system_settings = fallbackState.system_settings || {};
+          fallbackState.system_settings.ai_api_config = aiRuntimeConfig;
+          saveFallbackDB();
+        }
+      }
+
       emitActiveUsers();
       callback({ success: true });
+    });
+
+    socket.on("get_ai_api_config", async (callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo el Administrador Supremo Axiss puede ver la configuración de APIs." });
+      }
+      try {
+        if (fdb) {
+          const remoteConfig: any = await getAiApiConfigFromFirebase();
+          if (remoteConfig) {
+            if (remoteConfig.groqBackupKey !== undefined) aiRuntimeConfig.groqBackupKey = remoteConfig.groqBackupKey;
+            if (remoteConfig.groqBackupName) aiRuntimeConfig.groqBackupName = remoteConfig.groqBackupName;
+            if (remoteConfig.geminiKey !== undefined) aiRuntimeConfig.geminiKey = remoteConfig.geminiKey;
+            if (remoteConfig.preferredProvider) {
+              aiRuntimeConfig.preferredProvider = remoteConfig.preferredProvider;
+              primaryAiProvider = remoteConfig.preferredProvider;
+            }
+          }
+        } else if (fallbackState?.system_settings?.ai_api_config) {
+          const localSaved = fallbackState.system_settings.ai_api_config;
+          if (localSaved.groqBackupKey !== undefined) aiRuntimeConfig.groqBackupKey = localSaved.groqBackupKey;
+          if (localSaved.groqBackupName) aiRuntimeConfig.groqBackupName = localSaved.groqBackupName;
+          if (localSaved.geminiKey !== undefined) aiRuntimeConfig.geminiKey = localSaved.geminiKey;
+          if (localSaved.preferredProvider) {
+            aiRuntimeConfig.preferredProvider = localSaved.preferredProvider;
+            primaryAiProvider = localSaved.preferredProvider;
+          }
+        }
+      } catch (e) {}
+
+      callback({
+        success: true,
+        config: {
+          groqBackupKey: aiRuntimeConfig.groqBackupKey,
+          groqBackupName: aiRuntimeConfig.groqBackupName || "ChatLiz-Groq-Backup",
+          geminiKey: aiRuntimeConfig.geminiKey,
+          preferredProvider: aiRuntimeConfig.preferredProvider,
+          activeProvider: primaryAiProvider,
+          providerStatus: {
+            gemini: {
+              isExhausted: providerStatus.gemini.isExhausted,
+              lastErrorMessage: providerStatus.gemini.lastErrorMessage,
+            },
+            groq: {
+              isExhausted: providerStatus.groq.isExhausted,
+              lastErrorMessage: providerStatus.groq.lastErrorMessage,
+            },
+          },
+        },
+      });
+    });
+
+    socket.on("update_ai_api_config", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo el Administrador Supremo Axiss puede modificar las credenciales y tokens de la IA." });
+      }
+      const { groqBackupKey, groqBackupName, geminiKey, preferredProvider } = data || {};
+      if (typeof groqBackupKey === "string") {
+        aiRuntimeConfig.groqBackupKey = groqBackupKey.trim();
+      }
+      if (typeof groqBackupName === "string" && groqBackupName.trim()) {
+        aiRuntimeConfig.groqBackupName = groqBackupName.trim();
+      }
+      if (typeof geminiKey === "string") {
+        aiRuntimeConfig.geminiKey = geminiKey.trim();
+      }
+      if (preferredProvider === "gemini" || preferredProvider === "groq") {
+        aiRuntimeConfig.preferredProvider = preferredProvider;
+        primaryAiProvider = preferredProvider;
+      }
+      providerStatus.gemini.isExhausted = false;
+      providerStatus.groq.isExhausted = false;
+
+      await saveAiApiConfigToFirebase(aiRuntimeConfig);
+      fallbackState.system_settings = fallbackState.system_settings || {};
+      fallbackState.system_settings.ai_api_config = aiRuntimeConfig;
+      saveFallbackDB();
+
+      callback({
+        success: true,
+        message: "¡Configuración y clave de API guardadas permanentemente!",
+        config: {
+          groqBackupName: aiRuntimeConfig.groqBackupName,
+          preferredProvider: aiRuntimeConfig.preferredProvider,
+          activeProvider: primaryAiProvider,
+        }
+      });
+    });
+
+    socket.on("test_ai_token", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "No autorizado." });
+      }
+      const { provider, token } = data;
+      if (provider === "groq") {
+        const keyToTest = (token && token.trim()) ? token.trim() : aiRuntimeConfig.groqBackupKey;
+        if (!keyToTest) return callback({ success: false, error: "No se ingresó un token de Groq para probar." });
+        try {
+          const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${keyToTest}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "openai/gpt-oss-120b",
+              messages: [{ role: "user", content: "Hola, responde brevemente 'OK conexión exitosa'." }],
+              max_tokens: 25
+            })
+          });
+          if (!res.ok) {
+            const errJson: any = await res.json().catch(() => ({}));
+            return callback({ success: false, error: errJson?.error?.message || `Error HTTP ${res.status}` });
+          }
+          const json: any = await res.json();
+          const reply = json?.choices?.[0]?.message?.content || "Conexión exitosa";
+          return callback({ success: true, message: `¡Groq respondió con éxito!: "${reply.trim()}"` });
+        } catch (e: any) {
+          return callback({ success: false, error: e?.message || "Fallo en la prueba de conexión con Groq." });
+        }
+      } else if (provider === "gemini") {
+        const keyToTest = (token && token.trim()) ? token.trim() : (aiRuntimeConfig.geminiKey || process.env.GEMINI_API_KEY);
+        if (!keyToTest) return callback({ success: false, error: "No hay API Key de Gemini para probar." });
+        try {
+          const testAi = new GoogleGenAI({ apiKey: keyToTest });
+          const testRes = await testAi.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: "Hola, responde brevemente 'OK conexión exitosa'."
+          });
+          const txt = (testRes as any)?.text;
+          return callback({ success: true, message: `¡Gemini respondió con éxito!: "${(txt || "").trim()}"` });
+        } catch (e: any) {
+          return callback({ success: false, error: e?.message || "Fallo en la prueba de conexión con Gemini." });
+        }
+      }
+      callback({ success: false, error: "Proveedor no válido." });
     });
     socket.on("get_hall_of_fame", async (callback) => {
       const d = new Date();

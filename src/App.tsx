@@ -3196,9 +3196,25 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               IA Oficial
                             </span>
                           )}
+                          {u.incognito && (
+                            <span
+                              title="Modo Incógnito activo (Solo visible para Admin o ti). No delatar en el chat."
+                              className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-amber-500/40 shadow-sm"
+                            >
+                              <EyeOff size={10} className="text-amber-400" />
+                              <span>Incógnito</span>
+                            </span>
+                          )}
                         </p>
                         <p className="text-white/50 text-xs truncate">
-                          {isElizabeth ? "Administradora IA • En línea" : (u.statusMessage || "En línea")}
+                          {u.incognito ? (
+                            <span className="text-amber-300/80 italic flex items-center gap-1 text-[11px]">
+                              <EyeOff size={11} className="inline text-amber-400" />
+                              {isMe ? "Tu modo incógnito activo" : "Oculto para usuarios comunes"}
+                            </span>
+                          ) : (
+                            isElizabeth ? "Administradora IA • En línea" : (u.statusMessage || "En línea")
+                          )}
                         </p>
                       </div>
                     </div>
@@ -4635,6 +4651,15 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                   {selectedUserModal.role === "admin" && (
                     <span className="bg-gradient-to-r from-fuchsia-500 to-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold shadow-sm">
                       Admin
+                    </span>
+                  )}
+                  {selectedUserModal.incognito && (
+                    <span
+                      title="Usuario en Modo Incógnito (No revelar en el chat)"
+                      className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/40 shadow-sm"
+                    >
+                      <EyeOff size={11} className="text-amber-400" />
+                      <span>Incógnito</span>
                     </span>
                   )}
                 </h3>

@@ -61,3 +61,23 @@ export const saveMessageToFirebase = async (msg: any) => {
         console.error("Error al guardar mensaje en Firebase:", e);
     }
 };
+
+export const getAiApiConfigFromFirebase = async () => {
+    if (!fdb) return null;
+    try {
+        const snap = await getDoc(doc(fdb, 'system_settings', 'ai_api_config'));
+        if (snap.exists()) return snap.data();
+    } catch (e) {
+        console.error("Error al obtener configuración de API de IA en Firebase:", e);
+    }
+    return null;
+};
+
+export const saveAiApiConfigToFirebase = async (data: any) => {
+    if (!fdb) return;
+    try {
+        await setDoc(doc(fdb, 'system_settings', 'ai_api_config'), data, { merge: true });
+    } catch (e) {
+        console.error("Error al guardar configuración de API de IA en Firebase:", e);
+    }
+};
