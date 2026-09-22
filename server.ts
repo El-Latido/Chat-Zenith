@@ -918,16 +918,27 @@ __name(ensureAutoRadio, "ensureAutoRadio");
 
   const emitActiveUsers = __name(() => {
     for (const [socketId, socketInstance] of io.sockets.sockets) {
-      const socketUsername = (socketInstance as any).currentUsername ||
-        Object.values(activeUsers).find((u: any) => u.socketId === socketId)?.username;
+      let socketUsername = (socketInstance as any).currentUsername;
+      if (!socketUsername) {
+        const found = Object.values(activeUsers).find((u: any) => u.socketId === socketId);
+        if (found) {
+          socketUsername = (found as any).username;
+          (socketInstance as any).currentUsername = socketUsername;
+        }
+      }
       
       const socketUser = socketUsername ? activeUsers[socketUsername] : null;
-      const isAdmin = socketUser && (
-        socketUser.role === "admin" ||
-        socketUser.username?.toUpperCase() === "AXISS"
+      const isAdmin = !!(
+        (socketInstance as any).isAdmin ||
+        (socketUser && (
+          socketUser.role === "admin" ||
+          socketUser.role === "administrador" ||
+          socketUser.username?.toUpperCase() === "AXISS"
+        )) ||
+        (socketUsername && socketUsername.toUpperCase() === "AXISS")
       );
 
-      const tailoredList = getActiveUsersForSocket(socketUsername, !!isAdmin);
+      const tailoredList = getActiveUsersForSocket(socketUsername, isAdmin);
       socketInstance.emit("active_users", tailoredList);
     }
   }, "emitActiveUsers");
@@ -1065,14 +1076,20 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     });
     
     socket.on("request_initial_state", () => {
-      if (currentUsername) {
+      const username = currentUsername || (socket as any).currentUsername;
+      if (username) {
         // Send active users
-        const socketUser = activeUsers[currentUsername];
-        const isAdmin = socketUser && (
-          socketUser.role === "admin" ||
-          socketUser.username?.toUpperCase() === "AXISS"
+        const socketUser = activeUsers[username];
+        const isAdmin = !!(
+          (socket as any).isAdmin ||
+          (socketUser && (
+            socketUser.role === "admin" ||
+            socketUser.role === "administrador" ||
+            socketUser.username?.toUpperCase() === "AXISS"
+          )) ||
+          username.toUpperCase() === "AXISS"
         );
-        const usersList = getActiveUsersForSocket(currentUsername, !!isAdmin);
+        const usersList = getActiveUsersForSocket(username, isAdmin);
         socket.emit("active_users", usersList);
         
         // Send radio state
@@ -3047,16 +3064,19 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("update_incognito", async (isIncognito, callback) => {
-        if (!currentUsername) return;
-        if (activeUsers[currentUsername]) {
-            activeUsers[currentUsername].incognito = isIncognito;
+        const username = currentUsername || (socket as any).currentUsername;
+        if (!username) return callback && callback({ success: false });
+        const boolVal = !!isIncognito;
+        if (activeUsers[username]) {
+            activeUsers[username].incognito = boolVal;
         }
         if (fdb) {
-            await setDoc(doc(fdb, "users", currentUsername), { incognito: isIncognito }, { merge: true });
+            await setDoc(doc(fdb, "users", username), { incognito: boolVal }, { merge: true }).catch(() => {});
         } else {
-            if(fallbackState.users[currentUsername]) fallbackState.users[currentUsername].incognito = isIncognito;
+            if(fallbackState.users[username]) fallbackState.users[username].incognito = boolVal;
+            saveFallbackDB();
         }
-        callback && callback({ success: true });
+        callback && callback({ success: true, incognito: boolVal });
         emitActiveUsers();
     });
 

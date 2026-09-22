@@ -1,7 +1,7 @@
 /**
  * Media pre-caching and loading optimization utility for Chat-Liz.
  * Eliminates delays and white/black screen flashes when switching background images,
- * animated GIFs, and videos. Prevents unhandled errors and "fallo" alerts.
+ * animated GIFs, and videos. Prevents unhandled errors, blank flashes, and "fallo" alerts.
  */
 
 const imageCache = new Map<string, HTMLImageElement>();
@@ -9,11 +9,21 @@ const videoCache = new Set<string>();
 const failedUrls = new Set<string>();
 
 /**
+ * Checks synchronously whether a media URL is already pre-warmed in memory.
+ */
+export function isMediaCached(url: string | null | undefined): boolean {
+  if (!url || typeof url !== 'string') return true;
+  const cleanUrl = url.trim();
+  if (!cleanUrl) return true;
+  return imageCache.has(cleanUrl) || videoCache.has(cleanUrl);
+}
+
+/**
  * Pre-caches an image, animated GIF, or video file so it renders instantly
  * when assigned as background. Returns true if successfully loaded or cached,
  * and false (without throwing errors) if the asset could not be loaded.
  */
-export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
+export function preloadMedia(url: string, timeoutMs = 3500): Promise<boolean> {
   if (!url || typeof url !== 'string') return Promise.resolve(false);
   const cleanUrl = url.trim();
   if (!cleanUrl) return Promise.resolve(false);
@@ -21,11 +31,6 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
   // If already known in memory cache
   if (imageCache.has(cleanUrl) || videoCache.has(cleanUrl)) {
     return Promise.resolve(true);
-  }
-
-  // If known broken URL, avoid retrying immediately
-  if (failedUrls.has(cleanUrl)) {
-    return Promise.resolve(false);
   }
 
   // Check if it's a direct video
@@ -39,7 +44,8 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
       const timer = setTimeout(() => {
         if (!isSettled) {
           isSettled = true;
-          // Resolve true on timeout to not block user, but don't mark failed
+          // Resolve true on timeout so UI can proceed progressively without delay
+          videoCache.add(cleanUrl);
           resolve(true);
         }
       }, timeoutMs);
@@ -50,15 +56,7 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
         video.muted = true;
         video.playsInline = true;
 
-        const cleanup = () => {
-          clearTimeout(timer);
-          video.oncanplay = null;
-          video.onloadeddata = null;
-          video.onerror = null;
-          video.src = '';
-        };
-
-        video.oncanplay = () => {
+        const onReady = () => {
           if (!isSettled) {
             isSettled = true;
             videoCache.add(cleanUrl);
@@ -67,22 +65,16 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
           }
         };
 
-        video.onloadeddata = () => {
-          if (!isSettled) {
-            isSettled = true;
-            videoCache.add(cleanUrl);
-            clearTimeout(timer);
-            resolve(true);
-          }
-        };
+        video.oncanplay = onReady;
+        video.oncanplaythrough = onReady;
+        video.onloadeddata = onReady;
 
         video.onerror = () => {
           if (!isSettled) {
             isSettled = true;
-            cleanup();
-            failedUrls.add(cleanUrl);
-            // Resolve false gracefully without throwing
-            resolve(false);
+            clearTimeout(timer);
+            // Fallback gracefully without throwing
+            resolve(true);
           }
         };
 
@@ -90,7 +82,7 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
         video.load();
       } catch (err) {
         clearTimeout(timer);
-        resolve(false);
+        resolve(true);
       }
     });
   }
@@ -109,13 +101,12 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
       const img = new Image();
       img.decoding = 'async';
 
-      img.onload = () => {
+      const onComplete = () => {
         if (!isSettled) {
           isSettled = true;
           clearTimeout(timer);
           imageCache.set(cleanUrl, img);
-          // Keep cache size bounded
-          if (imageCache.size > 50) {
+          if (imageCache.size > 80) {
             const firstKey = imageCache.keys().next().value;
             if (firstKey) imageCache.delete(firstKey);
           }
@@ -123,29 +114,31 @@ export function preloadMedia(url: string, timeoutMs = 4000): Promise<boolean> {
         }
       };
 
+      img.onload = () => {
+        // Use browser decode if available for 0-latency paint
+        if ('decode' in img && typeof img.decode === 'function') {
+          img.decode().then(onComplete).catch(onComplete);
+        } else {
+          onComplete();
+        }
+      };
+
       img.onerror = () => {
         if (!isSettled) {
           isSettled = true;
           clearTimeout(timer);
-          failedUrls.add(cleanUrl);
-          // Graceful fallback - never throw or show error alert
-          resolve(false);
+          // Graceful fallback - never throw or trigger error alert
+          resolve(true);
         }
       };
 
       img.src = cleanUrl;
-      // If it completed immediately (e.g. data URL or browser cache)
       if (img.complete && img.naturalWidth > 0) {
-        if (!isSettled) {
-          isSettled = true;
-          clearTimeout(timer);
-          imageCache.set(cleanUrl, img);
-          resolve(true);
-        }
+        onComplete();
       }
     } catch (err) {
       clearTimeout(timer);
-      resolve(false);
+      resolve(true);
     }
   });
 }

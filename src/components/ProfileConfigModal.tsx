@@ -54,6 +54,7 @@ export function ProfileConfigModal({
   const toggleIncognito = () => {
      const nextVal = !incognito;
      setIncognito(nextVal);
+     setUser(prev => ({ ...prev, incognito: nextVal }));
      socket.emit("update_incognito", nextVal);
   };
 
@@ -86,6 +87,7 @@ export function ProfileConfigModal({
         statusMessage: comentario,
         pais_idioma: pais,
         is_friends_public: isFriendsPublic,
+        incognito: incognito,
         preferred_background: safeBackgroundForFirestore,
         preferred_theme: preferredTheme,
         bubbleColor: finalBubbleColor,
@@ -111,6 +113,7 @@ export function ProfileConfigModal({
           statusMessage: comentario,
           pais_idioma: pais,
           is_friends_public: isFriendsPublic,
+          incognito: incognito,
           preferred_background: backgroundBase64,
           preferred_theme: preferredTheme,
           bubbleColor: finalBubbleColor,
@@ -119,6 +122,7 @@ export function ProfileConfigModal({
           bubbleTexture
       }));
 
+      socket.emit("update_incognito", incognito);
       socket.emit("broadcast_profile_change", {
         username: user.username,
         statusMessage: comentario,

@@ -3155,7 +3155,11 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     }}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full border border-white/10 flex-shrink-0 relative">
+                      <div className={`w-10 h-10 rounded-full border flex-shrink-0 relative transition-all ${
+                        u.incognito
+                          ? 'border-amber-400 ring-2 ring-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                          : 'border-white/10'
+                      }`}>
                         <Avatar
                           src={
                             u.profilePic ||
@@ -3175,6 +3179,14 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               alt="marco"
                               className="w-full h-full object-contain"
                             />
+                          </div>
+                        )}
+                        {u.incognito && (
+                          <div
+                            title={isMe ? "Tu Modo Incógnito: Estás oculto para los demás usuarios" : "🕵️ Modo Incógnito: Invisible para usuarios comunes. Solo administradores pueden verlo. ¡No lo nombres ni lo delates en el chat!"}
+                            className="absolute -top-1 -right-1 z-20 bg-black/95 text-amber-400 p-1 rounded-full border border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.7)] flex items-center justify-center cursor-help"
+                          >
+                            <EyeOff size={11} className="text-amber-400 animate-pulse" />
                           </div>
                         )}
                       </div>
@@ -3198,19 +3210,19 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                           )}
                           {u.incognito && (
                             <span
-                              title="Modo Incógnito activo (Solo visible para Admin o ti). No delatar en el chat."
-                              className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-amber-500/40 shadow-sm"
+                              title={isMe ? "Tu Modo Incógnito está activo" : "⚠️ Usuario en Modo Incógnito (Oculto para los demás). Solo visible para Administradores. Por favor no lo nombres ni lo delates en el chat si solo quiere leer."}
+                              className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 text-[9px] font-black px-2 py-0.5 rounded-full border border-amber-500/50 shadow-sm cursor-help hover:bg-amber-500/30 transition-all"
                             >
-                              <EyeOff size={10} className="text-amber-400" />
-                              <span>Incógnito</span>
+                              <EyeOff size={10} className="text-amber-400 shrink-0" />
+                              <span>{isMe ? "Incógnito (Tú)" : "Incógnito • No delatar"}</span>
                             </span>
                           )}
                         </p>
                         <p className="text-white/50 text-xs truncate">
                           {u.incognito ? (
-                            <span className="text-amber-300/80 italic flex items-center gap-1 text-[11px]">
-                              <EyeOff size={11} className="inline text-amber-400" />
-                              {isMe ? "Tu modo incógnito activo" : "Oculto para usuarios comunes"}
+                            <span className="text-amber-300/90 italic flex items-center gap-1 text-[11px] font-medium">
+                              <EyeOff size={11} className="inline text-amber-400 shrink-0" />
+                              {isMe ? "Tu modo incógnito activo (Invisible para los demás)" : "Oculto para los demás • Solo visible para Admin (No delatar)"}
                             </span>
                           ) : (
                             isElizabeth ? "Administradora IA • En línea" : (u.statusMessage || "En línea")
@@ -4663,6 +4675,27 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     </span>
                   )}
                 </h3>
+                
+                {selectedUserModal.incognito && (
+                  <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-3 mb-4 mx-2 text-left flex items-start gap-2.5 shadow-md animate-in fade-in">
+                    <div className="p-1.5 rounded-xl bg-amber-500/25 text-amber-400 shrink-0 mt-0.5">
+                      <EyeOff size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-300 font-bold text-xs uppercase tracking-wide">
+                          Modo Incógnito
+                        </span>
+                        <span className="text-[9px] font-bold bg-amber-500/30 text-amber-200 px-1.5 py-0.5 rounded border border-amber-500/50">
+                          Solo Admins
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/90 mt-0.5 leading-snug">
+                        Este usuario está navegando oculto y los demás usuarios no lo ven conectado. Por favor, <strong>no lo nombres ni delates su presencia</strong> en el chat público si solo desea leer o estar tranquilo.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 
                 <div className="flex justify-center items-center gap-2 mb-4 text-xs text-gray-400">
                   <span className="flex items-center gap-1"><Globe size={12}/> {selectedUserModal.pais_idioma || selectedUserModal.countryLanguage || "Global"}</span>

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Volume2, VolumeX, Loader2 } from 'lucide-react';
-import { preloadMedia } from '../utils/mediaPreloader';
+import { Volume2, VolumeX, Loader2, Sparkles } from 'lucide-react';
+import { preloadMedia, isMediaCached } from '../utils/mediaPreloader';
 
 export interface UniversalBackgroundProps {
   url: string | null | undefined;
@@ -70,7 +70,6 @@ export function parseBackgroundMedia(rawUrl: string | null | undefined): ParsedB
   }
 
   // 2. Pinterest detection
-  // Check if it's a direct pin image/video from pinimg
   if (/pinimg\.com\/.+\.(mp4|webm|mov)/i.test(url)) {
     return {
       type: 'video',
@@ -89,7 +88,6 @@ export function parseBackgroundMedia(rawUrl: string | null | undefined): ParsedB
       icon: '📌',
     };
   }
-  // Pinterest pin page (e.g. pinterest.com/pin/123456789 or pin.it/...)
   const pinMatch = url.match(/pinterest\.[a-z.]+\/pin\/(\d+)/i);
   if (pinMatch && pinMatch[1]) {
     const pinId = pinMatch[1];
@@ -176,7 +174,8 @@ export function UniversalBackground({
 }: UniversalBackgroundProps) {
   const targetMedia = useMemo(() => parseBackgroundMedia(url), [url]);
   const [displayedMedia, setDisplayedMedia] = useState<ParsedBackgroundMedia>(targetMedia);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isBuffering, setIsBuffering] = useState<boolean>(() => !isMediaCached(targetMedia.src));
+  const [isMediaLoaded, setIsMediaLoaded] = useState<boolean>(() => isMediaCached(targetMedia.src));
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Sound state: user preference stored in localStorage
@@ -186,11 +185,12 @@ export function UniversalBackground({
     return saved === null ? true : saved === 'true';
   });
 
-  // Preload new background seamlessly before swapping to eliminate delay and black screen
+  // Preload and buffer new background seamlessly before swapping to eliminate delay and black screen
   useEffect(() => {
     if (!targetMedia.src || targetMedia.type === 'none') {
       setDisplayedMedia(targetMedia);
-      setIsLoading(false);
+      setIsBuffering(false);
+      setIsMediaLoaded(true);
       return;
     }
 
@@ -198,22 +198,26 @@ export function UniversalBackground({
       return;
     }
 
-    // Only show loading if swapping between non-trivial backgrounds
-    setIsLoading(true);
     let isCurrent = true;
+    setIsBuffering(true);
+    setIsMediaLoaded(false);
 
     preloadMedia(targetMedia.src)
       .then(() => {
         if (isCurrent) {
           setDisplayedMedia(targetMedia);
-          setIsLoading(false);
+          // For images, if already cached, mark ready
+          if (targetMedia.type === 'image') {
+            setIsMediaLoaded(true);
+            setIsBuffering(false);
+          }
         }
       })
       .catch(() => {
-        // Fail gracefully without showing error alert
         if (isCurrent) {
           setDisplayedMedia(targetMedia);
-          setIsLoading(false);
+          setIsMediaLoaded(true);
+          setIsBuffering(false);
         }
       });
 
@@ -237,12 +241,11 @@ export function UniversalBackground({
       try {
         await video.play();
       } catch (err) {
-        // Fallback: browser blocked unmuted autoplay, mute and resume instantly
         video.muted = true;
         try {
           await video.play();
         } catch (e) {
-          console.warn("Video autoplay fallback:", e);
+          // Graceful fallback
         }
       }
     };
@@ -278,42 +281,24 @@ export function UniversalBackground({
       className={containerClasses}
       style={{ opacity }}
     >
-      {/* Loading state indicator during background switch/buffer */}
-      {isLoading && (
-        isContainer ? (
-          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/80 border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-lg">
-              <Loader2 size={14} className="animate-spin text-cyan-400" />
-              <span>Cargando fondo...</span>
-            </div>
-            {/* Shimmer bar */}
-            <div className="w-24 h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse w-2/3" />
-            </div>
-          </div>
-        ) : (
-          <div className="absolute top-4 right-4 z-30 pointer-events-none flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-cyan-500/50 text-cyan-300 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-pulse">
-            <Loader2 size={13} className="animate-spin text-cyan-400" />
-            <span>Optimizando fondo...</span>
-          </div>
-        )
-      )}
-
       {/* 1. YouTube Video Embed */}
       {media.type === 'youtube' && (
-        <div className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden">
+        <div className={`absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}>
           <iframe
             src={`${media.src}&mute=${isAudioMuted ? 1 : 0}`}
             title="Chat-Liz Background Video"
             className={isContainer ? "w-full h-full border-0 pointer-events-none object-cover" : "w-[125vw] h-[125vh] min-w-[125vw] min-h-[125vh] -translate-x-[12.5vw] -translate-y-[12.5vh] border-0 pointer-events-none object-cover"}
             allow="autoplay; encrypted-media; picture-in-picture"
             tabIndex={-1}
-            onLoad={() => setIsLoading(false)}
+            onLoad={() => {
+              setIsBuffering(false);
+              setIsMediaLoaded(true);
+            }}
           />
         </div>
       )}
 
-      {/* 2. Direct Video File - Infinite loop with sound support */}
+      {/* 2. Direct Video File - Infinite loop with smooth buffering */}
       {media.type === 'video' && (
         <video
           ref={videoRef}
@@ -321,38 +306,53 @@ export function UniversalBackground({
           loop
           playsInline
           muted={isAudioMuted}
+          preload="auto"
           src={media.src}
-          className="absolute inset-0 w-full h-full object-cover min-w-full min-h-full"
-          onWaiting={() => setIsLoading(true)}
-          onCanPlay={() => setIsLoading(false)}
-          onPlaying={() => setIsLoading(false)}
-          onLoadedData={() => setIsLoading(false)}
+          className={`absolute inset-0 w-full h-full object-cover min-w-full min-h-full transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}
+          onWaiting={() => setIsBuffering(true)}
+          onCanPlay={() => {
+            setIsBuffering(false);
+            setIsMediaLoaded(true);
+          }}
+          onLoadedData={() => {
+            setIsBuffering(false);
+            setIsMediaLoaded(true);
+          }}
+          onPlaying={() => {
+            setIsBuffering(false);
+            setIsMediaLoaded(true);
+          }}
           onEnded={(e) => {
-            // Guarantee infinite loop without pause
             try {
               e.currentTarget.currentTime = 0;
               e.currentTarget.play();
             } catch {}
           }}
           onError={() => {
-            setIsLoading(false);
+            // Graceful fallback - never show broken banner
+            setIsBuffering(false);
+            setIsMediaLoaded(true);
           }}
         />
       )}
 
       {/* 3. Image, Animated GIF or WebP - Preserves animated frames & perfect aspect ratio with lazy loading */}
       {media.type === 'image' && (
-        <div className="absolute inset-0 w-full h-full overflow-hidden">
+        <div className={`absolute inset-0 w-full h-full overflow-hidden transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}>
           <img
             src={media.src}
             alt="Fondo Chat-Liz"
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover min-w-full min-h-full transition-opacity duration-300 pointer-events-none select-none"
-            onLoad={() => setIsLoading(false)}
+            className="w-full h-full object-cover min-w-full min-h-full pointer-events-none select-none"
+            onLoad={() => {
+              setIsBuffering(false);
+              setIsMediaLoaded(true);
+            }}
             onError={(e) => {
-              setIsLoading(false);
+              setIsBuffering(false);
+              setIsMediaLoaded(true);
               (e.currentTarget as HTMLElement).style.display = 'none';
             }}
           />
@@ -361,7 +361,7 @@ export function UniversalBackground({
 
       {/* 4. Pinterest or Generic Webpage */}
       {(media.type === 'pinterest' || media.type === 'webpage') && (
-        <div className="absolute inset-0 w-full h-full overflow-hidden">
+        <div className={`absolute inset-0 w-full h-full overflow-hidden transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}>
           <iframe
             src={media.src}
             title="Chat-Liz Background Page"
@@ -369,16 +369,41 @@ export function UniversalBackground({
             allow="autoplay; encrypted-media"
             sandbox="allow-scripts allow-same-origin"
             tabIndex={-1}
-            onLoad={() => setIsLoading(false)}
+            onLoad={() => {
+              setIsBuffering(false);
+              setIsMediaLoaded(true);
+            }}
           />
         </div>
+      )}
+
+      {/* SKELETON / SPINNER STATE: Appears smoothly during buffer/load to eliminate any flash or error display */}
+      {(!isMediaLoaded || isBuffering) && (
+        isContainer ? (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm pointer-events-none animate-in fade-in duration-150">
+            {/* Shimmer skeleton background */}
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/10 to-transparent -translate-x-full animate-[shimmer_1.8s_infinite] pointer-events-none" />
+            <div className="relative flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-black/85 border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-[0_0_20px_rgba(6,182,212,0.25)]">
+              <Loader2 size={15} className="animate-spin text-cyan-400" />
+              <span>Optimizando y cargando fondo...</span>
+            </div>
+            <div className="w-32 h-1 bg-white/10 rounded-full mt-2.5 overflow-hidden relative">
+              <div className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 rounded-full animate-pulse w-3/4" />
+            </div>
+          </div>
+        ) : (
+          <div className="absolute top-4 right-4 z-20 pointer-events-none flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-pulse">
+            <Loader2 size={13} className="animate-spin text-cyan-400" />
+            <span>Optimizando fondo...</span>
+          </div>
+        )
       )}
 
       {/* Dark gradient overlay to preserve chat readability */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/60 pointer-events-none" />
 
-      {/* Floating Sound Toggle for Video Backgrounds (Only in full app background, not inside modal preview containers) */}
-      {!isContainer && isVideoWithSoundCandidate && (
+      {/* Floating Sound Toggle for Video Backgrounds */}
+      {!isContainer && isVideoWithSoundCandidate && isMediaLoaded && (
         <div className="absolute bottom-4 right-4 pointer-events-auto z-20">
           <button
             onClick={toggleSound}

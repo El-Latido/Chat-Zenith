@@ -79,6 +79,7 @@ export function BackgroundSelectorModal({
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   // Pre-cache all preset backgrounds in memory as soon as modal opens
   useEffect(() => {
@@ -262,19 +263,29 @@ export function BackgroundSelectorModal({
             {mediaPreview ? (
               isVideo ? (
                 <video
+                  key={mediaPreview}
                   src={mediaPreview}
                   autoPlay
                   loop
                   muted
                   playsInline
-                  className="w-full h-full object-cover"
+                  preload="auto"
+                  className={`w-full h-full object-cover transition-opacity duration-300 ${isPreviewLoading ? 'opacity-20' : 'opacity-100'}`}
+                  onLoadedData={() => setIsPreviewLoading(false)}
+                  onCanPlay={() => setIsPreviewLoading(false)}
+                  onError={() => setIsPreviewLoading(false)}
                 />
               ) : (
                 <img
+                  key={mediaPreview}
                   src={mediaPreview}
                   alt="Vista Previa"
                   referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  className={`w-full h-full object-cover transition-opacity duration-300 ${isPreviewLoading ? 'opacity-20' : 'opacity-100'}`}
+                  onLoad={() => setIsPreviewLoading(false)}
+                  onError={() => setIsPreviewLoading(false)}
                 />
               )
             ) : (
@@ -284,7 +295,20 @@ export function BackgroundSelectorModal({
               </div>
             )}
 
-            <div className="absolute top-2 right-2 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-bold text-white flex items-center gap-1.5">
+            {/* SKELETON / SPINNER OVERLAY: Eliminates black flash and shows active buffer progress */}
+            {(isPreviewLoading || isProcessing) && mediaPreview && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+                <div className="relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-black/85 border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-lg">
+                  <Loader2 size={15} className="animate-spin text-cyan-400" />
+                  <span>Cargando vista previa...</span>
+                </div>
+                <div className="w-24 h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse w-3/4" />
+                </div>
+              </div>
+            )}
+
+            <div className="absolute top-2 right-2 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-bold text-white flex items-center gap-1.5 z-10">
               <span>Vista previa ajustada a bordes</span>
             </div>
           </div>
@@ -372,6 +396,7 @@ export function BackgroundSelectorModal({
                     onClick={() => {
                       setSelectedBg(preset.url);
                       setMediaPreview(preset.url);
+                      setIsPreviewLoading(true);
                       setCustomUrl('');
                     }}
                     className={`relative rounded-xl overflow-hidden cursor-pointer border-2 transition-all group ${
@@ -380,11 +405,13 @@ export function BackgroundSelectorModal({
                         : 'border-white/10 hover:border-white/30'
                     }`}
                   >
-                    <div className="h-20 w-full overflow-hidden">
+                    <div className="h-20 w-full overflow-hidden bg-black/40 relative">
                       <img
                         src={preset.preview}
                         alt={preset.name}
                         referrerPolicy="no-referrer"
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     </div>
