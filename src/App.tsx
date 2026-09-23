@@ -7,7 +7,14 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, Clock, Sparkles, Key, Sliders } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, VolumeX, Clock, Sparkles, Key, Sliders } from "lucide-react";
+import { 
+  speakElizabethMessage, 
+  stopSpeaking, 
+  isSpeaking, 
+  getSavedElizabethVoiceConfig, 
+  saveElizabethVoiceConfig 
+} from "./utils/elizabethVoiceSynthesizer";
 import { collection,
   onSnapshot,
   query,
@@ -1324,11 +1331,18 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       }
     };
 
+    const handleAiVoiceConfigUpdated = (data: { aiUsername: string, voiceConfig: any }) => {
+      if (data?.aiUsername === "Elizabeth" && data?.voiceConfig) {
+        saveElizabethVoiceConfig(data.voiceConfig);
+      }
+    };
+
     socket.on("chat_config_updated", handleChatConfigUpdated);
     socket.on("global_bg_updated", handleGlobalBgUpdated);
     socket.on("user_profile_updated", handleUserProfileUpdated);
     socket.on("sync_appearance_to_axis", handleSyncToAxis);
     socket.on("global_chat_cleaned", handleGlobalChatCleaned);
+    socket.on("ai_voice_config_updated", handleAiVoiceConfigUpdated);
 
     return () => {
       socket.off("chat_config_updated", handleChatConfigUpdated);
@@ -1336,6 +1350,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       socket.off("user_profile_updated", handleUserProfileUpdated);
       socket.off("sync_appearance_to_axis", handleSyncToAxis);
       socket.off("global_chat_cleaned", handleGlobalChatCleaned);
+      socket.off("ai_voice_config_updated", handleAiVoiceConfigUpdated);
     };
   }, [isLoggedIn, activeChat, user.username]);
 
@@ -1487,6 +1502,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           scrollToBottom,
           100,
         );
+        if ((msg.sender === "Elizabeth" || msg.isAi) && msg.text) {
+          const vConfig = getSavedElizabethVoiceConfig();
+          if (vConfig.autoPlay) {
+            handleToggleElizabethSpeech(msg.id || Date.now().toString(), msg.text);
+          }
+        }
       }
     });
 
@@ -1595,6 +1616,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           scrollToBottom,
           100,
         );
+        if ((msg.sender === "Elizabeth" || msg.isAi) && msg.text) {
+          const vConfig = getSavedElizabethVoiceConfig();
+          if (vConfig.autoPlay) {
+            handleToggleElizabethSpeech(msg.id || Date.now().toString(), msg.text);
+          }
+        }
       }
     });
 
@@ -2431,6 +2458,21 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageObj | null>(null);
   const [reactionMenuId, setReactionMenuId] = useState<string | null>(null);
   const reactionTimerRef = useRef<any>(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+
+  const handleToggleElizabethSpeech = (msgId: string, text: string) => {
+    if (speakingMessageId === msgId) {
+      stopSpeaking();
+      setSpeakingMessageId(null);
+      return;
+    }
+    setSpeakingMessageId(msgId);
+    speakElizabethMessage(text, undefined, {
+      onStart: () => setSpeakingMessageId(msgId),
+      onEnd: () => setSpeakingMessageId(null),
+      onError: () => setSpeakingMessageId(null),
+    });
+  };
 
   const handleReaction = async (msgId: string, docId: string | undefined, emoji: string) => {
     setReactionMenuId(null);
@@ -3713,6 +3755,34 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                       >
                                         <TranslatedText originalText={safeText} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
                                       </span>
+                                      {/* Botón de Síntesis de Voz Humana para Elizabeth / IA */}
+                                      {isLiz && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleElizabethSpeech(m.id || idx.toString(), safeText);
+                                          }}
+                                          className={`px-1.5 py-0.5 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                                            speakingMessageId === (m.id || idx.toString())
+                                              ? "bg-pink-500/30 text-pink-300 border border-pink-500/50 animate-pulse shadow-[0_0_10px_rgba(236,72,153,0.3)]"
+                                              : "text-pink-400/80 hover:text-pink-200 hover:bg-white/10"
+                                          }`}
+                                          title={speakingMessageId === (m.id || idx.toString()) ? "Detener voz de Elizabeth" : "Escuchar voz de Elizabeth"}
+                                        >
+                                          {speakingMessageId === (m.id || idx.toString()) ? (
+                                            <>
+                                              <VolumeX size={13} className="text-pink-300" />
+                                              <span className="text-[10px] font-bold text-pink-200">Detener</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Volume2 size={13} />
+                                              <span className="text-[10px] font-semibold hidden sm:inline">Voz</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
                                       <button
                                         onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
                                         className={`opacity-0 group-hover:opacity-100 transition-opacity ${nameColor} hover:opacity-80 p-1`}

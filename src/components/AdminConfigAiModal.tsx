@@ -1,16 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, X, CheckCircle, Key, Zap, Eye, EyeOff, Radio, RefreshCw, AlertCircle, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
+import { Bot, X, CheckCircle, Key, Zap, Eye, EyeOff, Radio, RefreshCw, AlertCircle, ShieldCheck, Sparkles, Trash2, Volume2, VolumeX, Mic, Sliders, Play, Square } from 'lucide-react';
 import { socket } from '../socket';
+import { 
+  VOICE_ARCHETYPES, 
+  VoiceArchetype, 
+  ElizabethVoiceConfig, 
+  getSavedElizabethVoiceConfig, 
+  saveElizabethVoiceConfig, 
+  getSystemVoices, 
+  speakElizabethMessage, 
+  stopSpeaking, 
+  isSpeaking 
+} from '../utils/elizabethVoiceSynthesizer';
 
 interface AdminConfigAiModalProps {
   aiUsername: string;
   setAdminConfigAiOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  aiProfileForm: { profilePic: string; statusMessage: string; systemInstruction?: string; username?: string; bubbleColor?: string; bubbleBorder?: string; bubbleShape?: string; bubbleTexture?: string; };
-  setAiProfileForm: React.Dispatch<React.SetStateAction<{ profilePic: string; statusMessage: string; systemInstruction: string; username?: string; bubbleColor?: string; bubbleBorder?: string; bubbleShape?: string; bubbleTexture?: string; }>>;
+  aiProfileForm: { 
+    profilePic: string; 
+    statusMessage: string; 
+    systemInstruction?: string; 
+    username?: string; 
+    bubbleColor?: string; 
+    bubbleBorder?: string; 
+    bubbleShape?: string; 
+    bubbleTexture?: string;
+    voiceConfig?: ElizabethVoiceConfig;
+  };
+  setAiProfileForm: React.Dispatch<React.SetStateAction<any>>;
 }
 
 export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiProfileForm, aiUsername }: AdminConfigAiModalProps) {
-  const [activeTab, setActiveTab] = useState<'tokens' | 'profile' | 'dj'>('tokens');
+  const [activeTab, setActiveTab] = useState<'tokens' | 'profile' | 'voice' | 'dj'>('tokens');
   const [successMsg, setSuccessMsg] = useState('');
 
   // Tokens & API configuration state
@@ -26,6 +47,30 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
   const [testResult, setTestResult] = useState<{ provider: string; success: boolean; msg: string } | null>(null);
   const [activeProviderName, setActiveProviderName] = useState<string>('gemini');
   const [providerStatusInfo, setProviderStatusInfo] = useState<any>(null);
+
+  // Voice configuration state
+  const [voiceConfig, setVoiceConfig] = useState<ElizabethVoiceConfig>(() => {
+    return (aiProfileForm as any)?.voiceConfig || getSavedElizabethVoiceConfig();
+  });
+  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [savingVoice, setSavingVoice] = useState(false);
+
+  useEffect(() => {
+    getSystemVoices().then((voices) => {
+      setSystemVoices(voices);
+      if (!voiceConfig.voiceURI && voices.length > 0) {
+        const esVoice = voices.find(v => v.lang.toLowerCase().startsWith('es'));
+        if (esVoice) {
+          setVoiceConfig(prev => ({ ...prev, voiceURI: esVoice.voiceURI }));
+        }
+      }
+    });
+
+    return () => {
+      stopSpeaking();
+    };
+  }, []);
 
   useEffect(() => {
     socket.emit("get_ai_api_config", (res: any) => {
@@ -109,44 +154,58 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
          </div>
 
          {/* Selector de pestañas */}
-         <div className="flex bg-[#0a0a14] p-1 rounded-2xl border border-white/5 gap-1 mb-4">
+         <div className="grid grid-cols-4 bg-[#0a0a14] p-1 rounded-2xl border border-white/5 gap-1 mb-4">
            <button
              type="button"
              onClick={() => setActiveTab('tokens')}
-             className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
+             className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-xl text-xs font-semibold transition-all ${
                activeTab === 'tokens'
                  ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
              }`}
            >
-             <Key size={14} className={activeTab === 'tokens' ? 'text-amber-400' : ''} />
-             <span>APIs & Tokens</span>
+             <Key size={13} className={activeTab === 'tokens' ? 'text-amber-400' : ''} />
+             <span className="hidden sm:inline">APIs</span>
+             <span className="sm:hidden">APIs</span>
            </button>
 
            <button
              type="button"
              onClick={() => setActiveTab('profile')}
-             className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
+             className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-xl text-xs font-semibold transition-all ${
                activeTab === 'profile'
                  ? 'bg-gradient-to-r from-fuchsia-500/20 to-pink-500/20 text-fuchsia-300 border border-fuchsia-500/40 shadow-sm'
                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
              }`}
            >
-             <Bot size={14} className={activeTab === 'profile' ? 'text-fuchsia-400' : ''} />
-             <span>Perfil & Voz</span>
+             <Bot size={13} className={activeTab === 'profile' ? 'text-fuchsia-400' : ''} />
+             <span>Perfil</span>
+           </button>
+
+           <button
+             type="button"
+             onClick={() => setActiveTab('voice')}
+             className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-xl text-xs font-semibold transition-all ${
+               activeTab === 'voice'
+                 ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/40 shadow-sm'
+                 : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+             }`}
+           >
+             <Volume2 size={13} className={activeTab === 'voice' ? 'text-pink-400' : ''} />
+             <span>Voz</span>
            </button>
 
            <button
              type="button"
              onClick={() => setActiveTab('dj')}
-             className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
+             className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-xl text-xs font-semibold transition-all ${
                activeTab === 'dj'
                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
              }`}
            >
-             <Radio size={14} className={activeTab === 'dj' ? 'text-cyan-400' : ''} />
-             <span>DJ & Control</span>
+             <Radio size={13} className={activeTab === 'dj' ? 'text-cyan-400' : ''} />
+             <span>DJ</span>
            </button>
          </div>
 
@@ -505,6 +564,301 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
                >
                  Guardar Perfil de {aiUsername}
                </button>
+             </div>
+           )}
+
+           {/* TAB: VOZ & SINTETIZADOR DE ELIZABETH */}
+           {activeTab === 'voice' && (
+             <div className="space-y-4 text-xs">
+               {/* Header informativo */}
+               <div className="bg-gradient-to-r from-pink-950/40 via-purple-950/40 to-[#181a26] p-3.5 rounded-2xl border border-pink-500/25 flex items-start gap-3">
+                 <div className="p-2 rounded-xl bg-pink-500/20 text-pink-300 border border-pink-500/30 shrink-0 mt-0.5">
+                   <Volume2 size={18} />
+                 </div>
+                 <div>
+                   <h3 className="font-bold text-white text-xs flex items-center gap-1.5">
+                     Sintetizador de Voz de {aiUsername}
+                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/30">
+                       HD Multi-Voz
+                     </span>
+                   </h3>
+                   <p className="text-[11px] text-gray-300 mt-1 leading-relaxed">
+                     Elige el arquetipo de voz (femenina, adolescente, masculina, anciano, cuántica) y ajusta libremente el tono (grave o agudo) y la velocidad.
+                   </p>
+                 </div>
+               </div>
+
+               {/* Arquetipos / Presets de Voz */}
+               <div className="space-y-2">
+                 <label className="font-bold text-gray-200 flex items-center justify-between text-xs">
+                   <span>Arquetipos y Presets de Voz</span>
+                   <span className="text-[11px] text-pink-400 font-normal">8 perfiles disponibles</span>
+                 </label>
+                 <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
+                   {VOICE_ARCHETYPES.map((arch) => {
+                     const isSelected = voiceConfig.archetypeId === arch.id;
+                     return (
+                       <button
+                         key={arch.id}
+                         type="button"
+                         onClick={() => {
+                           setVoiceConfig(prev => ({
+                             ...prev,
+                             archetypeId: arch.id,
+                             pitch: arch.pitch,
+                             rate: arch.rate,
+                             volume: arch.volume
+                           }));
+                         }}
+                         className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 relative ${
+                           isSelected
+                             ? 'bg-pink-500/20 border-pink-500/60 shadow-[0_0_12px_rgba(236,72,153,0.25)] text-white'
+                             : 'bg-[#181a26] border-white/5 text-gray-300 hover:border-white/20 hover:bg-white/5'
+                         }`}
+                       >
+                         <div className="flex items-center justify-between">
+                           <span className="text-base">{arch.icon}</span>
+                           {isSelected && (
+                             <span className="w-2 h-2 rounded-full bg-pink-400 animate-pulse" />
+                           )}
+                         </div>
+                         <span className="font-bold text-[11px] leading-tight text-gray-100">{arch.name}</span>
+                         <span className="text-[10px] text-gray-400 leading-tight line-clamp-2">{arch.description}</span>
+                         <div className="flex gap-2 mt-0.5 text-[9px] font-mono text-gray-400">
+                           <span>Tono: {arch.pitch.toFixed(2)}x</span>
+                           <span>Vel: {arch.rate.toFixed(2)}x</span>
+                         </div>
+                       </button>
+                     );
+                   })}
+                 </div>
+               </div>
+
+               {/* Ajustes Acústicos (Sliders de Tono, Velocidad, Volumen) */}
+               <div className="bg-[#181a26] p-3.5 rounded-2xl border border-white/5 space-y-3.5">
+                 <div className="flex items-center justify-between">
+                   <span className="font-bold text-gray-200 flex items-center gap-1.5">
+                     <Sliders size={13} className="text-pink-400" />
+                     Ajuste Fino de Tono & Frecuencia
+                   </span>
+                   <button
+                     type="button"
+                     onClick={() => {
+                       const standard = VOICE_ARCHETYPES.find(a => a.id === voiceConfig.archetypeId) || VOICE_ARCHETYPES[0];
+                       setVoiceConfig(prev => ({ ...prev, pitch: standard.pitch, rate: standard.rate, volume: 1.0 }));
+                     }}
+                     className="text-[10px] text-gray-400 hover:text-white underline"
+                   >
+                     Restablecer
+                   </button>
+                 </div>
+
+                 {/* Slider de Tono / Pitch */}
+                 <div className="space-y-1">
+                   <div className="flex justify-between items-center text-[11px]">
+                     <span className="text-gray-300">Tono (Pitch): {voiceConfig.pitch < 0.9 ? 'Grave' : voiceConfig.pitch > 1.3 ? 'Agudo' : 'Medio'}</span>
+                     <span className="font-mono text-pink-300 bg-pink-500/20 px-2 py-0.5 rounded border border-pink-500/30 font-bold">
+                       {voiceConfig.pitch.toFixed(2)}x
+                     </span>
+                   </div>
+                   <input
+                     type="range"
+                     min="0.5"
+                     max="2.0"
+                     step="0.05"
+                     value={voiceConfig.pitch}
+                     onChange={(e) => setVoiceConfig({ ...voiceConfig, pitch: parseFloat(e.target.value) })}
+                     className="w-full accent-pink-500 cursor-pointer"
+                   />
+                   <div className="flex justify-between text-[9px] text-gray-500 font-mono">
+                     <span>0.5x (Voz Grave / Anciano)</span>
+                     <span>1.0x (Normal)</span>
+                     <span>2.0x (Agudo / Juvenil)</span>
+                   </div>
+                 </div>
+
+                 {/* Slider de Velocidad / Rate */}
+                 <div className="space-y-1">
+                   <div className="flex justify-between items-center text-[11px]">
+                     <span className="text-gray-300">Velocidad (Cadencia)</span>
+                     <span className="font-mono text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30 font-bold">
+                       {voiceConfig.rate.toFixed(2)}x
+                     </span>
+                   </div>
+                   <input
+                     type="range"
+                     min="0.5"
+                     max="1.8"
+                     step="0.05"
+                     value={voiceConfig.rate}
+                     onChange={(e) => setVoiceConfig({ ...voiceConfig, rate: parseFloat(e.target.value) })}
+                     className="w-full accent-purple-500 cursor-pointer"
+                   />
+                   <div className="flex justify-between text-[9px] text-gray-500 font-mono">
+                     <span>0.5x (Lento y pausado)</span>
+                     <span>1.0x (Natural)</span>
+                     <span>1.8x (Rápido)</span>
+                   </div>
+                 </div>
+
+                 {/* Slider de Volumen */}
+                 <div className="space-y-1">
+                   <div className="flex justify-between items-center text-[11px]">
+                     <span className="text-gray-300">Volumen</span>
+                     <span className="font-mono text-cyan-300 bg-cyan-500/20 px-2 py-0.5 rounded border border-cyan-500/30 font-bold">
+                       {Math.round(voiceConfig.volume * 100)}%
+                     </span>
+                   </div>
+                   <input
+                     type="range"
+                     min="0.1"
+                     max="1.0"
+                     step="0.05"
+                     value={voiceConfig.volume}
+                     onChange={(e) => setVoiceConfig({ ...voiceConfig, volume: parseFloat(e.target.value) })}
+                     className="w-full accent-cyan-400 cursor-pointer"
+                   />
+                 </div>
+               </div>
+
+               {/* Voz del Sistema / Dispositivo */}
+               <div className="space-y-1.5">
+                 <label className="font-bold text-gray-300 flex items-center justify-between text-xs">
+                   <span>Motor de Voz del Sistema</span>
+                   <span className="text-[10px] text-gray-400">{systemVoices.length} voces detectadas</span>
+                 </label>
+                 <select
+                   value={voiceConfig.voiceURI}
+                   onChange={(e) => setVoiceConfig({ ...voiceConfig, voiceURI: e.target.value })}
+                   className="w-full bg-[#0a0a16] p-2.5 rounded-xl border border-white/10 outline-none focus:border-pink-500 text-white text-xs"
+                 >
+                   <option value="">Voz Óptima Automática (Recomendado)</option>
+                   {systemVoices.map((v) => (
+                     <option key={v.voiceURI} value={v.voiceURI}>
+                       {v.name} ({v.lang}) {v.lang.toLowerCase().startsWith('es') ? '★ Español' : ''}
+                     </option>
+                   ))}
+                 </select>
+               </div>
+
+               {/* Tono Emocional */}
+               <div className="space-y-1.5">
+                 <label className="font-bold text-gray-300 text-xs">Matiz de Expresión</label>
+                 <div className="grid grid-cols-5 gap-1.5">
+                   {(['calida', 'seria', 'jovial', 'suave', 'energetica'] as const).map((tone) => (
+                     <button
+                       key={tone}
+                       type="button"
+                       onClick={() => setVoiceConfig({ ...voiceConfig, voiceTone: tone })}
+                       className={`py-1.5 px-1 rounded-xl text-[10px] font-semibold capitalize border transition-all text-center ${
+                         voiceConfig.voiceTone === tone
+                           ? 'bg-gradient-to-r from-pink-500/25 to-purple-500/25 border-pink-500/50 text-white'
+                           : 'bg-[#181a26] border-white/5 text-gray-400 hover:text-white'
+                       }`}
+                     >
+                       {tone}
+                     </button>
+                   ))}
+                 </div>
+               </div>
+
+               {/* Interruptor Auto-Play en Chat */}
+               <label className="flex items-center justify-between p-3 rounded-xl bg-[#181a26] border border-white/5 cursor-pointer hover:border-white/10 transition-colors">
+                 <div className="flex flex-col">
+                   <span className="font-bold text-gray-200 text-xs flex items-center gap-1.5">
+                     <Mic size={13} className="text-pink-400" />
+                     Auto-reproducir voz de {aiUsername}
+                   </span>
+                   <span className="text-[10px] text-gray-400">
+                     Lee automáticamente en voz alta los mensajes que envíe {aiUsername} al chat.
+                   </span>
+                 </div>
+                 <input
+                   type="checkbox"
+                   checked={voiceConfig.autoPlay}
+                   onChange={(e) => setVoiceConfig({ ...voiceConfig, autoPlay: e.target.checked })}
+                   className="w-4 h-4 accent-pink-500 rounded cursor-pointer"
+                 />
+               </label>
+
+               {/* Botones de Prueba en Vivo y Guardado */}
+               <div className="pt-2 flex flex-col gap-2">
+                 <button
+                   type="button"
+                   onClick={() => {
+                     if (isPlayingVoice) {
+                       stopSpeaking();
+                       setIsPlayingVoice(false);
+                       return;
+                     }
+                     setIsPlayingVoice(true);
+                     const samplePhrases = [
+                       `¡Hola Axiss! Soy ${aiUsername}, tu compañera y administradora de ChatLiz. ¿Cómo se escucha mi tono de voz ahora?`,
+                       `¡Me encanta esta voz! Puedes cambiar mi tono a más agudo, grave, adolescente o anciano cuando desees.`,
+                       `Sistemas cuánticos sincronizados. Lista para cuidar y animar el chat contigo.`
+                     ];
+                     const selectedPhrase = samplePhrases[Math.floor(Math.random() * samplePhrases.length)];
+                     speakElizabethMessage(selectedPhrase, voiceConfig, {
+                       onStart: () => setIsPlayingVoice(true),
+                       onEnd: () => setIsPlayingVoice(false),
+                       onError: () => setIsPlayingVoice(false),
+                     });
+                   }}
+                   className={`w-full p-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all border ${
+                     isPlayingVoice
+                       ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
+                       : 'bg-white/10 text-white hover:bg-white/15 border-white/10'
+                   }`}
+                 >
+                   {isPlayingVoice ? (
+                     <>
+                       <Square size={14} className="fill-rose-400 text-rose-400" />
+                       <span>Detener Prueba de Voz</span>
+                     </>
+                   ) : (
+                     <>
+                       <Play size={14} className="fill-pink-400 text-pink-400" />
+                       <span>Probar Voz en Vivo ({voiceConfig.pitch.toFixed(2)}x)</span>
+                     </>
+                   )}
+                 </button>
+
+                 <button
+                   type="button"
+                   disabled={savingVoice}
+                   onClick={() => {
+                     setSavingVoice(true);
+                     saveElizabethVoiceConfig(voiceConfig);
+                     setAiProfileForm((prev: any) => ({ ...prev, voiceConfig }));
+                     socket.emit("update_ai_config", {
+                       aiUsername,
+                       voiceConfig,
+                       profilePic: aiProfileForm.profilePic,
+                       statusMessage: aiProfileForm.statusMessage,
+                       systemInstruction: aiProfileForm.systemInstruction,
+                       bubbleColor: aiProfileForm.bubbleColor,
+                       bubbleBorder: aiProfileForm.bubbleBorder,
+                       bubbleShape: aiProfileForm.bubbleShape,
+                       bubbleTexture: aiProfileForm.bubbleTexture,
+                       groqBackupKey: groqBackupKey.trim(),
+                       groqBackupName: groqBackupName.trim(),
+                       geminiKey: geminiKey.trim(),
+                       preferredProvider
+                     }, (res: any) => {
+                       setSavingVoice(false);
+                       if (res?.success || res?.success === undefined) {
+                         setSuccessMsg(`¡Configuración de voz y tono de ${aiUsername} guardada con éxito!`);
+                       } else {
+                         alert("Error al guardar: " + res?.error);
+                       }
+                     });
+                   }}
+                   className="w-full bg-gradient-to-r from-pink-600 via-fuchsia-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white p-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-[0_4px_14px_rgba(236,72,153,0.3)] flex items-center justify-center gap-2"
+                 >
+                   <CheckCircle size={14} />
+                   <span>{savingVoice ? 'Guardando Voz...' : `Guardar Voz de ${aiUsername}`}</span>
+                 </button>
+               </div>
              </div>
            )}
 

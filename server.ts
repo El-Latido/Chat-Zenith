@@ -2606,15 +2606,17 @@ socket.on("buy_decoration", async (data, callback) => {
       const aiUsername = data.aiUsername || "Elizabeth";
       if (!AI_CHARACTERS[aiUsername]) return callback({ success: false, error: "Personaje IA no encontrado." });
       
-      const { profilePic, statusMessage, systemInstruction } = data;
+      const { profilePic, statusMessage, systemInstruction, voiceConfig } = data;
       let safeProfilePic = profilePic || "";
       const safeStatusMessage = statusMessage || "Administradora";
       const safeSystemInstruction = systemInstruction || "";
+      const safeVoiceConfig = voiceConfig || null;
       if (fdb) {
         await updateAiProfileInFirebase(aiUsername, {
           profilePic: safeProfilePic,
           statusMessage: safeStatusMessage,
           systemInstruction: safeSystemInstruction,
+          ...(safeVoiceConfig ? { voiceConfig: safeVoiceConfig } : {}),
         });
       } else {
         if (!fallbackState.users[aiUsername])
@@ -2623,6 +2625,7 @@ socket.on("buy_decoration", async (data, callback) => {
         fallbackState.users[aiUsername].statusMessage = safeStatusMessage;
         fallbackState.users[aiUsername].systemInstruction =
           safeSystemInstruction;
+        if (safeVoiceConfig) fallbackState.users[aiUsername].voiceConfig = safeVoiceConfig;
         fallbackState.users[aiUsername].role = "admin";
         saveFallbackDB();
       }
@@ -2632,7 +2635,11 @@ socket.on("buy_decoration", async (data, callback) => {
         profilePic: safeProfilePic,
         statusMessage: safeStatusMessage,
         systemInstruction: safeSystemInstruction,
+        ...(safeVoiceConfig ? { voiceConfig: safeVoiceConfig } : {}),
       };
+      if (safeVoiceConfig) {
+        io.emit("ai_voice_config_updated", { aiUsername, voiceConfig: safeVoiceConfig });
+      }
 
       if (data.groqBackupKey !== undefined || data.groqBackupName !== undefined || data.geminiKey !== undefined || data.preferredProvider !== undefined) {
         if (typeof data.groqBackupKey === "string") aiRuntimeConfig.groqBackupKey = data.groqBackupKey.trim();
