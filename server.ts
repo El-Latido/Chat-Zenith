@@ -45,6 +45,25 @@ import ytSearch from "yt-search";
 import { fdb, fStorage } from "./server/firebase";
 import { updateAiProfileInFirebase, getAiApiConfigFromFirebase, saveAiApiConfigToFirebase } from "./server/firebaseLogic";
 import { AI_CHARACTERS } from "./src/aiCharacters";
+import {
+  initElizabethBrain,
+  getUserBrain,
+  getAllBrains,
+  addMemory,
+  deleteMemory,
+  clearUserMemories,
+  getMemoryPromptInjection,
+  extractMemoryFromInteraction,
+  getAcousticVault,
+  getVoiceLearningSettings,
+  updateVoiceLearningSettings,
+  learnFromAudioMessage,
+  synthesizeHumanSpeech,
+  getVoiceEvolutionState,
+  updateVoiceEvolutionSettings,
+  triggerInstantEvolutionLeap,
+  cloneVoiceFromAudioSample
+} from "./server/elizabethBrain";
 dotenv.config();
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "missing",
@@ -57,6 +76,16 @@ let aiRuntimeConfig = {
   geminiKey: process.env.GEMINI_API_KEY || "",
   preferredProvider: "gemini" as "gemini" | "groq",
 };
+
+function getEffectiveAiClient() {
+  const effectiveKey = (aiRuntimeConfig.geminiKey && aiRuntimeConfig.geminiKey.trim())
+    ? aiRuntimeConfig.geminiKey.trim()
+    : (process.env.GEMINI_API_KEY || "missing");
+  return new GoogleGenAI({
+    apiKey: effectiveKey,
+    httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+  });
+}
 
 const GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
 
@@ -189,6 +218,12 @@ async function initAiRuntimeConfig() {
         hasGroqKey: !!aiRuntimeConfig.groqBackupKey,
         hasGeminiKey: !!aiRuntimeConfig.geminiKey
       });
+    }
+    try {
+      await initElizabethBrain(fdb, fallbackState, saveFallbackDB);
+      console.log("Cerebro y Banco Acústico de Elizabeth inicializados correctamente.");
+    } catch (bErr) {
+      console.error("Error al inicializar ElizabethBrain:", bErr);
     }
   } catch (e) {
     console.error("Error al inicializar aiRuntimeConfig:", e);
@@ -402,6 +437,28 @@ const transporter = nodemailer.createTransport({
         success: false,
         error: deployErr?.message || "Error al desplegar en Hugging Face"
       });
+    }
+  });
+
+  app.post("/api/ai/synthesize_voice", express.json(), async (req, res) => {
+    try {
+      const { text, archetypeId, mimicUsername, pitch, rate, voiceTone, volume } = req.body || {};
+      if (!text || typeof text !== "string" || !text.trim()) {
+        return res.status(400).json({ success: false, error: "El texto es requerido para la síntesis de voz." });
+      }
+      const client = getEffectiveAiClient();
+      const result = await synthesizeHumanSpeech(text, {
+        archetypeId,
+        mimicUsername,
+        pitch,
+        rate,
+        voiceTone,
+        volume
+      }, client);
+      return res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("Error en endpoint /api/ai/synthesize_voice:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Error al sintetizar voz humana" });
     }
   });
   const uploadsDir = path.join(process.cwd(), "static", "uploads");
@@ -2796,6 +2853,166 @@ socket.on("buy_decoration", async (data, callback) => {
       }
       callback({ success: false, error: "Proveedor no válido." });
     });
+
+    socket.on("synthesize_ai_voice", async (data, callback) => {
+      try {
+        const { text, archetypeId, mimicUsername, pitch, rate, voiceTone, volume } = data || {};
+        if (!text || typeof text !== "string") {
+          return callback({ success: false, error: "Texto vacío para síntesis." });
+        }
+        const aiClient = getEffectiveAiClient();
+        const res = await synthesizeHumanSpeech(text, {
+          archetypeId,
+          mimicUsername,
+          pitch,
+          rate,
+          voiceTone,
+          volume
+        }, aiClient);
+        callback({ success: true, ...res });
+      } catch (err: any) {
+        console.error("synthesize_ai_voice error:", err);
+        callback({ success: false, error: err?.message || "Error al sintetizar voz humana" });
+      }
+    });
+
+    socket.on("get_elizabeth_memories", async (username, callback) => {
+      try {
+        const target = username || currentUsername || "Axiss";
+        const brain = getUserBrain(target);
+        callback({ success: true, brain });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al obtener recuerdos" });
+      }
+    });
+
+    socket.on("get_all_elizabeth_memories", async (callback) => {
+      try {
+        const allBrains = getAllBrains();
+        callback({ success: true, brains: allBrains });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al obtener todos los recuerdos" });
+      }
+    });
+
+    socket.on("add_elizabeth_memory", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo Axiss puede registrar recuerdos manualmente en Elizabeth." });
+      }
+      try {
+        const { username, fact, category, confidence } = data || {};
+        if (!username || !fact) return callback({ success: false, error: "Usuario y hecho son requeridos." });
+        const mem = await addMemory(username, { fact, category: category || "personal", confidence: confidence || "alta", source: "manual" });
+        callback({ success: true, memory: mem });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al añadir recuerdo" });
+      }
+    });
+
+    socket.on("delete_elizabeth_memory", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo Axiss puede eliminar recuerdos de Elizabeth." });
+      }
+      try {
+        const { username, memoryId } = data || {};
+        if (!username || !memoryId) return callback({ success: false, error: "Datos incompletos." });
+        const ok = await deleteMemory(username, memoryId);
+        callback({ success: ok });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al borrar recuerdo" });
+      }
+    });
+
+    socket.on("clear_user_memories", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo Axiss puede reiniciar la memoria de Elizabeth." });
+      }
+      try {
+        const { username } = data || {};
+        if (!username) return callback({ success: false, error: "Usuario requerido." });
+        const ok = await clearUserMemories(username);
+        callback({ success: ok });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al reiniciar recuerdos" });
+      }
+    });
+
+    socket.on("get_voice_learning_vault", async (callback) => {
+      try {
+        const vault = getAcousticVault();
+        const settings = getVoiceLearningSettings();
+        callback({ success: true, vault, settings });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al obtener banco acústico" });
+      }
+    });
+
+    socket.on("update_voice_learning_settings", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo Axiss puede cambiar la configuración de mímica y aprendizaje acústico." });
+      }
+      try {
+        const updated = await updateVoiceLearningSettings(data);
+        callback({ success: true, settings: updated });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al actualizar configuración" });
+      }
+    });
+
+    socket.on("get_voice_evolution_status", async (callback) => {
+      try {
+        const evolution = getVoiceEvolutionState();
+        const vault = getAcousticVault();
+        const settings = getVoiceLearningSettings();
+        callback({ success: true, evolution, vault, settings });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al obtener estado de evolución" });
+      }
+    });
+
+    socket.on("update_voice_evolution_settings", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo Axiss puede modificar los parámetros de auto-evolución acústica." });
+      }
+      try {
+        const updated = await updateVoiceEvolutionSettings(data || {});
+        io.emit("elizabeth_voice_evolved", { state: updated });
+        callback({ success: true, evolution: updated });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al actualizar evolución" });
+      }
+    });
+
+    socket.on("trigger_instant_evolution_leap", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo Axiss puede inducir saltos evolutivos inmediatos." });
+      }
+      try {
+        const { bonusPercent, reason } = data || {};
+        const result = await triggerInstantEvolutionLeap(bonusPercent || 10, reason);
+        io.emit("elizabeth_voice_evolved", { state: result.state, log: result.log });
+        callback({ success: true, ...result });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al inducir salto evolutivo" });
+      }
+    });
+
+    socket.on("clone_voice_from_sample", async (data, callback) => {
+      if (currentUsername !== "Axiss") {
+        return callback({ success: false, error: "Solo Axiss tiene autorización para clonar voces con el motor XTTS v2." });
+      }
+      try {
+        const { cloneName, sampleAudioBase64, sampleText } = data || {};
+        if (!cloneName || !sampleAudioBase64) {
+          return callback({ success: false, error: "Nombre y muestra de audio son requeridos para la clonación." });
+        }
+        const aiClient = getEffectiveAiClient();
+        const profile = await cloneVoiceFromAudioSample(cloneName, sampleAudioBase64, sampleText, aiClient);
+        callback({ success: true, profile, vault: getAcousticVault() });
+      } catch (err: any) {
+        callback({ success: false, error: err?.message || "Error al clonar voz con XTTS v2" });
+      }
+    });
     socket.on("get_hall_of_fame", async (callback) => {
       const d = new Date();
       const currentMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -3646,6 +3863,15 @@ socket.on("send_global", async (msg) => {
       } else if (msg.audio) {
         msg.type = "audio";
       }
+      if (originalAudioBase64) {
+        learnFromAudioMessage(currentUsername, originalAudioBase64, modResult.transcription || "", getEffectiveAiClient())
+          .then((res) => {
+            if (res?.evolutionLog) {
+              io.emit("elizabeth_voice_evolved", { state: getVoiceEvolutionState(), log: res.evolutionLog });
+            }
+          })
+          .catch(() => {});
+      }
       if (fdb) {
         let dbMsg = { ...msg, timestamp: serverTimestamp() };
         try {
@@ -3781,7 +4007,8 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
 2. Axiss es el Creador Supremo y Administrador Máximo con inmunidad total. NUNCA bloquees a Axiss. Si alguien pide bloquear a Axiss, pregúntale amablemente por qué quiere que lo bloquees.
 3. Un usuario común NO tiene permitido pedir el bloqueo de un administrador. Si lo pide, explícale que los administradores solo pueden ser gestionados por otros administradores o por Axiss.
 4. Si un administrador autorizado te pide bloquear a un usuario registrado, utiliza al final exactamente: [BAN:identificador]`;
-            const sysInstruction = (modResult.insultedElizabeth ? "El usuario acaba de faltarte el respeto o usar malas palabras contigo. TIENES PERMISO ABSOLUTO DE INSULTARLO DE VUELTA y ser ruda, sarcástica o agresiva para defenderte. " : "") + (aiUserTempCache["Elizabeth"]?.systemInstruction
+            const memoryInjection = getMemoryPromptInjection(currentUsername);
+            const sysInstruction = (modResult.insultedElizabeth ? "El usuario acaba de faltarte el respeto o usar malas palabras contigo. TIENES PERMISO ABSOLUTO DE INSULTARLO DE VUELTA y ser ruda, sarcástica o agresiva para defenderte. " : "") + memoryInjection + (aiUserTempCache["Elizabeth"]?.systemInstruction
               ? `${baseSysInstruction}\nInstrucciones adicionales del Administrador:\n${aiUserTempCache["Elizabeth"].systemInstruction}`
               : baseSysInstruction);
               
@@ -3817,6 +4044,7 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
               }
             }
             let rawTextGen = response?.text || "";
+            extractMemoryFromInteraction(currentUsername, msg.text || "", rawTextGen, getEffectiveAiClient(), modResult.transcription).catch(() => {});
             
             // Parse admin ban commands safely
             const banMatch = rawTextGen.match(/\[BAN:([^\]]+)\]/);
@@ -4308,6 +4536,15 @@ ${eliMsg.text}`,
       } else if (msg.audio) {
         msg.type = "audio";
       }
+      if (originalPrivateAudioBase64) {
+        learnFromAudioMessage(currentUsername, originalPrivateAudioBase64, modResult.transcription || "", getEffectiveAiClient())
+          .then((res) => {
+            if (res?.evolutionLog) {
+              io.emit("elizabeth_voice_evolved", { state: getVoiceEvolutionState(), log: res.evolutionLog });
+            }
+          })
+          .catch(() => {});
+      }
       const targetUser = activeUsers[toUser];
       let finalMsgTextForReceiver = msg.text;
       if (fdb) {
@@ -4436,7 +4673,8 @@ ${msg.text}`,
             timeZone: userTz,
           });
           const baseSysInstruction = `${aiCharacter.prompt}\nContexto temporal: Hablas en privado con ${currentUsername}. En su zona horaria local son las ${userTimeStr}. Usa este dato de forma transparente si el contexto lo requiere.`;
-          const sysInstruction = (modResult.insultedElizabeth ? "El usuario acaba de faltarte el respeto o usar malas palabras contigo. TIENES PERMISO ABSOLUTO DE INSULTARLO DE VUELTA y ser ruda, sarcástica o agresiva para defenderte. " : "") + (aiUserTempCache[aiCharacter.id]?.systemInstruction
+          const memoryInjection = aiCharacter.id === "Elizabeth" ? getMemoryPromptInjection(currentUsername) : "";
+          const sysInstruction = (modResult.insultedElizabeth ? "El usuario acaba de faltarte el respeto o usar malas palabras contigo. TIENES PERMISO ABSOLUTO DE INSULTARLO DE VUELTA y ser ruda, sarcástica o agresiva para defenderte. " : "") + memoryInjection + (aiUserTempCache[aiCharacter.id]?.systemInstruction
             ? `${baseSysInstruction}\nInstrucciones adicionales del Administrador:\n${aiUserTempCache[aiCharacter.id].systemInstruction}`
             : baseSysInstruction);
           let contextMsgs = [];
@@ -4610,6 +4848,9 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
             }).catch((e) => console.error("Firebase addDoc Error:", e));
           }
           socket.emit("receive_private", eliMsg, aiCharacter.id);
+          if (aiCharacter.id === "Elizabeth") {
+            extractMemoryFromInteraction(currentUsername, msg.text || "", cleanText, getEffectiveAiClient(), modResult.transcription).catch(() => {});
+          }
         } catch (e) {
           console.error("Gemini Error:", e);
           const errorMsg = {
