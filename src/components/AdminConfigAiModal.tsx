@@ -1,23 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Bot, 
-  X, 
-  CheckCircle, 
-  Key, 
-  Zap, 
-  Eye, 
-  EyeOff, 
-  Radio, 
-  RefreshCw, 
-  AlertCircle, 
-  ShieldCheck, 
-  Sparkles, 
-  Trash2, 
-  Volume2, 
-  VolumeX, 
-  Mic, 
-  Sliders, 
-  Play, 
+import {
+  Bot,
+  X,
+  CheckCircle,
+  Key,
+  Zap,
+  Eye,
+  EyeOff,
+  Radio,
+  RefreshCw,
+  AlertCircle,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Volume2,
+  VolumeX,
+  Mic,
+  Sliders,
+  Play,
   Square,
   Brain,
   Dna,
@@ -29,18 +29,18 @@ import {
   Wind,
   Smile,
   Flame,
-  ArrowUpRight
+  ArrowUpRight,
+  Search
 } from 'lucide-react';
 import { socket } from '../socket';
-import { 
-  VOICE_ARCHETYPES, 
-  VoiceArchetype, 
-  ElizabethVoiceConfig, 
-  getSavedElizabethVoiceConfig, 
-  saveElizabethVoiceConfig, 
-  getSystemVoices, 
-  speakElizabethMessage, 
-  stopSpeaking, 
+import {
+  VOICE_ARCHETYPES,
+  VoiceArchetype,
+  ElizabethVoiceConfig,
+  getSavedElizabethVoiceConfig,
+  saveElizabethVoiceConfig,
+  speakElizabethMessage,
+  stopSpeaking,
   isSpeaking,
   VoiceEvolutionState,
   VoiceEvolutionLog,
@@ -51,14 +51,14 @@ import {
 interface AdminConfigAiModalProps {
   aiUsername: string;
   setAdminConfigAiOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  aiProfileForm: { 
-    profilePic: string; 
-    statusMessage: string; 
-    systemInstruction?: string; 
-    username?: string; 
-    bubbleColor?: string; 
-    bubbleBorder?: string; 
-    bubbleShape?: string; 
+  aiProfileForm: {
+    profilePic: string;
+    statusMessage: string;
+    systemInstruction?: string;
+    username?: string;
+    bubbleColor?: string;
+    bubbleBorder?: string;
+    bubbleShape?: string;
     bubbleTexture?: string;
     voiceConfig?: ElizabethVoiceConfig;
   };
@@ -83,11 +83,11 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
   const [activeProviderName, setActiveProviderName] = useState<string>('gemini');
   const [providerStatusInfo, setProviderStatusInfo] = useState<any>(null);
 
-  // Voice configuration state
+  // Voice configuration state (Exclusivo Coqui XTTS v2)
   const [voiceConfig, setVoiceConfig] = useState<ElizabethVoiceConfig>(() => {
     return (aiProfileForm as any)?.voiceConfig || getSavedElizabethVoiceConfig();
   });
-  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceSearchQuery, setVoiceSearchQuery] = useState('');
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const [savingVoice, setSavingVoice] = useState(false);
   const [testPhrase, setTestPhrase] = useState('¡Hola Axiss! Esta es mi voz humana real generada con síntesis neural de estudio.');
@@ -123,6 +123,8 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
     logs: []
   });
   const [isLeaping, setIsLeaping] = useState(false);
+  const [voiceCategoryFilter, setVoiceCategoryFilter] = useState<'todas' | 'femenina_xtts' | 'masculina_xtts' | 'espanol_xtts' | 'clon_xtts'>('todas');
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
 
   // Voice Cloning Studio State (XTTS v2)
   const [cloneName, setCloneName] = useState('');
@@ -142,16 +144,6 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
   const [isAddingMemory, setIsAddingMemory] = useState(false);
 
   useEffect(() => {
-    getSystemVoices().then((voices) => {
-      setSystemVoices(voices);
-      if (!voiceConfig.voiceURI && voices.length > 0) {
-        const esVoice = voices.find(v => v.lang.toLowerCase().startsWith('es'));
-        if (esVoice) {
-          setVoiceConfig(prev => ({ ...prev, voiceURI: esVoice.voiceURI }));
-        }
-      }
-    });
-
     return () => {
       stopSpeaking();
     };
@@ -286,8 +278,8 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
     }, (res: any) => {
       if (res?.success && res.settings) {
         setVoiceLearningSettings(res.settings);
-        setSuccessMsg(nextState 
-          ? "Aprendizaje pasivo activado: Elizabeth aprenderá silenciosamente de cada audio." 
+        setSuccessMsg(nextState
+          ? "Aprendizaje pasivo activado: Elizabeth aprenderá silenciosamente de cada audio."
           : "Aprendizaje pasivo pausado.");
       }
     });
@@ -494,15 +486,46 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
     if (isPlayingVoice) {
       stopSpeaking();
       setIsPlayingVoice(false);
+      setPreviewingVoiceId(null);
       return;
     }
     const phrase = phraseOverride || testPhrase;
     setIsPlayingVoice(true);
     speakElizabethMessage(phrase, voiceConfig, {
       onStart: () => setIsPlayingVoice(true),
-      onEnd: () => setIsPlayingVoice(false),
+      onEnd: () => {
+        setIsPlayingVoice(false);
+        setPreviewingVoiceId(null);
+      },
       onError: (err) => {
         setIsPlayingVoice(false);
+        setPreviewingVoiceId(null);
+        console.warn("Speech error:", err);
+      }
+    });
+  };
+
+  const handleTestSpecificVoice = (archetypeId: string, phraseOverride?: string) => {
+    if (isPlayingVoice && previewingVoiceId === archetypeId) {
+      stopSpeaking();
+      setIsPlayingVoice(false);
+      setPreviewingVoiceId(null);
+      return;
+    }
+    stopSpeaking();
+    const speaker = VOICE_ARCHETYPES.find(a => a.id === archetypeId);
+    const phrase = phraseOverride || `Hola, soy ${speaker?.name || 'Elizabeth'} en el motor Coqui XTTS v2 con locución humana viva.`;
+    setIsPlayingVoice(true);
+    setPreviewingVoiceId(archetypeId);
+    speakElizabethMessage(phrase, { ...voiceConfig, archetypeId, engine: 'xtts_v2' }, {
+      onStart: () => setIsPlayingVoice(true),
+      onEnd: () => {
+        setIsPlayingVoice(false);
+        setPreviewingVoiceId(null);
+      },
+      onError: (err) => {
+        setIsPlayingVoice(false);
+        setPreviewingVoiceId(null);
         console.warn("Speech error:", err);
       }
     });
@@ -514,11 +537,11 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
     <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-[120] flex items-center justify-center p-2 sm:p-4">
        <div className="bg-[#12141c] p-4 sm:p-6 rounded-3xl w-full max-w-xl shadow-2xl relative border border-fuchsia-500/25 max-h-[94vh] flex flex-col">
          {/* Botón cerrar */}
-         <button 
+         <button
            onClick={() => {
              stopSpeaking();
              setAdminConfigAiOpen(false);
-           }} 
+           }}
            className="absolute top-4 right-4 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors z-10"
          >
             <X size={19} />
@@ -629,7 +652,7 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
 
          {/* Contenido scrolleable */}
          <div className="flex-1 overflow-y-auto pr-1 space-y-4 scrollbar-thin">
-           
+
            {/* TAB 1: TOKENS & APIS */}
            {activeTab === 'tokens' && (
              <div className="space-y-4">
@@ -801,10 +824,10 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
              <div className="space-y-4 text-xs">
                <div className="flex flex-col items-center">
                  <div className="relative group cursor-pointer">
-                    <img 
-                       src={aiProfileForm.profilePic || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"} 
-                       alt="Avatar IA" 
-                       className="w-20 h-20 rounded-full object-cover border-2 border-fuchsia-500 shadow-[0_0_15px_rgba(217,70,239,0.3)] transition-all group-hover:scale-105" 
+                    <img
+                       src={aiProfileForm.profilePic || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"}
+                       alt="Avatar IA"
+                       className="w-20 h-20 rounded-full object-cover border-2 border-fuchsia-500 shadow-[0_0_15px_rgba(217,70,239,0.3)] transition-all group-hover:scale-105"
                     />
                     <div className="absolute inset-0 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                        <span className="text-[10px] text-white font-bold text-center px-1">Cambiar Foto</span>
@@ -825,38 +848,38 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
 
                <div className="space-y-1.5">
                  <label className="text-xs font-semibold text-gray-300">Estado / Mensaje de Presentación</label>
-                 <input 
+                 <input
                     value={aiProfileForm.statusMessage || ''}
                     onChange={e => setAiProfileForm({...aiProfileForm, systemInstruction: aiProfileForm.systemInstruction || '', statusMessage: e.target.value})}
                     maxLength={60}
                     placeholder="Ej: Administradora IA • En línea"
                     type="text"
-                    className="w-full bg-[#0a0a16] p-2.5 rounded-xl border border-white/10 outline-none focus:border-fuchsia-500 transition-all text-white text-xs" 
+                    className="w-full bg-[#0a0a16] p-2.5 rounded-xl border border-white/10 outline-none focus:border-fuchsia-500 transition-all text-white text-xs"
                  />
                </div>
 
                <div className="space-y-1.5">
                  <label className="text-xs font-semibold text-gray-300">Instrucciones de Identidad (system_instruction)</label>
-                 <textarea 
+                 <textarea
                     value={aiProfileForm.systemInstruction || ''}
                     onChange={e => setAiProfileForm({...aiProfileForm, systemInstruction: e.target.value})}
                     placeholder="Ej: Eres Elizabeth, administradora de Chat Liz. Eres carismática, divertida y justa..."
                     rows={4}
-                    className="w-full bg-[#0a0a16] p-2.5 rounded-xl border border-white/10 outline-none focus:border-fuchsia-500 transition-all text-white text-xs resize-none scrollbar-thin" 
+                    className="w-full bg-[#0a0a16] p-2.5 rounded-xl border border-white/10 outline-none focus:border-fuchsia-500 transition-all text-white text-xs resize-none scrollbar-thin"
                  />
                </div>
 
-               <button 
+               <button
                  type="button"
                  onClick={() => {
-                   socket.emit("update_ai_config", { 
-                     aiUsername, 
-                     profilePic: aiProfileForm.profilePic, 
-                     statusMessage: aiProfileForm.statusMessage, 
-                     systemInstruction: aiProfileForm.systemInstruction, 
-                     bubbleColor: aiProfileForm.bubbleColor, 
-                     bubbleBorder: aiProfileForm.bubbleBorder, 
-                     bubbleShape: aiProfileForm.bubbleShape, 
+                   socket.emit("update_ai_config", {
+                     aiUsername,
+                     profilePic: aiProfileForm.profilePic,
+                     statusMessage: aiProfileForm.statusMessage,
+                     systemInstruction: aiProfileForm.systemInstruction,
+                     bubbleColor: aiProfileForm.bubbleColor,
+                     bubbleBorder: aiProfileForm.bubbleBorder,
+                     bubbleShape: aiProfileForm.bubbleShape,
                      bubbleTexture: aiProfileForm.bubbleTexture,
                      groqBackupKey: groqBackupKey.trim(),
                      groqBackupName: groqBackupName.trim(),
@@ -878,214 +901,270 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
            )}
 
            {/* TAB 3: VOZ HUMANA & TONO (XTTS v2 + BARK EN ESPAÑOL) */}
-           {activeTab === 'voice' && (
-             <div className="space-y-4 text-xs">
-               <div className="bg-gradient-to-r from-pink-950/40 via-purple-950/40 to-[#181a26] p-3.5 rounded-2xl border border-pink-500/25 flex items-start gap-3">
-                 <div className="p-2 rounded-xl bg-pink-500/20 text-pink-300 border border-pink-500/30 shrink-0 mt-0.5">
-                   <Volume2 size={18} />
-                 </div>
-                 <div>
-                   <h3 className="font-bold text-white text-xs flex items-center gap-1.5">
-                     Motor Neural XTTS v2 + Inflexiones Bark en Español
-                     <span className="bg-pink-500/30 text-pink-300 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border border-pink-500/40">
-                       Voz Humana Orgánica
-                     </span>
-                   </h3>
-                   <p className="text-[11px] text-gray-300/80 mt-1 leading-relaxed">
-                     Generación de voz con pausas y respiraciones sutiles, risas espontáneas y modulación continua según la emoción. Cero dictado robótico plano.
-                   </p>
-                 </div>
-               </div>
+                      {activeTab === 'voice' && (
+              <div className="space-y-4 text-xs">
+                {/* Cabecera Exclusiva Coqui XTTS v2 */}
+                <div className="bg-gradient-to-r from-pink-950/40 via-purple-950/40 to-[#181a26] p-3.5 rounded-2xl border border-pink-500/25 flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-pink-500/20 text-pink-300 border border-pink-500/30 shrink-0 mt-0.5">
+                    <Volume2 size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-xs flex items-center gap-1.5 flex-wrap">
+                      Motor Neural Coqui XTTS v2 en Español
+                      <span className="bg-emerald-500/30 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border border-emerald-500/40 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        XTTS v2 Exclusivo
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-gray-300/80 mt-1 leading-relaxed">
+                      Todas las respuestas de voz corren exclusivamente bajo el motor Coqui XTTS v2. Se ha retirado el sintetizador de navegador y los arquetipos robóticos por voces humanas de alta definición a 24.000 Hz.
+                    </p>
+                  </div>
+                </div>
 
-               {/* Comparador Auditivo: Antiguo vs XTTS v2/Bark */}
-               <div className="bg-[#181a26] p-3 rounded-2xl border border-pink-500/20 space-y-2">
-                 <span className="font-bold text-gray-200 block text-xs">Demostración Auditiva: Antiguo vs XTTS v2 / Bark</span>
-                 <div className="grid grid-cols-2 gap-2">
-                   <button
-                     type="button"
-                     onClick={() => {
-                       speakElizabethMessage("Iniciando lectura de sistema. Esta es una voz de computadora con pausas matemáticas fijas.", {
-                         engine: 'browser',
-                         pitch: 0.9,
-                         rate: 0.95
-                       });
-                     }}
-                     className="p-2 rounded-xl bg-[#0a0a14] border border-white/10 hover:border-gray-500 text-left transition-all"
-                   >
-                     <div className="flex items-center gap-1.5 font-bold text-gray-400 text-[11px]">
-                       <span>🤖 Modelo Antiguo (eSpeak / Tacotron)</span>
-                     </div>
-                     <p className="text-[10px] text-gray-500 mt-0.5">Tono plano, pausas de 1s, robótico y metálico.</p>
-                   </button>
+                {/* Banner de Motor Exclusivo y Demo */}
+                <div className="bg-[#181a26] p-3 rounded-2xl border border-pink-500/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-gray-200 block text-xs flex items-center gap-1.5">
+                      <Sparkles size={13} className="text-pink-400" />
+                      Demostración Auditiva Coqui XTTS v2
+                    </span>
+                    <span className="text-[10px] text-pink-300 bg-pink-500/15 border border-pink-500/30 px-2 py-0.5 rounded-full font-mono">
+                      24.000 Hz • Zero-Shot
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const activeSpeaker = VOICE_ARCHETYPES.find(a => a.id === voiceConfig.archetypeId);
+                      handleTestSpecificVoice(
+                        voiceConfig.archetypeId,
+                        `¡Hola! Soy ${activeSpeaker?.name || 'Elizabeth'}. Mi voz ahora es completamente humana gracias a Coqui XTTS v2, con respiraciones suaves, risas y cero acento robótico.`
+                      );
+                    }}
+                    className="w-full p-2.5 rounded-xl bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-[#0a0a14] border border-pink-500/40 hover:border-pink-300 text-left transition-all flex items-center justify-between group"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5 font-bold text-pink-300 text-xs">
+                        <span>✨ Probar Voz Activa: {VOICE_ARCHETYPES.find(a => a.id === voiceConfig.archetypeId)?.name || 'Elizabeth'}</span>
+                      </div>
+                      <p className="text-[10px] text-gray-300 mt-0.5">
+                        Escucha la prosodia orgánica, respiración sutil y entonación viva de XTTS v2.
+                      </p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-pink-500/30 text-pink-200 group-hover:scale-105 transition-transform">
+                      {isPlayingVoice && previewingVoiceId === voiceConfig.archetypeId ? <Square size={13} /> : <Play size={13} fill="currentColor" />}
+                    </div>
+                  </button>
+                </div>
 
-                   <button
-                     type="button"
-                     onClick={() => {
-                       speakElizabethMessage("¡Hola Axiss! [respiración sutil] Jajaja, ¡escucha la diferencia! Con XTTS v2 mi voz respira, ríe y suena completamente viva y humana.", {
-                         engine: 'xtts_neural',
-                         useBarkExpressiveTags: true,
-                         pitch: voiceConfig.pitch,
-                         rate: voiceConfig.rate
-                       });
-                     }}
-                     className="p-2 rounded-xl bg-gradient-to-r from-pink-500/20 to-purple-500/20 border border-pink-500/40 hover:border-pink-400 text-left transition-all"
-                   >
-                     <div className="flex items-center gap-1.5 font-bold text-pink-300 text-[11px]">
-                       <Sparkles size={12} className="text-pink-400" />
-                       <span>✨ XTTS v2 + Bark (Voz Humana)</span>
-                     </div>
-                     <p className="text-[10px] text-pink-200/80 mt-0.5">Modulación viva, respiración orgánica y risas.</p>
-                   </button>
-                 </div>
-               </div>
+                {/* Opciones de Expresividad Bark & XTTS */}
+                <div className="bg-[#181a26] p-3 rounded-2xl border border-white/5 space-y-2">
+                  <span className="font-bold text-gray-200 block text-xs">Ajustes Expresivos Orgánicos</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div
+                      onClick={handleToggleBarkTags}
+                      className={`p-2 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                        voiceEvolution.barkNonVerbalTagsEnabled ? 'bg-pink-500/15 border-pink-500/40 text-pink-200' : 'bg-[#0a0a14] border-white/10 text-gray-400'
+                      }`}
+                    >
+                      <div>
+                        <span className="font-bold text-[11px] block">🌬️ Inflexiones Bark</span>
+                        <span className="text-[9px] text-gray-400">Respiraciones y risitas sutiles</span>
+                      </div>
+                      <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${voiceEvolution.barkNonVerbalTagsEnabled ? 'border-pink-400 bg-pink-500' : 'border-gray-600'}`}>
+                        {voiceEvolution.barkNonVerbalTagsEnabled && <Check size={10} className="text-white" />}
+                      </div>
+                    </div>
 
-               {/* Selector de Motor */}
-               <div className="bg-[#181a26] p-3 rounded-2xl border border-white/5 space-y-2">
-                 <label className="font-bold text-gray-200 block text-xs">Tecnología de Síntesis</label>
-                 <div className="grid grid-cols-2 gap-2">
-                   <button
-                     type="button"
-                     onClick={() => setVoiceConfig(prev => ({ ...prev, engine: 'xtts_neural' }))}
-                     className={`p-2.5 rounded-xl border text-left transition-all ${
-                       voiceConfig.engine !== 'browser'
-                         ? 'bg-gradient-to-r from-pink-500/25 to-purple-500/25 border-pink-500/60 text-white shadow-sm'
-                         : 'bg-[#0a0a14] border-white/10 text-gray-400 hover:text-white'
-                     }`}
-                   >
-                     <div className="flex items-center justify-between mb-1">
-                       <span className="font-bold text-xs text-pink-300">🌟 XTTS v2 & Bark Neural</span>
-                       {voiceConfig.engine !== 'browser' && <Check size={14} className="text-pink-400" />}
-                     </div>
-                     <p className="text-[10px] text-gray-400">Voz humana real con respiración sutil y entonación viva.</p>
-                   </button>
+                    <div
+                      onClick={handleToggleXttsProsody}
+                      className={`p-2 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                        voiceEvolution.xttsProsodyEnabled ? 'bg-purple-500/15 border-purple-500/40 text-purple-200' : 'bg-[#0a0a14] border-white/10 text-gray-400'
+                      }`}
+                    >
+                      <div>
+                        <span className="font-bold text-[11px] block">🎭 Micropausas XTTS v2</span>
+                        <span className="text-[9px] text-gray-400">Cadencia humana sin silencios de 1s</span>
+                      </div>
+                      <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${voiceEvolution.xttsProsodyEnabled ? 'border-purple-400 bg-purple-500' : 'border-gray-600'}`}>
+                        {voiceEvolution.xttsProsodyEnabled && <Check size={10} className="text-white" />}
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                   <button
-                     type="button"
-                     onClick={() => setVoiceConfig(prev => ({ ...prev, engine: 'browser' }))}
-                     className={`p-2.5 rounded-xl border text-left transition-all ${
-                       voiceConfig.engine === 'browser'
-                         ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 border-cyan-500/60 text-white shadow-sm'
-                         : 'bg-[#0a0a14] border-white/10 text-gray-400 hover:text-white'
-                     }`}
-                   >
-                     <div className="flex items-center justify-between mb-1">
-                       <span className="font-bold text-xs text-cyan-300">🖥️ Motor Local Navegador</span>
-                       {voiceConfig.engine === 'browser' && <Check size={14} className="text-cyan-400" />}
-                     </div>
-                     <p className="text-[10px] text-gray-400">Síntesis local del sistema sin conexión.</p>
-                   </button>
-                 </div>
-               </div>
+                {/* Catálogo Completo de Voces Oficiales Coqui XTTS v2 */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <label className="font-bold text-gray-200 flex items-center gap-1.5 text-xs">
+                      <span>Catálogo Oficial Coqui XTTS v2</span>
+                      <span className="text-[10px] text-pink-400 bg-pink-500/15 border border-pink-500/30 px-1.5 py-0.5 rounded-md font-mono font-bold">
+                        {VOICE_ARCHETYPES.length} Voces Disponibles
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-gray-400">Selecciona cualquier voz oficial para Elizabeth</span>
+                  </div>
 
-               {/* Opciones de Expresividad Bark & XTTS */}
-               <div className="bg-[#181a26] p-3 rounded-2xl border border-white/5 space-y-2">
-                 <span className="font-bold text-gray-200 block text-xs">Ajustes Expresivos Orgánicos</span>
-                 <div className="grid grid-cols-2 gap-2">
-                   <div 
-                     onClick={handleToggleBarkTags}
-                     className={`p-2 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                       voiceEvolution.barkNonVerbalTagsEnabled ? 'bg-pink-500/15 border-pink-500/40 text-pink-200' : 'bg-[#0a0a14] border-white/10 text-gray-400'
-                     }`}
-                   >
-                     <div>
-                       <span className="font-bold text-[11px] block">🌬️ Inflexiones Bark</span>
-                       <span className="text-[9px] text-gray-400">Respiraciones y risitas sutiles</span>
-                     </div>
-                     <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${voiceEvolution.barkNonVerbalTagsEnabled ? 'border-pink-400 bg-pink-500' : 'border-gray-600'}`}>
-                       {voiceEvolution.barkNonVerbalTagsEnabled && <Check size={10} className="text-white" />}
-                     </div>
-                   </div>
+                  {/* Buscador de Voces XTTS v2 */}
+                  <div className="relative">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={voiceSearchQuery}
+                      onChange={(e) => setVoiceSearchQuery(e.target.value)}
+                      placeholder="Buscar voz de XTTS v2 por nombre, acento, timbre o estilo..."
+                      className="w-full bg-[#0a0a16] border border-white/10 rounded-xl pl-8 pr-7 py-1.5 text-[11px] text-gray-200 placeholder-gray-500 focus:outline-none focus:border-pink-500/60 transition-colors"
+                    />
+                    {voiceSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setVoiceSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
 
-                   <div 
-                     onClick={handleToggleXttsProsody}
-                     className={`p-2 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                       voiceEvolution.xttsProsodyEnabled ? 'bg-purple-500/15 border-purple-500/40 text-purple-200' : 'bg-[#0a0a14] border-white/10 text-gray-400'
-                     }`}
-                   >
-                     <div>
-                       <span className="font-bold text-[11px] block">🎭 Micropausas XTTS v2</span>
-                       <span className="text-[9px] text-gray-400">Cadencia humana sin silencios de 1s</span>
-                     </div>
-                     <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${voiceEvolution.xttsProsodyEnabled ? 'border-purple-400 bg-purple-500' : 'border-gray-600'}`}>
-                       {voiceEvolution.xttsProsodyEnabled && <Check size={10} className="text-white" />}
-                     </div>
-                   </div>
-                 </div>
-               </div>
+                  {/* Filtro de Categorías */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] scrollbar-none">
+                    {[
+                      { id: 'todas', label: `Todas (${VOICE_ARCHETYPES.length})` },
+                      { id: 'espanol_xtts', label: `Español Nativo (${VOICE_ARCHETYPES.filter(a => a.category === 'espanol_xtts').length})` },
+                      { id: 'femenina_xtts', label: `Femeninas (${VOICE_ARCHETYPES.filter(a => a.gender === 'female').length})` },
+                      { id: 'masculina_xtts', label: `Masculinas (${VOICE_ARCHETYPES.filter(a => a.gender === 'male').length})` },
+                      { id: 'clon_xtts', label: `Clon / Mímica (1)` }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setVoiceCategoryFilter(tab.id as any)}
+                        className={`px-2.5 py-1 rounded-lg font-bold shrink-0 transition-all ${
+                          voiceCategoryFilter === tab.id
+                            ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-sm'
+                            : 'bg-[#181a26] text-gray-400 hover:text-white border border-white/5'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
 
-               {/* Arquetipos / Presets de Voz */}
-               <div className="space-y-2">
-                 <label className="font-bold text-gray-200 flex items-center justify-between text-xs">
-                   <span>Arquetipos Vocales (Femeninos, Masculinos y Ancianos)</span>
-                   <span className="text-[11px] text-pink-400 font-normal">9 arquetipos</span>
-                 </label>
-                 <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
-                   {VOICE_ARCHETYPES.map((arch) => {
-                     const isSelected = voiceConfig.archetypeId === arch.id;
-                     return (
-                       <button
-                         key={arch.id}
-                         type="button"
-                         onClick={() => {
-                           setVoiceConfig(prev => ({
-                             ...prev,
-                             archetypeId: arch.id,
-                             pitch: arch.pitch,
-                             rate: arch.rate,
-                             volume: arch.volume
-                           }));
-                         }}
-                         className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 relative ${
-                           isSelected
-                             ? 'bg-pink-500/20 border-pink-500/60 shadow-[0_0_12px_rgba(236,72,153,0.25)] text-white'
-                             : 'bg-[#181a26] border-white/5 text-gray-300 hover:border-white/20 hover:bg-white/5'
-                         }`}
-                       >
-                         <div className="flex items-center justify-between">
-                           <span className="text-base">{arch.icon}</span>
-                           {isSelected && (
-                             <span className="w-2 h-2 rounded-full bg-pink-400 animate-pulse" />
-                           )}
-                         </div>
-                         <span className="font-bold text-[11px] leading-tight text-gray-100">{arch.name}</span>
-                         <span className="text-[10px] text-gray-400 leading-tight line-clamp-2">{arch.description}</span>
-                         <div className="flex gap-2 mt-0.5 text-[9px] font-mono text-gray-400">
-                           <span className="text-pink-300 font-bold">Voz: {arch.neuralVoice}</span>
-                           <span>Tono: {arch.pitch.toFixed(2)}x</span>
-                         </div>
-                       </button>
-                     );
-                   })}
-                 </div>
-               </div>
+                  {/* Grid de Voces XTTS v2 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1 scrollbar-thin">
+                    {VOICE_ARCHETYPES.filter(arch => {
+                      if (voiceCategoryFilter === 'espanol_xtts' && arch.category !== 'espanol_xtts') return false;
+                      if (voiceCategoryFilter === 'femenina_xtts' && arch.gender !== 'female') return false;
+                      if (voiceCategoryFilter === 'masculina_xtts' && arch.gender !== 'male') return false;
+                      if (voiceCategoryFilter === 'clon_xtts' && arch.category !== 'clon_xtts') return false;
 
-               {/* Sliders de Tono, Velocidad y Volumen */}
-               <div className="bg-[#181a26] p-3.5 rounded-2xl border border-white/5 space-y-3.5">
-                 <div className="flex items-center justify-between">
-                   <span className="font-bold text-gray-200 flex items-center gap-1.5">
-                     <Sliders size={13} className="text-pink-400" />
-                     Modulación Acústica de Tono & Ritmo
-                   </span>
-                   <button
-                     type="button"
-                     onClick={() => {
-                       const standard = VOICE_ARCHETYPES.find(a => a.id === voiceConfig.archetypeId) || VOICE_ARCHETYPES[0];
-                       setVoiceConfig(prev => ({ ...prev, pitch: standard.pitch, rate: standard.rate, volume: 1.0 }));
-                     }}
-                     className="text-[10px] text-gray-400 hover:text-white underline"
-                   >
-                     Restablecer
-                   </button>
-                 </div>
+                      if (voiceSearchQuery.trim()) {
+                        const q = voiceSearchQuery.toLowerCase();
+                        const match = arch.name.toLowerCase().includes(q) ||
+                                      arch.description.toLowerCase().includes(q) ||
+                                      arch.speakerTag.toLowerCase().includes(q) ||
+                                      (arch.accent && arch.accent.toLowerCase().includes(q));
+                        if (!match) return false;
+                      }
+                      return true;
+                    }).map((arch) => {
+                      const isSelected = voiceConfig.archetypeId === arch.id;
+                      const isPreviewing = isPlayingVoice && previewingVoiceId === arch.id;
+                      return (
+                        <div
+                          key={arch.id}
+                          className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 relative ${
+                            isSelected
+                              ? 'bg-pink-500/20 border-pink-500/70 shadow-[0_0_14px_rgba(236,72,153,0.3)] text-white'
+                              : 'bg-[#181a26] border-white/5 text-gray-300 hover:border-white/20 hover:bg-white/5'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-base">{arch.icon}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-pink-300/90 font-mono font-medium">
+                                  {arch.accent || arch.speakerTag}
+                                </span>
+                              </div>
+                              {isSelected && (
+                                <span className="text-[9px] bg-pink-500 text-white font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                  <Check size={9} /> Activa
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-bold text-[11px] leading-tight text-gray-100 block">{arch.name}</span>
+                            <span className="text-[10px] text-gray-400 leading-tight line-clamp-2 mt-0.5">{arch.description}</span>
+                          </div>
 
-                 {/* Pitch */}
-                 <div className="space-y-1">
-                   <div className="flex justify-between items-center text-[11px]">
-                     <span className="text-gray-300">Tono (Pitch): {voiceConfig.pitch < 0.9 ? 'Grave / Masculino / Anciano' : voiceConfig.pitch > 1.2 ? 'Agudo / Femenino' : 'Medio'}</span>
-                     <span className="font-mono text-pink-300 bg-pink-500/20 px-2 py-0.5 rounded border border-pink-500/30 font-bold">
-                       {voiceConfig.pitch.toFixed(2)}x
-                     </span>
-                   </div>
+                          <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-white/5 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVoiceConfig(prev => ({
+                                  ...prev,
+                                  archetypeId: arch.id,
+                                  pitch: arch.pitch,
+                                  rate: arch.rate,
+                                  volume: arch.volume
+                                }));
+                              }}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold flex-1 transition-all ${
+                                isSelected
+                                  ? 'bg-pink-500/30 text-pink-200 border border-pink-400/40'
+                                  : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10'
+                              }`}
+                            >
+                              {isSelected ? '✓ Seleccionada' : 'Seleccionar'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleTestSpecificVoice(arch.id)}
+                              className={`p-1.5 rounded-lg border transition-all ${
+                                isPreviewing
+                                  ? 'bg-red-500/30 border-red-400 text-red-300 animate-pulse'
+                                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-pink-300 hover:text-pink-200'
+                              }`}
+                              title={`Probar voz de ${arch.name}`}
+                            >
+                              {isPreviewing ? <Square size={12} /> : <Play size={12} fill="currentColor" />}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Sliders de Tono, Velocidad y Volumen */}
+                <div className="bg-[#181a26] p-3.5 rounded-2xl border border-white/5 space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-gray-200 flex items-center gap-1.5">
+                      <Sliders size={13} className="text-pink-400" />
+                      Modulación Acústica de Tono & Ritmo
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const standard = VOICE_ARCHETYPES.find(a => a.id === voiceConfig.archetypeId) || VOICE_ARCHETYPES[0];
+                        setVoiceConfig(prev => ({ ...prev, pitch: standard.pitch, rate: standard.rate, volume: 1.0 }));
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-white underline"
+                    >
+                      Restablecer
+                    </button>
+                  </div>
+
+                  {/* Pitch */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="text-gray-300">Tono (Pitch): {voiceConfig.pitch < 0.9 ? 'Grave / Profundo' : voiceConfig.pitch > 1.15 ? 'Agudo / Brillante' : 'Neutro / Natural'}</span>
+                      <span className="font-mono text-pink-300 bg-pink-500/20 px-2 py-0.5 rounded border border-pink-500/30 font-bold">
+                        {voiceConfig.pitch.toFixed(2)}x
+                      </span>
+                    </div>
                    <input
                      type="range"
                      min="0.5"
@@ -1303,7 +1382,7 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
 
                  {/* Barra de Progreso Luminosa */}
                  <div className="w-full bg-[#0a0a14] rounded-full h-3 p-0.5 border border-white/10 relative overflow-hidden">
-                   <div 
+                   <div
                      className="h-full rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 transition-all duration-700 shadow-[0_0_12px_rgba(236,72,153,0.5)]"
                      style={{ width: `${Math.min(100, Math.max(10, voiceEvolution.humanizationLevel))}%` }}
                    />
@@ -1872,7 +1951,7 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
                      </button>
                   </form>
                </div>
-               
+
                <div className="bg-[#181a26] p-4 rounded-2xl border border-red-500/20">
                   <h3 className="text-xs font-bold text-red-400 mb-2 flex items-center gap-2">
                     <AlertCircle size={14} />
@@ -1881,7 +1960,7 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
                   <p className="text-[11px] text-gray-400 mb-3">
                     Corta inmediatamente cualquier transmisión o streaming de DJ activo en todas las salas.
                   </p>
-                  <button 
+                  <button
                      type="button"
                      onClick={() => {
                          socket.emit('admin_cut_transmission');

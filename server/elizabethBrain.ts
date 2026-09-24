@@ -760,7 +760,7 @@ Devuelve un JSON para clonación TTS:
 // =======================================================
 
 export interface SynthesisOptions {
-  archetypeId?: string; // female_young, male_natural, male_elder, female_elder, female_teen, male_teen, quantum_ai, mimic, custom_clone
+  archetypeId?: string; // Voces oficiales Coqui XTTS v2 (elizabeth_suprema, sofia_latina, damian_black, claribel_dervla, mimic, etc.)
   mimicUsername?: string;
   speakerAudioBase64?: string;
   language?: string;
