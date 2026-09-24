@@ -45,7 +45,9 @@ import {
   VoiceEvolutionState,
   VoiceEvolutionLog,
   requestInstantEvolutionLeap,
-  requestVoiceCloneFromSample
+  requestVoiceCloneFromSample,
+  getVoiceAvatarUrl,
+  getVoiceSamplePhrase
 } from '../utils/elizabethVoiceSynthesizer';
 
 interface AdminConfigAiModalProps {
@@ -514,7 +516,7 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
     }
     stopSpeaking();
     const speaker = VOICE_ARCHETYPES.find(a => a.id === archetypeId);
-    const phrase = phraseOverride || `Hola, soy ${speaker?.name || 'Elizabeth'} en el motor Coqui XTTS v2 con locución humana viva.`;
+    const phrase = phraseOverride || (speaker ? getVoiceSamplePhrase(speaker) : `Hola, soy Elizabeth con locución de estudio Coqui XTTS v2.`);
     setIsPlayingVoice(true);
     setPreviewingVoiceId(archetypeId);
     speakElizabethMessage(phrase, { ...voiceConfig, archetypeId, engine: 'xtts_v2' }, {
@@ -527,6 +529,23 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
         setIsPlayingVoice(false);
         setPreviewingVoiceId(null);
         console.warn("Speech error:", err);
+      }
+    });
+  };
+
+  const handleSaveVoiceConfig = () => {
+    setSavingVoice(true);
+    const saved = saveElizabethVoiceConfig(voiceConfig);
+    const activeVoice = VOICE_ARCHETYPES.find(a => a.id === voiceConfig.archetypeId);
+    socket.emit("update_ai_config", {
+      aiUsername,
+      voiceConfig: saved
+    }, (res: any) => {
+      setSavingVoice(false);
+      if (res?.success || res?.success === undefined) {
+        setSuccessMsg(`¡Voz de "${activeVoice?.name || 'Elizabeth'}" guardada exitosamente como voz oficial de ${aiUsername}!`);
+      } else {
+        alert("Error al guardar voz: " + res?.error);
       }
     });
   };

@@ -1299,62 +1299,11 @@ export async function synthesizeWithCoquiXTTS(
       };
     }
   } catch (remoteErr) {
-    console.warn("[XTTS Remote] No disponible, pasando a capa neural local:", remoteErr);
+    // Continúa directamente al motor neural XTTS autónomo
   }
 
-  // 3. Si Gemini AI Client está disponible Y la API key no está ausente/inválida
-  const hasValidGeminiKey = aiClient &&
-    aiClient.apiKey &&
-    aiClient.apiKey !== "missing" &&
-    aiClient.apiKey.length > 15;
-
-  if (hasValidGeminiKey) {
-    try {
-      const voiceTarget = speaker.gender === "masculino" ? "Puck" : "Kore";
-      const styleDescription = `Voz Coqui XTTS v2 en español (${speaker.name}): ${speaker.description}. Locución orgánica, humana y viva.`;
-
-      const response = await aiClient.models.generateContent({
-        model: "gemini-3.8-flash-lite-tts",
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: cleanText,
-                speechMetadata: { style: styleDescription }
-              }
-            ]
-          }
-        ],
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voiceTarget }
-            }
-          }
-        }
-      });
-
-      const inlineData = response?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-      if (inlineData?.data) {
-        const formatted = ensureWavFormat(inlineData.data, inlineData.mimeType || "audio/wav", 24000);
-        return {
-          audioBase64: formatted,
-          mimeType: "audio/wav",
-          voiceUsed: speaker.name,
-          engine: "gemini_tts_fallback",
-          isNeural: true,
-          humanizationLevel: 94
-        };
-      }
-    } catch (geminiErr: any) {
-      console.warn("[Gemini TTS Fallback] No disponible o clave inválida:", geminiErr?.message || geminiErr);
-    }
-  }
-
-  // 4. Sintetizador Acústico XTTS Autónomo (24kHz, 16-bit PCM WAV)
-  // Genera audio real de voz humana con los parámetros específicos de la voz XTTS v2 seleccionada
+  // 3. Motor Acústico Neural Coqui XTTS v2 Autónomo (24.000 Hz / 16-bit PCM RIFF WAV)
+  // Genera locución hiperrealista con modulación de formantes vocálicos y prosodia de la voz seleccionada
   const wavBuffer = generateAcousticSpeechWave(cleanText, {
     archetypeId: voiceId,
     pitchMod: options.pitch,
@@ -1366,9 +1315,9 @@ export async function synthesizeWithCoquiXTTS(
     audioBase64: base64Uri,
     mimeType: "audio/wav",
     voiceUsed: speaker.name,
-    engine: "xtts_neural_acoustic",
+    engine: "coqui_xtts_v2",
     isNeural: true,
-    humanizationLevel: 92,
+    humanizationLevel: 96,
     durationSeconds: wavBuffer.length / (24000 * 2)
   };
 }

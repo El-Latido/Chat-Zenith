@@ -852,6 +852,73 @@ export function saveElizabethVoiceConfig(config: Partial<ElizabethVoiceConfig>):
   return updated;
 }
 
+// Catálogo de Avatares Visuales HD para cada Voz de Coqui XTTS v2
+export const VOICE_AVATARS: Record<string, string> = {
+  elizabeth_suprema: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
+  sofia_latina: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
+  valentina_dulce: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=240&auto=format&fit=crop&q=80",
+  camila_serena: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=240&auto=format&fit=crop&q=80",
+  lucia_melodica: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=240&auto=format&fit=crop&q=80",
+  carmen_poetica: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=240&auto=format&fit=crop&q=80",
+  mateo_entusiasta: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=240&auto=format&fit=crop&q=80",
+  lucas_conversacional: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
+  eugenio_reflexivo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=240&auto=format&fit=crop&q=80",
+  diego_locutor: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=240&auto=format&fit=crop&q=80",
+  javier_castizo: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=240&auto=format&fit=crop&q=80",
+  claribel_dervla: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=240&auto=format&fit=crop&q=80",
+  daisy_studious: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=240&auto=format&fit=crop&q=80",
+  gracie_wiseman: "https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=240&auto=format&fit=crop&q=80",
+  tammie_ema: "https://images.unsplash.com/photo-1524250502761-1ac6f2e30d43?w=240&auto=format&fit=crop&q=80",
+  alison_dietlinde: "https://images.unsplash.com/photo-1548142813-c348350df52b?w=240&auto=format&fit=crop&q=80",
+  ana_florence: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=240&auto=format&fit=crop&q=80",
+  annmarie_nele: "https://images.unsplash.com/photo-1492106087820-71f1a00d2b11?w=240&auto=format&fit=crop&q=80",
+  asya_anara: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=240&auto=format&fit=crop&q=80",
+  brenda_stern: "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=240&auto=format&fit=crop&q=80",
+  gitta_nikolina: "https://images.unsplash.com/photo-1534751516642-a1714f57a3e7?w=240&auto=format&fit=crop&q=80",
+  henriette_usha: "https://images.unsplash.com/photo-1544717305-2782549b5136?w=240&auto=format&fit=crop&q=80",
+  sofia_hellen: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
+  suvi_tausku: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=240&auto=format&fit=crop&q=80",
+  nova_hogarth: "https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=240&auto=format&fit=crop&q=80",
+  maja_ruoho: "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?w=240&auto=format&fit=crop&q=80",
+  uta_objen: "https://images.unsplash.com/photo-1502685104226-ee32379fefbe?w=240&auto=format&fit=crop&q=80",
+  lidia_deniza: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=240&auto=format&fit=crop&q=80",
+  charelle_behnke: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=240&auto=format&fit=crop&q=80",
+  claudette_michaud: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=240&auto=format&fit=crop&q=80",
+  imelda_santos: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=240&auto=format&fit=crop&q=80",
+  szilvia_vadasz: "https://images.unsplash.com/photo-1548142813-c348350df52b?w=240&auto=format&fit=crop&q=80",
+  danielle_bosco: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
+  damian_black: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=240&auto=format&fit=crop&q=80",
+  craig_gutsy: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=240&auto=format&fit=crop&q=80",
+  viktor_einar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
+  andrew_chipper: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=240&auto=format&fit=crop&q=80",
+  badr_odhiambo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=240&auto=format&fit=crop&q=80",
+  dionisio_schuyler: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=240&auto=format&fit=crop&q=80",
+  royston_min: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=240&auto=format&fit=crop&q=80",
+  baldur_sanjin: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=240&auto=format&fit=crop&q=80",
+  torsten_traugott: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=240&auto=format&fit=crop&q=80",
+  renato_marie: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=240&auto=format&fit=crop&q=80",
+  zacharie_aimios: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=240&auto=format&fit=crop&q=80",
+  willem_driesen: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
+  abramo_gaspari: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=240&auto=format&fit=crop&q=80",
+  ilmar_kallas: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=240&auto=format&fit=crop&q=80",
+  eerik_vesterinen: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=240&auto=format&fit=crop&q=80",
+  tamas_nyilas: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=240&auto=format&fit=crop&q=80",
+  jan_kolar: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=240&auto=format&fit=crop&q=80",
+  ludvig_skov: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=240&auto=format&fit=crop&q=80",
+  chidubem_odo: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=240&auto=format&fit=crop&q=80",
+  mimic: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=240&auto=format&fit=crop&q=80"
+};
+
+export function getVoiceAvatarUrl(archOrId: VoiceArchetype | string): string {
+  const id = typeof archOrId === 'string' ? archOrId : archOrId.id;
+  if (VOICE_AVATARS[id]) return VOICE_AVATARS[id];
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`;
+}
+
+export function getVoiceSamplePhrase(arch: VoiceArchetype): string {
+  return `¡Hola! Soy ${arch.name}. Mi locución funciona con el motor Coqui XTTS v2 de estudio, con acento ${arch.accent || 'oficial'} y tono completamente humano.`;
+}
+
 // Stub para compatibilidad hacia atrás
 export async function getSystemVoices(): Promise<any[]> {
   return [];
