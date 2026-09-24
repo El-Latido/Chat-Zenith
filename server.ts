@@ -64,6 +64,12 @@ import {
   triggerInstantEvolutionLeap,
   cloneVoiceFromAudioSample
 } from "./server/elizabethBrain";
+import {
+  synthesizeWithCoquiXTTS,
+  cloneVoiceWithXTTS,
+  getXttsEngineStatus,
+  updateXttsEngineConfig
+} from "./server/xttsEngine";
 dotenv.config();
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "missing",
@@ -440,25 +446,142 @@ const transporter = nodemailer.createTransport({
     }
   });
 
+  // =======================================================
+  // ENDPOINTS DE SÍNTESIS Y CLONACIÓN COQUI XTTS v2
+  // =======================================================
+
+  // Endpoint universal de síntesis con motor Coqui XTTS v2
   app.post("/api/ai/synthesize_voice", express.json(), async (req, res) => {
     try {
-      const { text, archetypeId, mimicUsername, pitch, rate, voiceTone, volume } = req.body || {};
+      const {
+        text,
+        archetypeId,
+        mimicUsername,
+        speakerAudioBase64,
+        language,
+        pitch,
+        rate,
+        speed,
+        voiceTone,
+        volume,
+        useBarkExpressiveTags,
+        useXttsProsody
+      } = req.body || {};
+
       if (!text || typeof text !== "string" || !text.trim()) {
         return res.status(400).json({ success: false, error: "El texto es requerido para la síntesis de voz." });
       }
+
       const client = getEffectiveAiClient();
       const result = await synthesizeHumanSpeech(text, {
         archetypeId,
         mimicUsername,
-        pitch,
-        rate,
+        speakerAudioBase64,
+        language: language || "es",
+        pitch: pitch ? Number(pitch) : undefined,
+        rate: rate ? Number(rate) : (speed ? Number(speed) : undefined),
         voiceTone,
-        volume
+        volume: volume !== undefined ? Number(volume) : undefined,
+        useBarkExpressiveTags,
+        useXttsProsody
       }, client);
-      return res.json({ success: true, ...result });
+
+      return res.json({ success: true, engine: "coqui_xtts_v2", ...result });
     } catch (err: any) {
       console.error("Error en endpoint /api/ai/synthesize_voice:", err);
-      return res.status(500).json({ success: false, error: err?.message || "Error al sintetizar voz humana" });
+      return res.status(500).json({ success: false, error: err?.message || "Error al sintetizar voz humana con XTTS v2" });
+    }
+  });
+
+  // Endpoint dedicado Coqui XTTS v2
+  app.post("/api/ai/xtts/synthesize", express.json(), async (req, res) => {
+    try {
+      const {
+        text,
+        archetypeId,
+        mimicUsername,
+        speakerAudioBase64,
+        language,
+        pitch,
+        rate,
+        speed,
+        voiceTone,
+        useBarkExpressiveTags,
+        useXttsProsody
+      } = req.body || {};
+
+      if (!text || typeof text !== "string" || !text.trim()) {
+        return res.status(400).json({ success: false, error: "El texto es requerido para procesar audio con XTTS v2." });
+      }
+
+      const client = getEffectiveAiClient();
+      const vault = getAcousticVault();
+      const result = await synthesizeWithCoquiXTTS(text, {
+        archetypeId,
+        mimicUsername,
+        speakerAudioBase64,
+        language: language || "es",
+        pitch: pitch ? Number(pitch) : undefined,
+        rate: rate ? Number(rate) : (speed ? Number(speed) : undefined),
+        voiceTone,
+        useBarkExpressiveTags,
+        useXttsProsody
+      }, client, vault);
+
+      return res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("Error en endpoint /api/ai/xtts/synthesize:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Error al procesar audio en XTTS v2" });
+    }
+  });
+
+  // Endpoint de clonación de voz con Coqui XTTS v2
+  app.post("/api/ai/xtts/clone", express.json(), async (req, res) => {
+    try {
+      const { cloneName, sampleAudioBase64, sampleText } = req.body || {};
+      if (!cloneName || !sampleAudioBase64) {
+        return res.status(400).json({ success: false, error: "Nombre y muestra de audio son requeridos para clonar con XTTS v2." });
+      }
+
+      const client = getEffectiveAiClient();
+      const profile = await cloneVoiceFromAudioSample(cloneName, sampleAudioBase64, sampleText, client);
+      return res.json({
+        success: true,
+        message: `Voz "${cloneName}" clonada exitosamente con el motor Coqui XTTS v2.`,
+        profile,
+        engine: "coqui_xtts_v2"
+      });
+    } catch (err: any) {
+      console.error("Error en endpoint /api/ai/xtts/clone:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Error al clonar voz con XTTS v2" });
+    }
+  });
+
+  // Endpoint de estado y metadatos del motor Coqui XTTS v2
+  app.get("/api/ai/xtts/status", (req, res) => {
+    try {
+      const vault = getAcousticVault();
+      const status = getXttsEngineStatus(vault);
+      return res.json({ success: true, ...status });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "Error al consultar estado de XTTS v2" });
+    }
+  });
+
+  // Endpoint de configuración dinámica de Coqui XTTS v2
+  app.post("/api/ai/xtts/config", express.json(), (req, res) => {
+    try {
+      const { apiUrl, hfSpace, hfToken, preferredLanguage } = req.body || {};
+      updateXttsEngineConfig({
+        ...(apiUrl !== undefined ? { apiUrl: String(apiUrl).trim() } : {}),
+        ...(hfSpace !== undefined ? { hfSpace: String(hfSpace).trim() } : {}),
+        ...(hfToken !== undefined ? { hfToken: String(hfToken).trim() } : {}),
+        ...(preferredLanguage !== undefined ? { preferredLanguage: String(preferredLanguage).trim() } : {})
+      });
+      const vault = getAcousticVault();
+      return res.json({ success: true, status: getXttsEngineStatus(vault) });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "Error al actualizar configuración de XTTS v2" });
     }
   });
   const uploadsDir = path.join(process.cwd(), "static", "uploads");

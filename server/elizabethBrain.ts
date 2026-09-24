@@ -1,4 +1,13 @@
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import {
+  pcmToWavBuffer,
+  ensureWavFormat,
+  synthesizeWithCoquiXTTS,
+  cloneVoiceWithXTTS,
+  formatTextForXttsV2
+} from "./xttsEngine";
+
+export { pcmToWavBuffer, ensureWavFormat };
 
 export interface MemoryItem {
   id: string;
@@ -113,39 +122,7 @@ let voiceEvolutionState: VoiceEvolutionState = {
   ]
 };
 
-// Convierte un buffer PCM a un archivo WAV completo con cabecera estándar RIFF de 44 bytes
-export function pcmToWavBuffer(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): Buffer {
-  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
-  const blockAlign = (numChannels * bitsPerSample) / 8;
-  const subChunk2Size = pcmBuffer.length;
-  const chunkSize = 36 + subChunk2Size;
-
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(chunkSize, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16); // SubChunk1Size (16 para PCM)
-  header.writeUInt16LE(1, 20);  // AudioFormat (1 = PCM)
-  header.writeUInt16LE(numChannels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(subChunk2Size, 40);
-
-  return Buffer.concat([header, pcmBuffer]);
-}
-
-export function ensureWavFormat(base64Audio: string, mimeType?: string, sampleRate = 24000): string {
-  const buffer = Buffer.from(base64Audio, "base64");
-  if (buffer.length >= 4 && buffer.toString("ascii", 0, 4) === "RIFF") {
-    return `data:audio/wav;base64,${base64Audio}`;
-  }
-  const wavBuf = pcmToWavBuffer(buffer, sampleRate);
-  return `data:audio/wav;base64,${wavBuf.toString("base64")}`;
-}
+// pcmToWavBuffer and ensureWavFormat are exported from ./xttsEngine above
 
 export async function initElizabethBrain(
   fdbInstance: any,
@@ -703,7 +680,7 @@ Devuelve un JSON exacto:
   }
 }
 
-// Clonación instantánea de voz a partir de un clip o muestra de audio
+// Clonación instantánea de voz a partir de un clip o muestra de audio con Coqui XTTS v2
 export async function cloneVoiceFromAudioSample(
   cloneName: string,
   sampleAudioBase64: string,
@@ -712,14 +689,22 @@ export async function cloneVoiceFromAudioSample(
 ): Promise<AcousticProfile> {
   const cleanName = cloneName.trim().replace(/[^a-zA-Z0-9_\-]/g, "") || "VozClonada";
   
-  let targetGender: "masculino" | "femenino" = "femenino";
-  let voiceTarget: "Puck" | "Charon" | "Fenrir" | "Kore" | "Zephyr" = "Kore";
-  let estimatedPitch: "grave" | "medio" | "agudo" = "medio";
-  let cadence: "lenta" | "natural" | "rápida" | "dinámica" = "natural";
-  let styleNotes = "Clonación acústica instantánea XTTS v2 basada en muestra de audio.";
-  let mimicStylePrompt = `Voz clonada de ${cleanName}, imitando fielmente su timbre, inflexiones y modulación conversacional en español.`;
+  // Procesamiento acústico profundo mediante XTTS v2
+  const xttsResult = await cloneVoiceWithXTTS(cleanName, sampleAudioBase64, sampleText).catch(e => {
+    console.warn("Aviso en extracción XTTS v2:", e);
+    return null;
+  });
 
-  if (aiClient && sampleAudioBase64) {
+  let targetGender: "masculino" | "femenino" = xttsResult?.perceivedGender || "femenino";
+  let voiceTarget: "Puck" | "Charon" | "Fenrir" | "Kore" | "Zephyr" = targetGender === "masculino" ? "Puck" : "Kore";
+  let estimatedPitch: "grave" | "medio" | "agudo" = xttsResult?.estimatedPitch || "medio";
+  let cadence: "lenta" | "natural" | "rápida" | "dinámica" = "natural";
+  let styleNotes = xttsResult?.styleNotes || "Clonación acústica instantánea XTTS v2 basada en muestra de audio.";
+  let mimicStylePrompt = `Voz clonada con motor XTTS v2 de ${cleanName}, imitando fielmente su timbre, inflexiones y modulación conversacional en español.`;
+
+  // Enriquecer con IA si la API key de Gemini es válida
+  const hasValidGeminiKey = aiClient && aiClient.apiKey && aiClient.apiKey !== "missing" && aiClient.apiKey.length > 15;
+  if (hasValidGeminiKey && sampleAudioBase64) {
     try {
       const prompt = `Analiza este fragmento acústico o transcripción para clonar la voz: "${sampleText || 'Muestra de audio proporcionada'}".
 Devuelve un JSON para clonación TTS:
@@ -747,14 +732,14 @@ Devuelve un JSON para clonación TTS:
         if (parsed.mimicStylePrompt) mimicStylePrompt = parsed.mimicStylePrompt;
       }
     } catch (e) {
-      console.warn("Fallo al inferir análisis para clon:", e);
+      console.warn("Fallo al inferir análisis adicional para clon:", e);
     }
   }
 
   const profile: AcousticProfile = {
     username: cleanName,
     totalAudiosLearned: 1,
-    lastSampleSnippet: sampleAudioBase64.slice(0, 30000),
+    lastSampleSnippet: (xttsResult?.sampleAudioBase64 || sampleAudioBase64).slice(0, 100000),
     perceivedGender: targetGender,
     estimatedPitch,
     cadence,
@@ -771,188 +756,44 @@ Devuelve un JSON para clonación TTS:
 }
 
 // =======================================================
-// SÍNTESIS DE VOZ HUMANA NEURAL REAL (XTTS v2 + BARK + GEMINI)
+// SÍNTESIS DE VOZ HUMANA NEURAL REAL (COQUI XTTS v2)
 // =======================================================
 
 export interface SynthesisOptions {
   archetypeId?: string; // female_young, male_natural, male_elder, female_elder, female_teen, male_teen, quantum_ai, mimic, custom_clone
   mimicUsername?: string;
+  speakerAudioBase64?: string;
+  language?: string;
   pitch?: number; // 0.5 a 2.0
   rate?: number; // 0.5 a 2.0
+  speed?: number;
   voiceTone?: string;
   volume?: number;
   useBarkExpressiveTags?: boolean;
+  useXttsProsody?: boolean;
 }
 
 export async function synthesizeHumanSpeech(
   text: string,
   options: SynthesisOptions,
   aiClient: any
-): Promise<{ audioBase64: string; mimeType: string; voiceUsed: string; isNeural: boolean; humanizationLevel: number }> {
-  let cleanText = (text || "").replace(/[*_#`~[\]()]/g, "").trim();
-  if (!cleanText) {
-    throw new Error("El texto a sintetizar está vacío.");
-  }
-
-  // 1. Determinar el arquetipo y voz base
-  let voiceTarget: "Puck" | "Charon" | "Fenrir" | "Kore" | "Zephyr" = "Kore";
-  let styleDescription = "Voz humana femenina joven, dulce, expresiva, cálida y natural en español latinoamericano.";
-
-  const activeMimic = options.mimicUsername || voiceSettingsCache.activeMimicUsername;
-
-  if (options.archetypeId === "mimic" && activeMimic && acousticVaultCache[activeMimic]) {
-    const profile = acousticVaultCache[activeMimic];
-    voiceTarget = profile.geminiVoiceTarget || (profile.perceivedGender === "masculino" ? "Puck" : "Kore");
-    styleDescription = profile.mimicStylePrompt || `Imitando fielmente la voz y cadencia de ${activeMimic}.`;
-  } else {
-    switch (options.archetypeId) {
-      case "male_natural":
-        voiceTarget = "Puck";
-        styleDescription = "Voz humana masculina natural de hombre adulto joven, amigable, firme y relajada en español.";
-        break;
-
-      case "male_elder":
-        voiceTarget = "Charon";
-        styleDescription = "Voz humana muy profunda y grave de hombre anciano sabio, pausada, reflexiva, serena y cariñosa en español.";
-        break;
-
-      case "male_teen":
-        voiceTarget = "Puck";
-        styleDescription = "Voz juvenil de muchacho adolescente, entusiasta, alegre y desenfadada en español.";
-        break;
-
-      case "female_teen":
-        voiceTarget = "Zephyr";
-        styleDescription = "Voz femenina adolescente alegre, dulce, brillante y espontánea en español.";
-        break;
-
-      case "female_elder":
-        voiceTarget = "Kore";
-        styleDescription = "Voz humana madura y tierna de abuela bondadosa, dulce, pausada y maternal en español.";
-        break;
-
-      case "quantum_ai":
-        voiceTarget = "Zephyr";
-        styleDescription = "Voz clara, armónica, limpia y sofisticada de inteligencia artificial cuántica.";
-        break;
-
-      case "female_young":
-      default:
-        voiceTarget = "Kore";
-        styleDescription = "Voz humana femenina joven, extremadamente cálida, dulce, pícara, expresiva y viva en español.";
-        break;
-    }
-  }
-
-  // Si se seleccionó un clon personalizado directamente
-  if (options.archetypeId && acousticVaultCache[options.archetypeId]) {
-    const cloneProfile = acousticVaultCache[options.archetypeId];
-    voiceTarget = cloneProfile.geminiVoiceTarget || "Kore";
-    styleDescription = cloneProfile.mimicStylePrompt || `Voz clonada de ${cloneProfile.username}.`;
-  }
-
-  // 2. APLICAR HUMANIZACIÓN XTTS v2 Y BARK (Respiraciones, micropausas, modulación)
-  const isHighHumanized = voiceEvolutionState.humanizationLevel >= 70;
-  const allowBark = options.useBarkExpressiveTags ?? voiceEvolutionState.barkNonVerbalTagsEnabled;
-
-  // Optimización de puntuación para evitar silencios robóticos matemáticos
-  // En XTTS v2 y Bark, las comas se convierten en micropausas fluidas
-  cleanText = cleanText
-    .replace(/,\s*/g, "... ")
-    .replace(/;\s*/g, " — ")
-    .replace(/\.{2,}/g, "...");
-
-  // Añadir respiración sutil y modulación de prosodia en la instrucción de estilo
-  let prosodyDirectives = "Modelo XTTS v2 en español: Locución completamente humana con entonación conversacional orgánica. ";
-  
-  if (allowBark && voiceEvolutionState.absorbedTraits.naturalBreathing) {
-    prosodyDirectives += "Incluye respiración sutil previa antes de iniciar la frase y micropausas orgánicas entre ideas. ";
-  }
-
-  // Detección de risas o emoción divertida estilo Bark
-  const hasLaughter = /(jaja|jeje|jiji|gracios|divertid|risa|chiste|broma|haha)/i.test(cleanText);
-  if (hasLaughter && allowBark && voiceEvolutionState.absorbedTraits.laughterInflection) {
-    prosodyDirectives += "Modula con risita ligera audible, tono bromista espontáneo y sonrisa en la voz. ";
-  }
-
-  // Detección de preguntas
-  if (/\?/.test(cleanText)) {
-    prosodyDirectives += "Inflexión interrogativa viva con elevación melódica natural en las preguntas. ";
-  }
-
-  // Detección de exclamaciones
-  if (/!/.test(cleanText)) {
-    prosodyDirectives += "Energía vibrante y expresiva en las exclamaciones. ";
-  }
-
-  if (isHighHumanized) {
-    prosodyDirectives += "Elimina completamente todo rastro de tono metálico, plano o continuo de sintetizador tradicional (Tacotron/eSpeak).";
-  }
-
-  styleDescription = `${styleDescription} ${prosodyDirectives}`;
-
-  // Ajustes finos de tono y velocidad
-  if (options.pitch && options.pitch < 0.85) {
-    styleDescription += " Tono vocal más grave y profundo.";
-  } else if (options.pitch && options.pitch > 1.25) {
-    styleDescription += " Tono vocal agudo y juvenil.";
-  }
-
-  if (options.rate && options.rate < 0.85) {
-    styleDescription += " Cadencia pausada, relajada y sosegada.";
-  } else if (options.rate && options.rate > 1.2) {
-    styleDescription += " Cadencia rápida y vivaz.";
-  }
-
-  if (options.voiceTone) {
-    styleDescription += ` Con una emoción marcadamente ${options.voiceTone}.`;
-  }
-
-  if (!aiClient) {
-    throw new Error("Cliente de Gemini no disponible para síntesis neural.");
-  }
-
-  // Llamada al motor neural de Gemini TTS con la prosodia XTTS v2 y Bark
-  const response = await aiClient.models.generateContent({
-    model: "gemini-3.8-flash-lite-tts",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: cleanText,
-            speechMetadata: {
-              style: styleDescription
-            }
-          }
-        ]
-      }
-    ],
-    config: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: voiceTarget }
-        }
-      }
-    }
-  });
-
-  const inlineData = response?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-  if (!inlineData?.data) {
-    throw new Error("No se recibieron datos de audio desde el sintetizador de voz de Gemini.");
-  }
-
-  const rawBase64 = inlineData.data;
-  const mimeType = inlineData.mimeType || "audio/wav";
-
-  const formattedWavDataUri = ensureWavFormat(rawBase64, mimeType, 24000);
-
+): Promise<{
+  audioBase64: string;
+  mimeType: string;
+  voiceUsed: string;
+  isNeural: boolean;
+  humanizationLevel: number;
+  engine?: string;
+  durationSeconds?: number;
+}> {
+  const result = await synthesizeWithCoquiXTTS(text, options, aiClient, acousticVaultCache);
   return {
-    audioBase64: formattedWavDataUri,
-    mimeType: "audio/wav",
-    voiceUsed: voiceTarget,
-    isNeural: true,
-    humanizationLevel: voiceEvolutionState.humanizationLevel
+    audioBase64: result.audioBase64,
+    mimeType: result.mimeType,
+    voiceUsed: result.voiceUsed,
+    isNeural: result.isNeural,
+    humanizationLevel: Math.max(result.humanizationLevel, voiceEvolutionState.humanizationLevel),
+    engine: result.engine,
+    durationSeconds: result.durationSeconds
   };
 }

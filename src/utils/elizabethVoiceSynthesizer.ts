@@ -521,11 +521,98 @@ export function requestVoiceCloneFromSample(
   sampleAudioBase64: string,
   sampleText?: string
 ): Promise<any> {
-  return new Promise((resolve, reject) => {
-    if (!socket) return reject(new Error("Socket no disponible"));
-    socket.emit("clone_voice_from_sample", { cloneName, sampleAudioBase64, sampleText }, (res: any) => {
-      if (res?.success) resolve(res);
-      else reject(new Error(res?.error || "Error al clonar voz"));
-    });
+  return new Promise(async (resolve, reject) => {
+    // 1. Intentar mediante Socket.IO si está disponible y conectado
+    if (socket && socket.connected) {
+      socket.emit("clone_voice_from_sample", { cloneName, sampleAudioBase64, sampleText }, (res: any) => {
+        if (res?.success) return resolve(res);
+        // Si hay error de socket, intentar por endpoint REST de XTTS v2
+        cloneVoiceWithXttsApi(cloneName, sampleAudioBase64, sampleText).then(resolve).catch(reject);
+      });
+      return;
+    }
+
+    // 2. Si no hay socket activo, usar directamente el endpoint REST de XTTS v2
+    try {
+      const res = await cloneVoiceWithXttsApi(cloneName, sampleAudioBase64, sampleText);
+      resolve(res);
+    } catch (err) {
+      reject(err);
+    }
   });
 }
+
+/**
+ * Utility para procesar síntesis directa con Coqui XTTS v2
+ */
+export async function synthesizeVoiceWithXTTS(
+  text: string,
+  options?: {
+    archetypeId?: string;
+    mimicUsername?: string;
+    speakerAudioBase64?: string;
+    language?: string;
+    pitch?: number;
+    rate?: number;
+    speed?: number;
+    voiceTone?: string;
+    useBarkExpressiveTags?: boolean;
+    useXttsProsody?: boolean;
+  }
+): Promise<{ success: boolean; audioBase64?: string; engine?: string; durationSeconds?: number; error?: string }> {
+  try {
+    const res = await fetch("/api/ai/xtts/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        archetypeId: options?.archetypeId,
+        mimicUsername: options?.mimicUsername,
+        speakerAudioBase64: options?.speakerAudioBase64,
+        language: options?.language || "es",
+        pitch: options?.pitch,
+        rate: options?.rate,
+        speed: options?.speed,
+        voiceTone: options?.voiceTone,
+        useBarkExpressiveTags: options?.useBarkExpressiveTags ?? true,
+        useXttsProsody: options?.useXttsProsody ?? true
+      })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Error al procesar audio en XTTS v2" };
+  }
+}
+
+/**
+ * Utility para clonar voz directamente mediante el endpoint REST de XTTS v2
+ */
+export async function cloneVoiceWithXttsApi(
+  cloneName: string,
+  sampleAudioBase64: string,
+  sampleText?: string
+): Promise<any> {
+  const res = await fetch("/api/ai/xtts/clone", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cloneName, sampleAudioBase64, sampleText })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || "Fallo en clonación con XTTS v2");
+  }
+  return data;
+}
+
+/**
+ * Utility para consultar el estado del motor Coqui XTTS v2
+ */
+export async function fetchXttsStatus(): Promise<any> {
+  try {
+    const res = await fetch("/api/ai/xtts/status");
+    return await res.json();
+  } catch (e: any) {
+    return { success: false, error: e?.message };
+  }
+}
+
