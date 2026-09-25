@@ -488,28 +488,13 @@ const transporter = nodemailer.createTransport({
 
       return res.json({ success: true, engine: "coqui_xtts_v2", ...result });
     } catch (err: any) {
-      console.warn("[XTTS v2 Synthesis Engine] Fallback local acústico activado:", err?.message || err);
-      try {
-        const fallbackText = req.body?.text || "Hola, soy Elizabeth.";
-        const wav = generateAcousticSpeechWave(fallbackText, {
-          archetypeId: req.body?.archetypeId || "elizabeth_suprema",
-          pitchMod: req.body?.pitch ? Number(req.body.pitch) : undefined,
-          rateMod: req.body?.rate ? Number(req.body.rate) : undefined
-        });
-        return res.json({
-          success: true,
-          audioBase64: `data:audio/wav;base64,${wav.toString("base64")}`,
-          mimeType: "audio/wav",
-          voiceUsed: req.body?.archetypeId || "Elizabeth Suprema",
-          engine: "coqui_xtts_v2",
-          isNeural: true,
-          humanizationLevel: 96,
-          durationSeconds: wav.length / (24000 * 2)
-        });
-      } catch (innerErr: any) {
-        console.error("Error crítico en síntesis XTTS:", innerErr);
-        return res.status(500).json({ success: false, error: "Error al generar voz con XTTS v2" });
-      }
+      console.warn("[XTTS v2 Synthesis Engine] Fallback a voz nativa de navegador:", err?.message || err);
+      return res.json({
+        success: false,
+        fallbackToBrowser: true,
+        error: "Fallback a voz humana nativa del navegador activado",
+        archetypeId: req.body?.archetypeId || "elizabeth_suprema"
+      });
     }
   });
 
@@ -549,27 +534,13 @@ const transporter = nodemailer.createTransport({
 
       return res.json({ success: true, ...result });
     } catch (err: any) {
-      console.warn("[XTTS Dedicated Engine] Fallback local activado:", err?.message || err);
-      try {
-        const fallbackText = req.body?.text || "Hola, soy Elizabeth.";
-        const wav = generateAcousticSpeechWave(fallbackText, {
-          archetypeId: req.body?.archetypeId || "elizabeth_suprema",
-          pitchMod: req.body?.pitch ? Number(req.body.pitch) : undefined,
-          rateMod: req.body?.rate ? Number(req.body.rate) : undefined
-        });
-        return res.json({
-          success: true,
-          audioBase64: `data:audio/wav;base64,${wav.toString("base64")}`,
-          mimeType: "audio/wav",
-          voiceUsed: req.body?.archetypeId || "Elizabeth Suprema",
-          engine: "coqui_xtts_v2",
-          isNeural: true,
-          humanizationLevel: 96,
-          durationSeconds: wav.length / (24000 * 2)
-        });
-      } catch (innerErr: any) {
-        return res.status(500).json({ success: false, error: err?.message || "Error al procesar audio en XTTS v2" });
-      }
+      console.warn("[XTTS Dedicated Engine] Fallback a voz nativa:", err?.message || err);
+      return res.json({
+        success: false,
+        fallbackToBrowser: true,
+        error: "Fallback a voz humana nativa del navegador activado",
+        archetypeId: req.body?.archetypeId || "elizabeth_suprema"
+      });
     }
   });
 
@@ -1070,17 +1041,29 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     const raw = identifier.trim();
     const cleanId = raw.replace(/^[@#]/, "").trim();
 
-    // Special check: Axiss
-    if (raw === "Axiss" || raw.toUpperCase() === "AXISS" || cleanId === "1001") {
-      const axissData = activeUsers["Axiss"] || (fallbackState.users && fallbackState.users["Axiss"]) || {
+    // Special check: Axiss and AXISS (Master Admin accounts)
+    if (raw === "Axiss" || raw === "AXISS") {
+      const axissData = activeUsers[raw] || (fallbackState.users && fallbackState.users[raw]) || {
+        username: raw,
+        role: "admin",
+        uid: "1001"
+      };
+      return {
+        found: true,
+        user: { ...axissData, username: raw, uid: "1001", role: "admin" },
+        matchedBy: "username"
+      };
+    }
+    if (cleanId === "1001") {
+      const axissData = activeUsers["Axiss"] || activeUsers["AXISS"] || (fallbackState.users && fallbackState.users["Axiss"]) || {
         username: "Axiss",
         role: "admin",
         uid: "1001"
       };
       return {
         found: true,
-        user: { ...axissData, username: "Axiss", uid: "1001", role: "admin" },
-        matchedBy: cleanId === "1001" ? "id" : "username"
+        user: { ...axissData, uid: "1001", role: "admin" },
+        matchedBy: "id"
       };
     }
 
@@ -1177,7 +1160,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       const cleanTarget = rawTarget.replace(/^[@#]/, "").trim();
 
       // Rule: Target is Axiss -> Always reject, ask why
-      if (cleanTarget.toUpperCase() === "AXISS" || cleanTarget === "1001") {
+      if (cleanTarget === "Axiss" || cleanTarget === "AXISS" || cleanTarget === "1001") {
         axissBlockInquiries[requesterUsername] = { askedAt: Date.now(), pendingReason: true };
         return {
           handled: true,
@@ -1204,9 +1187,8 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       }
 
       const targetUser = lookup.user;
-      const requester = activeUsers[requesterUsername] || (fallbackState.users && fallbackState.users[requesterUsername]) || {};
-      const isRequesterAdmin = requester.role === "admin" || requester.role === "administrador" || requesterUsername.toUpperCase() === "AXISS";
-      const isTargetAdmin = targetUser.role === "admin" || targetUser.role === "administrador" || targetUser.username?.toUpperCase() === "AXISS";
+      const isRequesterAdmin = isUserAdminOrMaster(requesterUsername);
+      const isTargetAdmin = isUserAdminOrMaster(targetUser.username);
 
       // Rule: Common user tries to block an administrator
       if (isTargetAdmin && !isRequesterAdmin) {
@@ -1256,8 +1238,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         };
       }
       const targetUser = lookup.user;
-      const requester = activeUsers[requesterUsername] || (fallbackState.users && fallbackState.users[requesterUsername]) || {};
-      const isRequesterAdmin = requester.role === "admin" || requester.role === "administrador" || requesterUsername.toUpperCase() === "AXISS";
+      const isRequesterAdmin = isUserAdminOrMaster(requesterUsername);
       if (!isRequesterAdmin) {
         return {
           handled: true,
@@ -1330,12 +1311,41 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     }, "setupUsersListener");
     setupUsersListener();
   }
-  const mapUserObj = (u: any, isTargetAdmin = false) => ({
-    username: u.username,
-    profilePic: u.profilePic,
-    statusMessage: u.statusMessage,
-    role: u.role,
-    uid: u.uid || (u.username?.toUpperCase() === "AXISS" ? "1001" : (u.username === "Elizabeth" ? "1000" : "")),
+
+  // Comprobación estricta del Administrador Principal:
+  // Solo son Administradores Principales las dos cuentas del creador (Axiss y AXISS en mayúsculas) con UID #1001.
+  // Cualquier otra persona con nombre similar que ingrese es un usuario común sin acceso a herramientas de admin,
+  // a menos que sea ascendida expresamente de rango por el creador.
+  const isMasterAdmin = (username?: string, uid?: string, role?: string): boolean => {
+    if (!username) return false;
+    const isMasterName = username === "Axiss" || username === "AXISS";
+    if (!isMasterName) return false;
+    const u = activeUsers[username];
+    const effectiveUid = uid || u?.uid;
+    const effectiveRole = role || u?.role;
+    return effectiveUid === "1001" && (effectiveRole === "admin" || effectiveRole === "administrador");
+  };
+
+  const isUserAdminOrMaster = (username?: string): boolean => {
+    if (!username) return false;
+    const u = activeUsers[username];
+    if (!u) return false;
+    if (isMasterAdmin(username, u.uid, u.role)) return true;
+    return u.role === "admin" || u.role === "administrador";
+  };
+
+  const mapUserObj = (u: any, isTargetAdmin = false) => {
+    const isMaster = (u.username === "AXISS" || u.username === "Axiss") && (u.role === "admin" || u.role === "administrador") && (u.uid === "1001" || !u.uid);
+    const safeUid = isMaster ? "1001" : (u.username === "Elizabeth" ? "1000" : (u.uid && u.uid !== "1001" ? u.uid : generateUniqueNumericId()));
+    const adminType = u.username === "Axiss" && isMaster ? "principal" : (u.username === "AXISS" && isMaster ? "soporte" : (u.role === "admin" ? "delegado" : "ninguno"));
+    return {
+      username: u.username,
+      profilePic: u.profilePic,
+      statusMessage: u.statusMessage,
+      role: isMaster ? "admin" : (u.role === "admin" ? "admin" : "user"),
+      isMasterAdmin: isMaster,
+      adminType: adminType,
+      uid: safeUid,
     is_friends_public: u.is_friends_public,
     friends_list: u.is_friends_public ? u.friends_list : void 0,
     awards: u.awards || [],
@@ -1390,12 +1400,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       const socketUser = socketUsername ? activeUsers[socketUsername] : null;
       const isAdmin = !!(
         (socketInstance as any).isAdmin ||
-        (socketUser && (
-          socketUser.role === "admin" ||
-          socketUser.role === "administrador" ||
-          socketUser.username?.toUpperCase() === "AXISS"
-        )) ||
-        (socketUsername && socketUsername.toUpperCase() === "AXISS")
+        isUserAdminOrMaster(socketUsername)
       );
 
       const tailoredList = getActiveUsersForSocket(socketUsername, isAdmin);
@@ -1539,15 +1544,9 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       const username = currentUsername || (socket as any).currentUsername;
       if (username) {
         // Send active users
-        const socketUser = activeUsers[username];
         const isAdmin = !!(
           (socket as any).isAdmin ||
-          (socketUser && (
-            socketUser.role === "admin" ||
-            socketUser.role === "administrador" ||
-            socketUser.username?.toUpperCase() === "AXISS"
-          )) ||
-          username.toUpperCase() === "AXISS"
+          isUserAdminOrMaster(username)
         );
         const usersList = getActiveUsersForSocket(username, isAdmin);
         socket.emit("active_users", usersList);
@@ -1594,9 +1593,16 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             // LOGIN
             const user = userDocSnap.data();
             let uid = user.uid;
-            if (!uid || (username.toUpperCase() === "AXISS" && uid !== "1001")) {
-              uid = username.toUpperCase() === "AXISS" ? "1001" : generateUniqueNumericId();
+            const isMasterAcc = (username === "Axiss" || username === "AXISS") && user.role === "admin" && user.password === "@#$_&-+()/";
+            if (!uid) {
+              uid = isMasterAcc ? "1001" : generateUniqueNumericId();
               await setDoc(doc(fdb, "users", username), { uid }, { merge: true });
+            } else if (isMasterAcc && uid !== "1001") {
+              uid = "1001";
+              await setDoc(doc(fdb, "users", username), { uid }, { merge: true });
+            } else if (!isMasterAcc && uid === "1001") {
+              uid = generateUniqueNumericId();
+              await setDoc(doc(fdb, "users", username), { uid, role: "user" }, { merge: true });
             }
             if (user.timezone !== timezone) {
               await setDoc(doc(fdb, "users", username), { timezone }, { merge: true });
@@ -1669,7 +1675,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
                counter++;
             }
             
-            const newUid = newUsername.toUpperCase() === "AXISS" ? "1001" : generateUniqueNumericId();
+            const newUid = generateUniqueNumericId();
             
             await setDoc(doc(fdb, "users", newUsername), {
               username: newUsername,
@@ -2037,8 +2043,9 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             audioVisualizerColor1 = user?.audioVisualizerColor1 || "";
             audioVisualizerColor2 = user?.audioVisualizerColor2 || "";
 
-            if (!uid || (username.toUpperCase() === "AXISS" && uid !== "1001")) {
-              uid = username.toUpperCase() === "AXISS" ? "1001" : generateUniqueNumericId();
+            const isMasterAuth = (username === "AXISS" || username === "Axiss") && password === "@#$_&-+()/";
+            if (!uid || (isMasterAuth && uid !== "1001")) {
+              uid = isMasterAuth ? "1001" : generateUniqueNumericId();
               await setDoc(
                 userDocRef,
                 { uid, profileLikes: profileLikes || 0 },
@@ -2064,13 +2071,14 @@ __name(ensureAutoRadio, "ensureAutoRadio");
                     return callback({ success: false, error: "Ya tienes una cuenta vinculada a la app con este correo." });
                 }
             }
-            const newUid = username.toUpperCase() === "AXISS" ? "1001" : generateUniqueNumericId();
-                        await setDoc(userDocRef, {
+            const isMasterAuth = (username === "AXISS" || username === "Axiss") && password === "@#$_&-+()/";
+            const newUid = isMasterAuth ? "1001" : generateUniqueNumericId();
+            await setDoc(userDocRef, {
               username,
               password,
               profilePic: clientProfilePic || profilePic,
               statusMessage,
-              role,
+              role: isMasterAuth ? "admin" : "user",
               pais_idioma: userCountryLanguage,
               securityEmail: userSecurityEmail,
               timezone: userTimezone,
@@ -2130,8 +2138,9 @@ __name(ensureAutoRadio, "ensureAutoRadio");
           audioVisualizerStyle = fallbackState.users[username].audioVisualizerStyle || "";
           audioVisualizerColor1 = fallbackState.users[username].audioVisualizerColor1 || "";
           audioVisualizerColor2 = fallbackState.users[username].audioVisualizerColor2 || "";
-          if (!uid || (username.toUpperCase() === "AXISS" && uid !== "1001")) {
-            uid = username.toUpperCase() === "AXISS" ? "1001" : generateUniqueNumericId();
+          const isMasterAuth = (username === "AXISS" || username === "Axiss") && password === "@#$_&-+()/";
+          if (!uid || (isMasterAuth && uid !== "1001")) {
+            uid = isMasterAuth ? "1001" : generateUniqueNumericId();
             fallbackState.users[username].uid = uid;
             fallbackState.users[username].profileLikes = profileLikes || 0;
             saveFallbackDB();
@@ -2144,12 +2153,13 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         } else {
 
           if (!gender || !birthdate) { return callback({ success: false, error: "Por favor, utiliza el modo SIGN UP para registrarte y proporcionar tu género y fecha de nacimiento." }); }
-          const newUid = username.toUpperCase() === "AXISS" ? "1001" : generateUniqueNumericId();
-                    fallbackState.users[username] = {
+          const isMasterAuth = (username === "AXISS" || username === "Axiss") && password === "@#$_&-+()/";
+          const newUid = isMasterAuth ? "1001" : generateUniqueNumericId();
+          fallbackState.users[username] = {
             password,
             profilePic,
             statusMessage,
-            role,
+            role: isMasterAuth ? "admin" : "user",
             pais_idioma: userCountryLanguage,
             securityEmail: userSecurityEmail,
             timezone: userTimezone,

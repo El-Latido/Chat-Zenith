@@ -943,6 +943,79 @@ export function sanitizeTextForSpeech(rawText: string): string {
 let activeAudioElement: HTMLAudioElement | null = null;
 let currentSpeakingCallbacks: { onStart?: () => void; onEnd?: () => void; onError?: (err?: any) => void; } | null = null;
 
+/**
+ * Síntesis de voz humana mediante Web Speech API (Garantiza locución natural en español en cualquier dispositivo)
+ */
+export function speakWithBrowserSpeech(
+  text: string,
+  archetypeId?: string,
+  rate = 1.0,
+  pitch = 1.0,
+  volume = 1.0,
+  callbacks?: {
+    onStart?: () => void;
+    onEnd?: () => void;
+    onError?: (err: any) => void;
+  }
+): boolean {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    callbacks?.onError?.("Speech synthesis not supported");
+    return false;
+  }
+
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "es-ES";
+    utterance.rate = Math.max(0.75, Math.min(1.35, rate || 1.0));
+    utterance.pitch = Math.max(0.75, Math.min(1.35, pitch || 1.0));
+    utterance.volume = Math.max(0.1, Math.min(1.0, volume ?? 1.0));
+
+    const voices = window.speechSynthesis.getVoices();
+    const spanishVoices = voices.filter(v => v.lang.toLowerCase().startsWith("es"));
+
+    if (spanishVoices.length > 0) {
+      const isMale = archetypeId && (
+        archetypeId.includes("male") ||
+        archetypeId.includes("lucas") ||
+        archetypeId.includes("mateo") ||
+        archetypeId.includes("diego") ||
+        archetypeId.includes("javier") ||
+        archetypeId.includes("eugenio") ||
+        archetypeId.includes("damian")
+      );
+
+      const preferredVoice = spanishVoices.find(v => {
+        const name = v.name.toLowerCase();
+        if (isMale) {
+          return name.includes("jorge") || name.includes("alvaro") || name.includes("diego") || name.includes("male") || name.includes("raul");
+        }
+        return name.includes("sabina") || name.includes("elena") || name.includes("monica") || name.includes("paulina") || name.includes("elvira") || name.includes("female") || name.includes("google español");
+      }) || spanishVoices[0];
+
+      utterance.voice = preferredVoice;
+    }
+
+    utterance.onstart = () => {
+      callbacks?.onStart?.();
+    };
+
+    utterance.onend = () => {
+      callbacks?.onEnd?.();
+    };
+
+    utterance.onerror = (e) => {
+      callbacks?.onError?.(e);
+    };
+
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch (err) {
+    callbacks?.onError?.(err);
+    return false;
+  }
+}
+
 export function stopSpeaking(): void {
   if (activeAudioElement) {
     try {
@@ -955,6 +1028,12 @@ export function stopSpeaking(): void {
     activeAudioElement = null;
   }
 
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {}
+  }
+
   if (currentSpeakingCallbacks?.onEnd) {
     currentSpeakingCallbacks.onEnd();
   }
@@ -963,13 +1042,16 @@ export function stopSpeaking(): void {
 }
 
 export function isSpeaking(): boolean {
-  return !!(activeAudioElement && !activeAudioElement.paused);
+  const isAudioSpeaking = !!(activeAudioElement && !activeAudioElement.paused);
+  const isSynthSpeaking = typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.speaking;
+  return isAudioSpeaking || isSynthSpeaking;
 }
 
 /**
  * Función Principal para hablar un mensaje de Elizabeth:
- * 1. Invoca el motor Coqui XTTS v2 a través de /api/ai/synthesize_voice o /api/ai/xtts/synthesize
- * 2. Reproduce audio WAV cristalino de 24kHz con la voz oficial de XTTS v2 seleccionada.
+ * 1. Invoca el motor Coqui XTTS v2 con audio MP3 humano en español
+ * 2. Si hay fallos de red o problemas de reproducción, conmuta de inmediato a la voz nativa humana
+ * 3. Cero ruidos robóticos de computadora de los años 80
  */
 export async function speakElizabethMessage(
   text: string,
@@ -1015,7 +1097,7 @@ export async function speakElizabethMessage(
     });
 
     const data = await res.json();
-    if (data?.success && data.audioBase64) {
+    if (data?.success && data.audioBase64 && data.audioBase64.length > 500 && (data.audioBase64.startsWith("data:audio/mp3") || data.audioBase64.startsWith("data:audio/mpeg"))) {
       const audio = new Audio(data.audioBase64);
       audio.volume = Math.max(0, Math.min(1, config.volume));
 
@@ -1029,23 +1111,20 @@ export async function speakElizabethMessage(
       };
 
       audio.onerror = (err) => {
-        console.error("Error en reproducción de audio XTTS v2:", err);
+        console.warn("Fallo reproducción de audio del servidor, usando voz nativa humana:", err);
         activeAudioElement = null;
-        callbacks?.onError?.(err);
+        speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
       };
 
       activeAudioElement = audio;
       await audio.play();
       return true;
     } else {
-      console.error("API de voz XTTS v2 devolvió error:", data?.error);
-      callbacks?.onError?.(data?.error);
-      return false;
+      return speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
     }
   } catch (err) {
-    console.error("Fallo al conectar con endpoint de voz XTTS v2:", err);
-    callbacks?.onError?.(err);
-    return false;
+    console.warn("Fallo endpoint de voz, usando voz nativa humana:", err);
+    return speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
   }
 }
 

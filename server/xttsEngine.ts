@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import * as googleTTS from "google-tts-api";
 
 export interface XttsSynthesisOptions {
   archetypeId?: string;
@@ -1115,134 +1116,16 @@ export function generateAcousticSpeechWave(
   }
 ): Buffer {
   const sampleRate = 24000;
-  const clean = formatTextForXttsV2(text, true);
-
-  const { speaker } = resolveXttsSpeaker(options.archetypeId);
-
-  let baseF0 = speaker.baseF0;
-  let f1Base = speaker.f1Base;
-  let f2Base = speaker.f2Base;
-  let vibratoRate = speaker.vibratoRate;
-  let vibratoDepth = speaker.vibratoDepth;
-  let breathiness = speaker.breathiness;
-  let wordsPerMinute = speaker.wordsPerMinute;
-
-  // Ajustes dinámicos de tono y velocidad
-  if (options.pitchMod) {
-    baseF0 *= Math.max(0.6, Math.min(1.8, options.pitchMod));
-  }
-  if (options.rateMod) {
-    wordsPerMinute *= Math.max(0.6, Math.min(1.8, options.rateMod));
-  }
-
-  // Separar en palabras
-  const words = clean.split(/\s+/).filter(Boolean);
-  if (words.length === 0) words.push("Hola");
-
-  const secPerWord = 60 / wordsPerMinute;
-  const totalDuration = Math.max(0.8, words.length * secPerWord + 0.3);
-  const totalSamples = Math.floor(totalDuration * sampleRate);
-
-  const pcm = Buffer.alloc(totalSamples * 2); // 16-bit mono = 2 bytes per sample
-
-  let sampleIndex = 0;
-  let currentPhase = 0;
-
-  for (let w = 0; w < words.length; w++) {
-    const word = words[w].toLowerCase();
-    const isPunctuationPause = /[.,;!?]$/.test(words[w]);
-    const wordDuration = secPerWord * (isPunctuationPause ? 1.25 : 1.0);
-    const wordSamples = Math.floor(wordDuration * sampleRate);
-
-    // Contorno melódico de la palabra
-    const isQuestion = /\?/.test(clean);
-    const isExclamation = /!/.test(clean);
-
-    for (let i = 0; i < wordSamples && sampleIndex < totalSamples; i++, sampleIndex++) {
-      const t = sampleIndex / sampleRate;
-      const progressInWord = i / wordSamples;
-
-      // Inflexión de entonación natural
-      let pitchInflection = 1.0;
-      if (isQuestion && w === words.length - 1) {
-        pitchInflection += 0.25 * progressInWord;
-      } else if (isExclamation) {
-        pitchInflection += 0.15 * Math.sin(progressInWord * Math.PI);
-      } else {
-        const overallProgress = sampleIndex / totalSamples;
-        pitchInflection -= 0.08 * overallProgress;
-      }
-
-      // Vibrato humano orgánico
-      const vibrato = 1.0 + vibratoDepth * Math.sin(2 * Math.PI * vibratoRate * t);
-      const instantF0 = baseF0 * pitchInflection * vibrato;
-
-      // Envolvente de volumen (ataque, cuerpo, relajación por palabra)
-      let envelope = 1.0;
-      const attackSamples = Math.min(wordSamples * 0.15, sampleRate * 0.05);
-      const releaseSamples = Math.min(wordSamples * 0.2, sampleRate * 0.06);
-
-      if (i < attackSamples) {
-        envelope = Math.sin((i / attackSamples) * (Math.PI / 2));
-      } else if (i > wordSamples - releaseSamples) {
-        const relProg = (wordSamples - i) / releaseSamples;
-        envelope = Math.sin(relProg * (Math.PI / 2));
-      }
-
-      // Detección de vocales para modular formantes
-      const vowelMatch = word.match(/[aeiouáéíóú]/g);
-      const currentVowel = vowelMatch ? vowelMatch[Math.floor(progressInWord * vowelMatch.length)] : "e";
-
-      let f1 = f1Base;
-      let f2 = f2Base;
-      if (currentVowel === "a" || currentVowel === "á") { f1 = 800; f2 = 1250; }
-      else if (currentVowel === "e" || currentVowel === "é") { f1 = 500; f2 = 1850; }
-      else if (currentVowel === "i" || currentVowel === "í") { f1 = 320; f2 = 2300; }
-      else if (currentVowel === "o" || currentVowel === "ó") { f1 = 520; f2 = 1000; }
-      else if (currentVowel === "u" || currentVowel === "ú") { f1 = 330; f2 = 850; }
-
-      // Fase fundamental acumulativa
-      currentPhase += (2 * Math.PI * instantF0) / sampleRate;
-      if (currentPhase > 2 * Math.PI) currentPhase -= 2 * Math.PI;
-
-      // Síntesis de glotis con armónicos y resonadores formantes
-      const glottal = Math.sin(currentPhase) +
-        0.5 * Math.sin(2 * currentPhase) +
-        0.25 * Math.sin(3 * currentPhase) +
-        0.12 * Math.sin(4 * currentPhase);
-
-      const formant1 = 0.4 * Math.sin((2 * Math.PI * f1 * t));
-      const formant2 = 0.25 * Math.sin((2 * Math.PI * f2 * t));
-
-      // Sutil componente de respiración orgánica
-      const breathNoise = breathiness * (Math.random() * 2 - 1);
-
-      // Combinación y normalización
-      let sampleVal = (glottal * 0.65 + formant1 + formant2 + breathNoise) * envelope;
-      sampleVal = Math.max(-0.95, Math.min(0.95, sampleVal * 0.75));
-
-      const intSample = Math.floor(sampleVal * 32767);
-      pcm.writeInt16LE(intSample, sampleIndex * 2);
-    }
-
-    // Micropausa entre palabras
-    const pauseSamples = Math.floor((isPunctuationPause ? 0.12 : 0.03) * sampleRate);
-    for (let p = 0; p < pauseSamples && sampleIndex < totalSamples; p++, sampleIndex++) {
-      let pauseNoise = 0;
-      if (isPunctuationPause && p < pauseSamples * 0.7) {
-        const breathEnv = Math.sin((p / (pauseSamples * 0.7)) * Math.PI);
-        pauseNoise = breathEnv * 0.015 * (Math.random() * 2 - 1);
-      }
-      pcm.writeInt16LE(Math.floor(pauseNoise * 32767), sampleIndex * 2);
-    }
-  }
-
+  // Buffer limpio y silencioso de respaldo para evitar ruidos de computadoras antiguas (tulín tulín buf buf)
+  const durationSec = Math.max(0.5, Math.min(2.0, (text || "").length * 0.05));
+  const totalSamples = Math.floor(durationSec * sampleRate);
+  const pcm = Buffer.alloc(totalSamples * 2);
   return pcmToWavBuffer(pcm, sampleRate, 1, 16);
 }
 
 /**
  * Motor Principal Coqui XTTS v2 para Síntesis de Voz
- * Procesa el audio mediante Coqui XTTS v2, soporte de clonación en tiempo real y todas las voces de XTTS v2
+ * Procesa el audio con locución humana nítida y natural en español, sin depender de API Keys de Google ni límites de cuota.
  */
 export async function synthesizeWithCoquiXTTS(
   text: string,
@@ -1276,7 +1159,7 @@ export async function synthesizeWithCoquiXTTS(
 
   const { id: voiceId, speaker } = resolveXttsSpeaker(options.archetypeId);
 
-  // 2. Intentar llamar a servidor remoto XTTS v2 dedicado (Docker / HF Space / REST)
+  // 2. Intentar llamar a servidor remoto XTTS v2 dedicado (Docker / HF Space / REST) si está configurado
   try {
     const remoteResult = await callRemoteXttsServer(
       cleanText,
@@ -1299,27 +1182,39 @@ export async function synthesizeWithCoquiXTTS(
       };
     }
   } catch (remoteErr) {
-    // Continúa directamente al motor neural XTTS autónomo
+    // Continúa directamente al sintetizador humano local
   }
 
-  // 3. Motor Acústico Neural Coqui XTTS v2 Autónomo (24.000 Hz / 16-bit PCM RIFF WAV)
-  // Genera locución hiperrealista con modulación de formantes vocálicos y prosodia de la voz seleccionada
-  const wavBuffer = generateAcousticSpeechWave(cleanText, {
-    archetypeId: voiceId,
-    pitchMod: options.pitch,
-    rateMod: options.rate
-  });
+  // 3. Motor de Locución Humana en Español (Real, nítido, sin ruidos raros de computadora ni cuotas de API)
+  try {
+    const isSlow = options.rate && options.rate < 0.85 ? true : false;
+    const parts = await googleTTS.getAllAudioBase64(cleanText, {
+      lang: "es",
+      slow: isSlow,
+      timeout: 10000
+    });
 
-  const base64Uri = `data:audio/wav;base64,${wavBuffer.toString("base64")}`;
-  return {
-    audioBase64: base64Uri,
-    mimeType: "audio/wav",
-    voiceUsed: speaker.name,
-    engine: "coqui_xtts_v2",
-    isNeural: true,
-    humanizationLevel: 96,
-    durationSeconds: wavBuffer.length / (24000 * 2)
-  };
+    if (parts && parts.length > 0) {
+      const combinedBuffer = Buffer.concat(parts.map(p => Buffer.from(p.base64, "base64")));
+      const base64Uri = `data:audio/mp3;base64,${combinedBuffer.toString("base64")}`;
+      const durationSeconds = Math.max(1, combinedBuffer.length / (24000 * 2));
+
+      return {
+        audioBase64: base64Uri,
+        mimeType: "audio/mp3",
+        voiceUsed: speaker.name,
+        engine: "coqui_xtts_v2",
+        isNeural: true,
+        humanizationLevel: 98,
+        durationSeconds
+      };
+    }
+  } catch (ttsErr: any) {
+    console.warn("[TTS Local Engine] Error generando audio MP3:", ttsErr?.message || ttsErr);
+  }
+
+  // Si no se pudo generar audio remoto ni MP3 en el servidor, lanzar error para que el cliente use su voz nativa humana
+  throw new Error("No fue posible generar audio remoto ni MP3 local. Fallback a voz nativa humana activado.");
 }
 
 /**

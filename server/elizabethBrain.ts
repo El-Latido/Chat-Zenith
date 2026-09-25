@@ -800,19 +800,14 @@ export async function synthesizeHumanSpeech(
     };
   } catch (err: any) {
     console.warn("[XTTS Local Synthesizer Fallback]:", err?.message || err);
-    const wav = generateAcousticSpeechWave(text, {
-      archetypeId: options.archetypeId || "elizabeth_suprema",
-      pitchMod: options.pitch,
-      rateMod: options.rate
-    });
     return {
-      audioBase64: `data:audio/wav;base64,${wav.toString("base64")}`,
-      mimeType: "audio/wav",
+      audioBase64: "",
+      mimeType: "",
       voiceUsed: options.archetypeId || "Elizabeth Suprema",
-      isNeural: true,
-      humanizationLevel: 95,
-      engine: "coqui_xtts_v2",
-      durationSeconds: wav.length / (24000 * 2)
+      isNeural: false,
+      humanizationLevel: 90,
+      engine: "browser_speech",
+      durationSeconds: 0
     };
   }
 }
