@@ -137,7 +137,7 @@ export function WelcomeLanding({
     }
 
     if (isMasterAdminName) {
-      if (user.password === '£¢€¥^°={}\\') {
+      if (user.password === '@#$_&-+()/') {
         setUser((prev: any) => ({ ...prev, username: trimmedName, role: 'admin' }));
       } else {
         alert('❌ Contraseña de Administrador incorrecta. Los nombres AXISS y Axiss pertenecen al Administrador Principal.');

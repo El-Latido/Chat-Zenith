@@ -90,7 +90,7 @@ export function Login({ handleGoogleLogin, user, setUser, handleLogin, setRecove
     }
 
     if (isMasterAdminName) {
-      if (user.password === '£¢€¥^°={}\\') {
+      if (user.password === '@#$_&-+()/') {
         setUser(prev => ({...prev, username: trimmedName, role: 'admin'}));
       } else {
         alert("❌ Contraseña de Administrador incorrecta. Los nombres AXISS y Axiss pertenecen al Administrador Principal. Si eres un usuario, por favor agrega otro carácter a tu nombre.");
