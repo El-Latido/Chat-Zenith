@@ -373,21 +373,21 @@ function MainApp() {
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
       oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+      oscillator.frequency.setValueAtTime(520, audioCtx.currentTime);
       oscillator.frequency.exponentialRampToValueAtTime(
-        1760,
-        audioCtx.currentTime + 0.1,
-      ); // A6
+        680,
+        audioCtx.currentTime + 0.08,
+      );
       gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05);
+      gainNode.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.03);
       gainNode.gain.exponentialRampToValueAtTime(
-        0.01,
-        audioCtx.currentTime + 0.2,
+        0.001,
+        audioCtx.currentTime + 0.15,
       );
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
       oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.2);
+      oscillator.stop(audioCtx.currentTime + 0.15);
     } catch (e) {
       console.error("Sound error", e);
     }
@@ -557,7 +557,7 @@ function MainApp() {
     }
   });
 
-  const isMasterAdmin = (user?.username || "").trim().toLowerCase() === "axiss";
+  const isMasterAdmin = (user?.username === "Axiss" || user?.username === "AXISS") && user?.role === "admin" && (user?.uid === "1001" || !user?.uid);
   const isUserAdmin = isMasterAdmin || delegatedAdmins.includes(user?.username) || user?.role === "admin";
 
   useEffect(() => {
@@ -3011,7 +3011,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
               </button>
             </div>
 
-            {(user?.role === "admin" || user?.username?.toUpperCase() === "AXISS") && (
+            {isUserAdmin && (
               <>
               <div className="px-4 mt-2 grid grid-cols-2 gap-2">
                 <button
@@ -3250,8 +3250,18 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               Tú
                             </span>
                           )}
-                          {u.username.toUpperCase() === "AXISS" && (
-                            <span className="bg-red-500/20 text-red-400 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                          {u.username === "Axiss" && (u.role === "admin" || u.uid === "1001" || u.isMasterAdmin) && (
+                            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-0.5">
+                              👑 Admin Principal
+                            </span>
+                          )}
+                          {u.username === "AXISS" && (u.role === "admin" || u.uid === "1001" || u.isMasterAdmin) && (
+                            <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-0.5">
+                              🛡️ Soporte
+                            </span>
+                          )}
+                          {u.role === "admin" && u.username !== "Axiss" && u.username !== "AXISS" && !isElizabeth && (
+                            <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
                               Admin
                             </span>
                           )}
@@ -3273,7 +3283,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                             title="Identificador Único Permanente (Fijo e Inmutable)"
                             className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/10 text-cyan-300/90 border border-cyan-500/20"
                           >
-                            #{u.uid || (u.username.toUpperCase() === "AXISS" ? "1001" : isElizabeth ? "1000" : "N/A")}
+                            #{u.uid || ((u.username === "Axiss" || u.username === "AXISS") && u.role === "admin" ? "1001" : isElizabeth ? "1000" : "N/A")}
                           </span>
                         </p>
                         <p className="text-white/50 text-xs truncate">
@@ -3735,12 +3745,32 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                         </>
                                     )}
                                     {!isMe && (
-                                      <span
-                                        className={`font-semibold ${nameColor} text-[13px] mb-0.5 cursor-pointer hover:text-white transition-colors tracking-wide`}
-                                        onClick={() => { if (inputRef.current) inputRef.current.value += `@${m.sender} `; }}
-                                      >
-                                        {m.sender}
-                                      </span>
+                                      <div className="flex items-center flex-wrap gap-1.5 mb-0.5">
+                                        <span
+                                          className={`font-semibold ${nameColor} text-[13px] cursor-pointer hover:text-white transition-colors tracking-wide`}
+                                          onClick={() => { if (inputRef.current) inputRef.current.value += `@${m.sender} `; }}
+                                        >
+                                          {m.sender}
+                                        </span>
+                                        {m.sender === "Axiss" && (m.senderRole === "admin" || m.senderUid === "1001" || m.isMasterAdmin || usersOnline.find(u => u.username === "Axiss")?.role === "admin") && (
+                                          <span className="inline-flex items-center gap-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider shadow-sm" title="Administrador Principal y Creador Oficial (ID #1001)">
+                                            👑 Admin Principal
+                                          </span>
+                                        )}
+                                        {m.sender === "AXISS" && (m.senderRole === "admin" || m.senderUid === "1001" || m.isMasterAdmin || usersOnline.find(u => u.username === "AXISS")?.role === "admin") && (
+                                          <span className="inline-flex items-center gap-0.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider shadow-sm" title="Administrador de Soporte Oficial (ID #1001)">
+                                            🛡️ Soporte
+                                          </span>
+                                        )}
+                                        {m.sender !== "Axiss" && m.sender !== "AXISS" && m.senderRole === "admin" && (
+                                          <span className="inline-flex items-center gap-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider shadow-sm" title="Administrador Promovido">
+                                            🛡️ Admin
+                                          </span>
+                                        )}
+                                        <span className="text-[10px] font-mono text-white/40">
+                                          #{m.senderUid || ((m.sender === "Axiss" || m.sender === "AXISS") && m.senderRole === "admin" ? "1001" : usersOnline.find(u => u.username === m.sender)?.uid || "")}
+                                        </span>
+                                      </div>
                                     )}
                                     {m.replyTo && (
                                       <div className={`bg-black/10 border-l-2 border-[#5A52A5]/50 px-2 py-1 mb-1 rounded text-xs italic flex flex-col ${textColor}`}>
@@ -4389,7 +4419,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         isOpen={isBgModalOpen}
         onClose={() => setIsBgModalOpen(false)}
         currentBg={chatBg}
-        isAdmin={user?.role === "admin" || user?.username?.toUpperCase() === "AXISS"}
+        isAdmin={isUserAdmin}
         defaultMode={bgModalMode}
         onApplyPersonalBg={(url) => {
           if (url) {
@@ -5085,7 +5115,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         >
                           Reportar Usuario
                         </button>
-                        {(user.role === "admin" || user.username.toUpperCase() === "AXISS") && (
+                        {isUserAdmin && (
                             <button
                                 onClick={() => {
                                     if(confirm(`¿Estás seguro de que quieres eliminar la cuenta de ${selectedUserModal.username}?`)) {

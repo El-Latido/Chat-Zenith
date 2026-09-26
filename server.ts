@@ -1323,7 +1323,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     const u = activeUsers[username];
     const effectiveUid = uid || u?.uid;
     const effectiveRole = role || u?.role;
-    return effectiveUid === "1001" && (effectiveRole === "admin" || effectiveRole === "administrador");
+    return (effectiveUid === "1001" || !effectiveUid) && (effectiveRole === "admin" || effectiveRole === "administrador");
   };
 
   const isUserAdminOrMaster = (username?: string): boolean => {
@@ -1360,7 +1360,8 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     preferred_background: u.preferred_background || null,
     preferred_theme: u.preferred_theme || null,
     incognito: isTargetAdmin ? !!u.incognito : (u.incognito ? true : void 0),
-  });
+  };
+};
 
   const getActiveUsersForSocket = (clientUsername?: string, isAdmin = false) => {
     const list: any[] = [];
@@ -2044,11 +2045,20 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             audioVisualizerColor2 = user?.audioVisualizerColor2 || "";
 
             const isMasterAuth = (username === "AXISS" || username === "Axiss") && password === "@#$_&-+()/";
+            if (isMasterAuth) {
+              role = "admin";
+            }
             if (!uid || (isMasterAuth && uid !== "1001")) {
               uid = isMasterAuth ? "1001" : generateUniqueNumericId();
               await setDoc(
                 userDocRef,
-                { uid, profileLikes: profileLikes || 0 },
+                { uid, role: isMasterAuth ? "admin" : (user?.role || role), profileLikes: profileLikes || 0 },
+                { merge: true },
+              );
+            } else if (isMasterAuth && user?.role !== "admin") {
+              await setDoc(
+                userDocRef,
+                { role: "admin" },
                 { merge: true },
               );
             }
@@ -2373,7 +2383,7 @@ socket.on("buy_decoration", async (data, callback) => {
       }
     });
     socket.on("clear_global_chat", async (callback) => {
-      if (currentUsername === "Axiss") {
+      if (isMasterAdmin(currentUsername) || isUserAdminOrMaster(currentUsername)) {
         if (fdb) {
           const q = query(collection(fdb, "global_chat"));
           const snapshot = await getDocs(q);
@@ -2585,7 +2595,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("set_custom_frame", async (data, callback) => {
-      if (currentUsername === "Axiss") {
+      if (isMasterAdmin(currentUsername) || isUserAdminOrMaster(currentUsername)) {
         if (fdb) {
           await setDoc(doc(fdb, "settings", "customFrames"), { [data.id]: data.url }, { merge: true });
         } else {
@@ -2830,11 +2840,11 @@ socket.on("buy_decoration", async (data, callback) => {
       emitActiveUsers();
     });
     socket.on("update_ai_config", async (data, callback) => {
-      if (currentUsername !== "Axiss")
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername))
         return callback({
           success: false,
           error:
-            "Solo el Administrador Supremo Axiss puede modificar el perfil.",
+            "Solo el Administrador Principal puede modificar el perfil.",
         });
       const aiUsername = data.aiUsername || "Elizabeth";
       if (!AI_CHARACTERS[aiUsername]) return callback({ success: false, error: "Personaje IA no encontrado." });
@@ -2895,8 +2905,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("get_ai_api_config", async (callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo el Administrador Supremo Axiss puede ver la configuración de APIs." });
+      if (!isMasterAdmin(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador Principal puede ver la configuración de APIs." });
       }
       try {
         if (fdb) {
@@ -2945,8 +2955,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("update_ai_api_config", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo el Administrador Supremo Axiss puede modificar las credenciales y tokens de la IA." });
+      if (!isMasterAdmin(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador Principal puede modificar las credenciales y tokens de la IA." });
       }
       const { groqBackupKey, groqBackupName, geminiKey, preferredProvider } = data || {};
       if (typeof groqBackupKey === "string") {
@@ -2982,7 +2992,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("test_ai_token", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
+      if (!isMasterAdmin(currentUsername)) {
         return callback({ success: false, error: "No autorizado." });
       }
       const { provider, token } = data;
@@ -3071,8 +3081,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("add_elizabeth_memory", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo Axiss puede registrar recuerdos manualmente en Elizabeth." });
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador puede registrar recuerdos manualmente en Elizabeth." });
       }
       try {
         const { username, fact, category, confidence } = data || {};
@@ -3085,8 +3095,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("delete_elizabeth_memory", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo Axiss puede eliminar recuerdos de Elizabeth." });
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador puede eliminar recuerdos de Elizabeth." });
       }
       try {
         const { username, memoryId } = data || {};
@@ -3099,8 +3109,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("clear_user_memories", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo Axiss puede reiniciar la memoria de Elizabeth." });
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador puede reiniciar la memoria de Elizabeth." });
       }
       try {
         const { username } = data || {};
@@ -3123,8 +3133,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("update_voice_learning_settings", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo Axiss puede cambiar la configuración de mímica y aprendizaje acústico." });
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador puede cambiar la configuración de mímica y aprendizaje acústico." });
       }
       try {
         const updated = await updateVoiceLearningSettings(data);
@@ -3146,8 +3156,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("update_voice_evolution_settings", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo Axiss puede modificar los parámetros de auto-evolución acústica." });
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador puede modificar los parámetros de auto-evolución acústica." });
       }
       try {
         const updated = await updateVoiceEvolutionSettings(data || {});
@@ -3159,8 +3169,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("trigger_instant_evolution_leap", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo Axiss puede inducir saltos evolutivos inmediatos." });
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador puede inducir saltos evolutivos inmediatos." });
       }
       try {
         const { bonusPercent, reason } = data || {};
@@ -3173,8 +3183,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("clone_voice_from_sample", async (data, callback) => {
-      if (currentUsername !== "Axiss") {
-        return callback({ success: false, error: "Solo Axiss tiene autorización para clonar voces con el motor XTTS v2." });
+      if (!isMasterAdmin(currentUsername) && !isUserAdminOrMaster(currentUsername)) {
+        return callback({ success: false, error: "Solo el Administrador tiene autorización para clonar voces con el motor XTTS v2." });
       }
       try {
         const { cloneName, sampleAudioBase64, sampleText } = data || {};
@@ -3431,7 +3441,7 @@ socket.on("buy_decoration", async (data, callback) => {
       ensureAutoRadio();
     });
     socket.on("get_monetization_stats", async (callback) => {
-      if (currentUsername !== "Axiss" && activeUsers[currentUsername]?.role !== "admin") return callback({success:false});
+      if (!isUserAdminOrMaster(currentUsername)) return callback({success:false});
       if (fdb) {
          try {
              const snap = await getDoc(doc(fdb, "system", "monetization"));
@@ -3448,7 +3458,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("withdraw_revenue", async (callback) => {
-        if (currentUsername !== "Axiss" && activeUsers[currentUsername]?.role !== "admin") return callback({success:false});
+        if (!isUserAdminOrMaster(currentUsername)) return callback({success:false});
         let currentPending = 0;
         
         const processWithdrawal = (stats) => {
@@ -3487,7 +3497,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("get_banned_users", (callback) => {
-      if (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS") return callback([]);
+      if (!isUserAdminOrMaster(currentUsername)) return callback([]);
       const now = Date.now();
       const list = Object.keys(bannedUsers).filter(u => bannedUsers[u] > now).map(u => ({
           username: u,
@@ -3498,7 +3508,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
     
     socket.on("admin_unban_user", (targetUser, callback) => {
-      if (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS") return callback({success: false});
+      if (!isUserAdminOrMaster(currentUsername)) return callback({success: false});
       delete bannedUsers[targetUser];
       if (activeUsers[targetUser]) {
           io.to(activeUsers[targetUser].socketId).emit("banned_status", { isBanned: false });
@@ -3598,7 +3608,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("get_reports", async (callback) => {
-        if (!currentUsername || (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS")) return callback([]);
+        if (!currentUsername || !isUserAdminOrMaster(currentUsername)) return callback([]);
         if (fdb) {
             try {
                 const q = query(collection(fdb, "reports"), orderBy("createdAt", "desc"));
@@ -3615,7 +3625,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("delete_report", async (id, callback) => {
-        if (!currentUsername || (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS")) return callback({success: false});
+        if (!currentUsername || !isUserAdminOrMaster(currentUsername)) return callback({success: false});
         if (fdb) {
             try {
                 await deleteDoc(doc(fdb, "reports", id));
@@ -3658,7 +3668,7 @@ socket.on("buy_decoration", async (data, callback) => {
 
     
     socket.on("admin_delete_user", async (targetUser, callback) => {
-      if (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS") return callback({success: false});
+      if (!isUserAdminOrMaster(currentUsername)) return callback({success: false});
       
       try {
          let targetEmail = "";
@@ -3803,7 +3813,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("admin_ban_user", (targetUser, callback) => {
-      if (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS") return callback && callback({success: false});
+      if (!isUserAdminOrMaster(currentUsername)) return callback && callback({success: false});
       bannedUsers[targetUser] = Date.now() + 15 * 60 * 1000;
       if (activeUsers[targetUser]?.uid) {
         bannedUsers[activeUsers[targetUser].uid] = Date.now() + 15 * 60 * 1000;
@@ -3817,10 +3827,13 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("admin_promote_user", ({ targetUsername }, callback) => {
-      const isMaster = currentUsername === "AXISS" || currentUsername === "Axiss";
+      const isMaster = isMasterAdmin(currentUsername);
       if (!isMaster) return callback && callback({ success: false, error: "Solo AXISS o Axiss pueden nombrar administradores" });
       if (activeUsers[targetUsername]) {
         activeUsers[targetUsername].role = "admin";
+      }
+      if (fdb) {
+        setDoc(doc(fdb, "users", targetUsername), { role: "admin" }, { merge: true }).catch(console.error);
       }
       io.emit("system_message", { text: `👑 ${targetUsername} ha sido nombrado Administrador por ${currentUsername}.` });
       emitActiveUsers();
@@ -3828,11 +3841,14 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("admin_demote_user", ({ targetUsername }, callback) => {
-      const isMaster = currentUsername === "AXISS" || currentUsername === "Axiss";
+      const isMaster = isMasterAdmin(currentUsername);
       if (!isMaster) return callback && callback({ success: false, error: "Solo AXISS o Axiss pueden remover administradores" });
-      if (targetUsername === "AXISS" || targetUsername === "Axiss") return callback && callback({ success: false, error: "No es posible remover a un Administrador Principal" });
+      if (isMasterAdmin(targetUsername)) return callback && callback({ success: false, error: "No es posible remover a un Administrador Principal" });
       if (activeUsers[targetUsername]) {
         activeUsers[targetUsername].role = "user";
+      }
+      if (fdb) {
+        setDoc(doc(fdb, "users", targetUsername), { role: "user" }, { merge: true }).catch(console.error);
       }
       io.emit("system_message", { text: `Se han revocado los privilegios de administrador a ${targetUsername}.` });
       emitActiveUsers();
@@ -3840,8 +3856,8 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("admin_system_broadcast", ({ message, sender }, callback) => {
-      const isMaster = currentUsername === "AXISS" || currentUsername === "Axiss";
-      const isAdmin = isMaster || activeUsers[currentUsername]?.role === "admin";
+      const isMaster = isMasterAdmin(currentUsername);
+      const isAdmin = isMaster || isUserAdminOrMaster(currentUsername);
       if (!isAdmin) return callback && callback({ success: false, error: "Permiso denegado" });
       io.emit("global_notification", {
         id: Date.now().toString(),
@@ -3855,7 +3871,7 @@ socket.on("buy_decoration", async (data, callback) => {
     });
 
     socket.on("admin_cut_transmission", () => {
-      if (!currentUsername || (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS"))
+      if (!isUserAdminOrMaster(currentUsername))
         return;
       currentLiveDJ = null;
       djStreamUrl = null;
@@ -3886,7 +3902,7 @@ socket.on("buy_decoration", async (data, callback) => {
       }
     });
     socket.on("admin_set_dj_schedule", async (data) => {
-      if (!currentUsername || (activeUsers[currentUsername]?.role !== "admin" && currentUsername.toUpperCase() !== "AXISS"))
+      if (!isUserAdminOrMaster(currentUsername))
         return;
       const target = data.targetUser;
       if (fdb) {
@@ -3955,10 +3971,16 @@ socket.on("send_global", async (msg) => {
         });
         return;
       }
+      const senderObj = activeUsers[currentUsername];
+      const isMasterSender = (currentUsername === "Axiss" || currentUsername === "AXISS") && (senderObj?.uid === "1001" || senderObj?.role === "admin");
       msg.sender = currentUsername;
       msg.senderId = currentUsername;
-      msg.senderLanguage = activeUsers[currentUsername]?.pais_idioma || "es";
-      msg.profilePic = activeUsers[currentUsername]?.profilePic || "";
+      msg.senderUid = isMasterSender ? "1001" : (senderObj?.uid || "");
+      msg.senderRole = isMasterSender ? "admin" : (senderObj?.role || "user");
+      msg.isMasterAdmin = isMasterSender;
+      msg.adminType = currentUsername === "Axiss" && isMasterSender ? "principal" : (currentUsername === "AXISS" && isMasterSender ? "soporte" : (senderObj?.role === "admin" ? "delegado" : "ninguno"));
+      msg.senderLanguage = senderObj?.pais_idioma || "es";
+      msg.profilePic = senderObj?.profilePic || "";
       msg.id = msg.id || Date.now().toString();
       const modResult = await moderateMessage(msg, ai);
       if (modResult.banned) {
@@ -4225,11 +4247,10 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
             const banMatch = rawTextGen.match(/\[BAN:([^\]]+)\]/);
             if (banMatch) {
                 const target = banMatch[1].trim();
-                const requester = activeUsers[currentUsername] || (fallbackState.users && fallbackState.users[currentUsername]) || {};
-                const isRequesterAdmin = requester.role === "admin" || requester.role === "administrador" || currentUsername.toUpperCase() === "AXISS";
+                const isRequesterAdmin = isUserAdminOrMaster(currentUsername);
                 if (!isRequesterAdmin) {
                   rawTextGen = `No tienes permisos de administrador para solicitar el bloqueo de usuarios.`;
-                } else if (target.toUpperCase() === "AXISS" || target === "1001") {
+                } else if (target === "Axiss" || target === "AXISS" || target === "1001") {
                   rawTextGen = `¿Por qué quieres que bloquee a Axiss? Explícame cuál es tu motivo o razón para pedir su bloqueo.`;
                 } else {
                   const lookup = await lookupUserInDatabase(target);
@@ -4251,8 +4272,7 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
             const unbanMatch = rawTextGen.match(/\[UNBAN:([^\]]+)\]/);
             if (unbanMatch) {
                 const target = unbanMatch[1].trim();
-                const requester = activeUsers[currentUsername] || (fallbackState.users && fallbackState.users[currentUsername]) || {};
-                const isRequesterAdmin = requester.role === "admin" || requester.role === "administrador" || currentUsername.toUpperCase() === "AXISS";
+                const isRequesterAdmin = isUserAdminOrMaster(currentUsername);
                 if (isRequesterAdmin) {
                   const lookup = await lookupUserInDatabase(target);
                   if (lookup.found) {
@@ -4955,11 +4975,10 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
               const banMatch = rawTextGen.match(/\[BAN:([^\]]+)\]/);
               if (banMatch) {
                 const target = banMatch[1].trim();
-                const requester = activeUsers[currentUsername] || (fallbackState.users && fallbackState.users[currentUsername]) || {};
-                const isRequesterAdmin = requester.role === "admin" || requester.role === "administrador" || currentUsername.toUpperCase() === "AXISS";
+                const isRequesterAdmin = isUserAdminOrMaster(currentUsername);
                 if (!isRequesterAdmin) {
                   rawTextGen = `No tienes permisos de administrador para solicitar el bloqueo de usuarios.`;
-                } else if (target.toUpperCase() === "AXISS" || target === "1001") {
+                } else if (target === "Axiss" || target === "AXISS" || target === "1001") {
                   rawTextGen = `¿Por qué quieres que bloquee a Axiss? Explícame cuál es tu motivo o razón para pedir su bloqueo.`;
                 } else {
                   const lookup = await lookupUserInDatabase(target);
@@ -4981,8 +5000,7 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
               const unbanMatch = rawTextGen.match(/\[UNBAN:([^\]]+)\]/);
               if (unbanMatch) {
                 const target = unbanMatch[1].trim();
-                const requester = activeUsers[currentUsername] || (fallbackState.users && fallbackState.users[currentUsername]) || {};
-                const isRequesterAdmin = requester.role === "admin" || requester.role === "administrador" || currentUsername.toUpperCase() === "AXISS";
+                const isRequesterAdmin = isUserAdminOrMaster(currentUsername);
                 if (isRequesterAdmin) {
                   const lookup = await lookupUserInDatabase(target);
                   if (lookup.found) {
