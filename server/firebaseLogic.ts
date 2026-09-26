@@ -31,15 +31,29 @@ export const updateUserProfileInFirebase = async (oldUsername: string, newUserna
             
             if (docSnap.exists()) {
                 currentRole = docSnap.data().role || "user";
-                await updateDoc(docRef, { ...data });
+                await setDoc(docRef, { ...data }, { merge: true });
             } else {
-                await setDoc(docRef, { ...data, username: oldUsername, role: currentRole });
+                await setDoc(docRef, { ...data, username: oldUsername, role: currentRole }, { merge: true });
             }
             return currentRole;
         }
     } catch (err) {
         console.error("Error al guardar en Firebase:", err);
         throw err;
+    }
+};
+
+export const ensureHelizabethUserExists = async () => {
+    if (!fdb) return;
+    try {
+        await setDoc(doc(fdb, 'users', 'helizabeth'), {
+            username: 'helizabeth',
+            role: 'admin',
+            statusMessage: 'Elizabeth AI • Asistente Oficial',
+            updatedAt: Date.now()
+        }, { merge: true });
+    } catch (e) {
+        // Ignorar de forma silenciosa para evitar ruido
     }
 };
 

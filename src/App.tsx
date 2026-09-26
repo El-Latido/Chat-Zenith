@@ -1196,6 +1196,13 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       addSystemToast(`🎨 Apariencia de ${source} sincronizada al instante`, "Apariencia");
     };
 
+    const isIdleOrRstStreamError = (err: any) => {
+      if (!err) return false;
+      const msg = String(err.message || "");
+      const code = err.code;
+      return code === 13 || code === "13" || msg.includes("rst_stream") || msg.includes("RST_STREAM") || msg.includes("Stream closed") || msg.includes("UNAVAILABLE");
+    };
+
     // Primary document explicitly requested: system_updates/appearance_for_Axiss
     const unsubAxiss = onSnapshot(
       doc(db, "system_updates", "appearance_for_Axiss"),
@@ -1204,7 +1211,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           applyAppearanceInstantly(docSnap.data(), "Axiss");
         }
       },
-      (err) => console.warn("Listener system_updates/appearance_for_Axiss note:", err)
+      (err) => { if (!isIdleOrRstStreamError(err)) console.warn("Listener system_updates/appearance_for_Axiss note:", err); }
     );
 
     // Fallback/alias: system_updates/appearance_for_axis
@@ -1215,7 +1222,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           applyAppearanceInstantly(docSnap.data(), "Axis");
         }
       },
-      (err) => console.warn("Listener system_updates/appearance_for_axis note:", err)
+      (err) => { if (!isIdleOrRstStreamError(err)) console.warn("Listener system_updates/appearance_for_axis note:", err); }
     );
 
     // Fallback/alias: system_updates/appearance_for_Axis
@@ -1226,7 +1233,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           applyAppearanceInstantly(docSnap.data(), "Axis");
         }
       },
-      (err) => console.warn("Listener system_updates/appearance_for_Axis note:", err)
+      (err) => { if (!isIdleOrRstStreamError(err)) console.warn("Listener system_updates/appearance_for_Axis note:", err); }
     );
 
     // Target: system_updates/appearance_for_chatliz (Hugging Face Space)
@@ -1237,7 +1244,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           applyAppearanceInstantly(docSnap.data(), "ChatLiz (Hugging Face)");
         }
       },
-      (err) => console.warn("Listener system_updates/appearance_for_chatliz note:", err)
+      (err) => { if (!isIdleOrRstStreamError(err)) console.warn("Listener system_updates/appearance_for_chatliz note:", err); }
     );
 
     // Also listen to settings/global_chat_config
@@ -1248,7 +1255,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           applyAppearanceInstantly(docSnap.data(), "Chat Global");
         }
       },
-      (err) => console.warn("Listener settings/global_chat_config note:", err)
+      (err) => { if (!isIdleOrRstStreamError(err)) console.warn("Listener settings/global_chat_config note:", err); }
     );
 
     return () => {
@@ -2088,9 +2095,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           }
         },
         (error: any) => {
-          console.error("onSnapshot unsubUser error:", error);
+          const isRstOrIdle = error?.code === 13 || error?.code === "13" || String(error?.message || "").includes("rst_stream") || String(error?.message || "").includes("RST_STREAM") || String(error?.message || "").includes("Stream closed");
+          if (!isRstOrIdle && error?.code !== "permission-denied") {
+            console.warn("Aviso reconexión unsubUser:", error?.message || error);
+          }
           if (error?.code !== "permission-denied") {
-            setTimeout(setupListeners, 3000);
+            setTimeout(setupListeners, 4000);
           }
         },
       );
@@ -2130,9 +2140,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           }
         },
         (error: any) => {
-          console.error("onSnapshot unsubscribe error:", error);
+          const isRstOrIdle = error?.code === 13 || error?.code === "13" || String(error?.message || "").includes("rst_stream") || String(error?.message || "").includes("RST_STREAM") || String(error?.message || "").includes("Stream closed");
+          if (!isRstOrIdle && error?.code !== "permission-denied") {
+            console.warn("Aviso reconexión unsubscribe:", error?.message || error);
+          }
           if (error?.code !== "permission-denied") {
-            setTimeout(setupListeners, 3000);
+            setTimeout(setupListeners, 4000);
           }
         },
       );

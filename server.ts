@@ -43,7 +43,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import ytSearch from "yt-search";
 import { fdb, fStorage } from "./server/firebase";
-import { updateAiProfileInFirebase, getAiApiConfigFromFirebase, saveAiApiConfigToFirebase } from "./server/firebaseLogic";
+import { updateAiProfileInFirebase, getAiApiConfigFromFirebase, saveAiApiConfigToFirebase, ensureHelizabethUserExists } from "./server/firebaseLogic";
 import { AI_CHARACTERS } from "./src/aiCharacters";
 import {
   initElizabethBrain,
@@ -94,7 +94,11 @@ function getEffectiveAiClient() {
   });
 }
 
-const GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
+const GROQ_MODELS = [
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+  "mixtral-8x7b-32768"
+];
 
 interface AiProviderStatus {
   lastErrorTime: number;
@@ -136,12 +140,15 @@ function extractTextAndSystemForGroq(params: any): { promptText: string; systemI
 }
 
 async function callGroqAi(params: any, timeoutMs = 12000): Promise<{ text: string }> {
+  const currentKey = (aiRuntimeConfig.groqBackupKey || process.env.GROQ_API_KEY || "").trim();
+  if (!currentKey || !currentKey.startsWith("gsk_") || currentKey.length < 25) {
+    providerStatus.groq.isExhausted = true;
+    primaryAiProvider = "gemini";
+    throw new Error("Clave de API de Groq no configurada o formato inválido (debe comenzar con 'gsk_'). Conmutando a Gemini.");
+  }
+
   const { messages } = extractTextAndSystemForGroq(params);
   let lastErr: any = null;
-  const currentKey = (aiRuntimeConfig.groqBackupKey || process.env.GROQ_API_KEY || "").trim();
-  if (!currentKey) {
-    throw new Error("No hay API Key configurada para " + (aiRuntimeConfig.groqBackupName || "Groq"));
-  }
 
   for (const model of GROQ_MODELS) {
     try {
@@ -165,7 +172,15 @@ async function callGroqAi(params: any, timeoutMs = 12000): Promise<{ text: strin
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson?.error?.message || `Groq HTTP ${res.status}`);
+        const errorMsg = errJson?.error?.message || `Groq HTTP ${res.status}`;
+        
+        // Si la clave es inválida o no autorizada (401), cortar inmediatamente para no bloquear ni reiterar llamadas
+        if (res.status === 401 || errorMsg.toLowerCase().includes("invalid api key") || errorMsg.toLowerCase().includes("unauthorized")) {
+          providerStatus.groq.isExhausted = true;
+          primaryAiProvider = "gemini";
+          throw new Error(`Groq API Key inválida o revocada: ${errorMsg}`);
+        }
+        throw new Error(errorMsg);
       }
 
       const data: any = await res.json();
@@ -174,7 +189,12 @@ async function callGroqAi(params: any, timeoutMs = 12000): Promise<{ text: strin
       }
     } catch (err: any) {
       lastErr = err;
-      console.warn(`[Groq Model ${model} failed]:`, err.message || err);
+      const isAuthErr = err?.message?.includes("401") || err?.message?.includes("inválida") || err?.message?.includes("invalid api key") || err?.message?.includes("revocada");
+      if (isAuthErr) {
+        // Romper ciclo de modelos inmediatamente para evitar retrasos
+        break;
+      }
+      console.warn(`[Groq Model ${model}]:`, err.message || err);
     }
   }
 
@@ -246,11 +266,13 @@ async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 120
   if (providerStatus.gemini.isExhausted && now - providerStatus.gemini.lastErrorTime > 180000) {
     providerStatus.gemini.isExhausted = false;
   }
-  if (providerStatus.groq.isExhausted && now - providerStatus.groq.lastErrorTime > 180000) {
+  const groqKey = (aiRuntimeConfig.groqBackupKey || process.env.GROQ_API_KEY || "").trim();
+  const isGroqKeyValidFormat = groqKey.startsWith("gsk_") && groqKey.length > 25;
+  if (providerStatus.groq.isExhausted && isGroqKeyValidFormat && now - providerStatus.groq.lastErrorTime > 180000) {
     providerStatus.groq.isExhausted = false;
   }
 
-  const hasGroq = !!(aiRuntimeConfig.groqBackupKey && aiRuntimeConfig.groqBackupKey.trim());
+  const hasGroq = isGroqKeyValidFormat && !providerStatus.groq.isExhausted;
   // Orden de prioridad dinámico según tokens disponibles
   let providersToTry: ("gemini" | "groq")[] = [];
   if (hasGroq) {
@@ -291,12 +313,24 @@ async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 120
     } catch (err: any) {
       lastError = err;
       const errMsg = err?.message || String(err);
-      console.warn(`⚠️ [AI Failover] Proveedor ${provider.toUpperCase()} falló: ${errMsg}`);
 
       providerStatus[provider].lastErrorTime = Date.now();
       providerStatus[provider].lastErrorMessage = errMsg;
 
       if (
+        errMsg.includes("invalid") ||
+        errMsg.includes("401") ||
+        errMsg.includes("unauthorized") ||
+        errMsg.includes("api_key") ||
+        errMsg.includes("API Key") ||
+        errMsg.includes("revocada")
+      ) {
+        if (provider === "groq") {
+          providerStatus.groq.isExhausted = true;
+          primaryAiProvider = "gemini";
+          console.warn(`🔒 [AI Failover] Clave de Groq inválida o revocada. Conmutación limpia e inmediata a Gemini.`);
+        }
+      } else if (
         errMsg.includes("429") ||
         errMsg.includes("quota") ||
         errMsg.includes("resource_exhausted") ||
@@ -304,13 +338,26 @@ async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 120
         errMsg.includes("limit")
       ) {
         providerStatus[provider].isExhausted = true;
-        primaryAiProvider = provider === "gemini" ? "groq" : "gemini";
-        console.warn(`🔄 [AI Failover] Conmutando automáticamente a proveedor alternativo: ${primaryAiProvider.toUpperCase()}...`);
+        primaryAiProvider = provider === "gemini" ? (hasGroq ? "groq" : "gemini") : "gemini";
+        console.warn(`🔄 [AI Failover] Proveedor ${provider.toUpperCase()} agotado. Conmutando a ${primaryAiProvider.toUpperCase()}...`);
       }
     }
   }
 
-  console.error("❌ [AI Failover] Ambos proveedores (Gemini y Groq) fallaron.");
+  // Fallback final garantizado: Si todo falló y no se había intentado Gemini recientemente, intentar Gemini como salvavidas
+  if (!providersToTry.includes("gemini")) {
+    try {
+      const res = await callGeminiAi(aiInstance, params, timeoutMs);
+      return {
+        text: res.text,
+        response: { text: () => res.text }
+      };
+    } catch (rescueErr) {
+      lastError = rescueErr;
+    }
+  }
+
+  console.error("❌ [AI Failover] Todos los proveedores de IA fallaron.");
   throw lastError || new Error("Ambos proveedores de IA no están disponibles.");
 }
 __name(safeGenerateContent, "safeGenerateContent");
@@ -1261,11 +1308,34 @@ __name(ensureAutoRadio, "ensureAutoRadio");
   const loadAiUser = __name(async () => {
     if (fdb) {
       try {
+        await ensureHelizabethUserExists();
+        // Garantizar existencia y fusión segura del documento helizabeth
+        await setDoc(doc(fdb, "users", "helizabeth"), {
+          username: "helizabeth",
+          role: "admin",
+          statusMessage: "Elizabeth AI • Asistente Oficial",
+          isAi: true,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
         for (const ai of Object.keys(AI_CHARACTERS)) {
             const docR = await getDoc(doc(fdb, "users", ai));
-            if (docR.exists()) aiUserTempCache[ai] = { ...aiUserTempCache[ai], ...docR.data() };
+            if (docR.exists()) {
+              aiUserTempCache[ai] = { ...aiUserTempCache[ai], ...docR.data() };
+            } else {
+              await setDoc(doc(fdb, "users", ai), {
+                username: ai,
+                role: "admin",
+                statusMessage: `${ai} AI • Oficial`,
+                isAi: true,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              }, { merge: true });
+            }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn("loadAiUser note (handled silently):", e);
+      }
     } else {
       for (const ai of Object.keys(AI_CHARACTERS)) {
         if (fallbackState.users[ai])
@@ -1279,35 +1349,66 @@ __name(ensureAutoRadio, "ensureAutoRadio");
   }, "loadAiUser");
   loadAiUser();
   if (fdb) {
-    let unsubUsers = null;
+    let unsubUsers: any = null;
+    let usersBackoff = 2000;
+    const maxBackoff = 30000;
+    let reconnectTimer: any = null;
+
     const setupUsersListener = __name(() => {
-      if (unsubUsers) unsubUsers();
-      unsubUsers = onSnapshot(
-        collection(fdb, "users"),
-        (snapshot) => {
-          let changed = false;
-          snapshot.docChanges().forEach((change) => {
-            if (change.type === "modified" || change.type === "added") {
-              const data = change.doc.data();
-              if (AI_CHARACTERS[data.username]) {
-                aiUserTempCache[data.username] = { ...aiUserTempCache[data.username], ...data };
-                changed = true;
-              } else if (activeUsers[data.username]) {
-                activeUsers[data.username].profilePic = data.profilePic;
-                activeUsers[data.username].statusMessage = data.statusMessage;
-                activeUsers[data.username].role = data.role;
-                activeUsers[data.username].pais_idioma = data.pais_idioma;
-                changed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (unsubUsers) {
+        try { unsubUsers(); } catch (_) {}
+      }
+      try {
+        unsubUsers = onSnapshot(
+          collection(fdb, "users"),
+          (snapshot) => {
+            usersBackoff = 2000; // Restablecer retroceso en recepción exitosa
+            let changed = false;
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === "modified" || change.type === "added") {
+                const data = change.doc.data();
+                if (AI_CHARACTERS[data.username]) {
+                  aiUserTempCache[data.username] = { ...aiUserTempCache[data.username], ...data };
+                  changed = true;
+                } else if (activeUsers[data.username]) {
+                  activeUsers[data.username].profilePic = data.profilePic;
+                  activeUsers[data.username].statusMessage = data.statusMessage;
+                  activeUsers[data.username].role = data.role;
+                  activeUsers[data.username].pais_idioma = data.pais_idioma;
+                  changed = true;
+                }
               }
+            });
+            if (changed) emitActiveUsers();
+          },
+          (error: any) => {
+            const isRstOrIdle =
+              error?.code === 13 ||
+              error?.code === "13" ||
+              String(error?.message || "").includes("rst_stream") ||
+              String(error?.message || "").includes("RST_STREAM") ||
+              String(error?.message || "").includes("Stream closed") ||
+              String(error?.message || "").includes("UNAVAILABLE") ||
+              String(error?.message || "").includes("listen");
+
+            if (!isRstOrIdle) {
+              console.warn(`[Firestore users listener] Reconectando (${error?.code || 'stream'}), nuevo intento en ${Math.round(usersBackoff / 1000)}s...`);
             }
-          });
-          if (changed) emitActiveUsers();
-        },
-        (error) => {
-          console.error("onSnapshot users error, reconnecting in 5s...", error);
-          setTimeout(setupUsersListener, 5e3);
-        },
-      );
+            // Reconexión silenciosa con backoff exponencial para evitar saturar la consola
+            reconnectTimer = setTimeout(() => {
+              setupUsersListener();
+            }, usersBackoff);
+            usersBackoff = Math.min(maxBackoff, Math.round(usersBackoff * 1.5));
+          },
+        );
+      } catch (err: any) {
+        reconnectTimer = setTimeout(setupUsersListener, usersBackoff);
+        usersBackoff = Math.min(maxBackoff, Math.round(usersBackoff * 1.5));
+      }
     }, "setupUsersListener");
     setupUsersListener();
   }
@@ -1525,9 +1626,9 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         return callback({ success: false, error: "C\xF3digo inv\xE1lido" });
       if (fdb) {
         try {
-          await updateDoc(doc(fdb, "users", username), {
+          await setDoc(doc(fdb, "users", username), {
             password: newPassword,
-          });
+          }, { merge: true });
         } catch (e) {
           console.error("Error password reset", e);
         }
@@ -2300,7 +2401,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
 
       if (fdb) {
          try {
-           await updateDoc(doc(fdb, "users", currentUsername), { lizCoins: activeUsers[currentUsername].lizCoins });
+           await setDoc(doc(fdb, "users", currentUsername), { lizCoins: activeUsers[currentUsername].lizCoins }, { merge: true });
          } catch(e){}
       } else {
          if(fallbackState.users[currentUsername]){
@@ -2332,10 +2433,10 @@ socket.on("buy_decoration", async (data, callback) => {
                 error: "Ya posees esta decoraci\xF3n",
               });
             if (coins >= price) {
-              await updateDoc(uRef, {
+              await setDoc(uRef, {
                 lizCoins: coins - price,
                 ownedDecorations: [...owned, decorationId],
-              });
+              }, { merge: true });
               success = true;
             } else {
 
@@ -2558,10 +2659,10 @@ socket.on("buy_decoration", async (data, callback) => {
       }
       if (fdb) {
         try {
-          await updateDoc(doc(fdb, "users", currentUsername), {
+          await setDoc(doc(fdb, "users", currentUsername), {
             ...profileData,
             updatedAt: serverTimestamp()
-          });
+          }, { merge: true });
         } catch (e) {
           console.error("Error updating user profile in Firebase:", e);
         }
@@ -2580,7 +2681,7 @@ socket.on("buy_decoration", async (data, callback) => {
       
       if (fdb) {
         try {
-          await updateDoc(doc(fdb, "users", currentUsername), { preferred_background: bgUrl });
+          await setDoc(doc(fdb, "users", currentUsername), { preferred_background: bgUrl }, { merge: true });
         } catch (e) {
           console.error("Error setting user background:", e);
         }
@@ -2625,7 +2726,7 @@ socket.on("buy_decoration", async (data, callback) => {
                 success: false,
                 error: "No posees esta decoraci\xF3n",
               });
-            await updateDoc(uRef, { activeDecoration: decorationId });
+            await setDoc(uRef, { activeDecoration: decorationId }, { merge: true });
             success = true;
           }
         } catch (e) {
@@ -2712,11 +2813,10 @@ socket.on("buy_decoration", async (data, callback) => {
           };
           const uRef = doc(fdb, "users", data.targetUser);
           const snap = await getDoc(uRef);
-          if (snap.exists()) {
-              await updateDoc(uRef, {
-                  profileComments: [...(snap.data().profileComments || []), commentObj]
-              });
-          }
+          const currentComments = snap.exists() ? (snap.data().profileComments || []) : [];
+          await setDoc(uRef, {
+              profileComments: [...currentComments, commentObj]
+          }, { merge: true });
           // Notify the target user if online
           const targetSocketId = activeUsers[data.targetUser]?.socketId;
           if (targetSocketId) {
@@ -2759,7 +2859,7 @@ socket.on("buy_decoration", async (data, callback) => {
               isLiked = true;
             }
             newLikes = likedBy.length;
-            await updateDoc(uRef, { profileLikes: newLikes, profileLikedBy: likedBy });
+            await setDoc(uRef, { profileLikes: newLikes, profileLikedBy: likedBy }, { merge: true });
             if (activeUsers[targetUser]) {
               activeUsers[targetUser].profileLikes = newLikes;
               activeUsers[targetUser].profileLikedBy = likedBy;
@@ -2828,9 +2928,9 @@ socket.on("buy_decoration", async (data, callback) => {
       activeUsers[currentUsername].blocked_list = blocked;
       if (fdb) {
         try {
-          await updateDoc(doc(fdb, "users", currentUsername), {
+          await setDoc(doc(fdb, "users", currentUsername), {
             blocked_list: blocked,
-          });
+          }, { merge: true });
         } catch (e) {}
       } else {
         if (fallbackState.users[currentUsername])
@@ -3907,10 +4007,10 @@ socket.on("buy_decoration", async (data, callback) => {
       const target = data.targetUser;
       if (fdb) {
         try {
-          await updateDoc(doc(fdb, "users", target), {
+          await setDoc(doc(fdb, "users", target), {
             role: "dj",
             djSchedule: data.schedule,
-          });
+          }, { merge: true });
         } catch (e) {
           console.error(e);
         }
@@ -4420,7 +4520,7 @@ ${eliMsg.text}`,
             let requests = data.friend_requests || [];
             if (!requests.includes(fromUser)) {
               requests.push(fromUser);
-              await updateDoc(uRef, { friend_requests: requests });
+              await setDoc(uRef, { friend_requests: requests }, { merge: true });
             }
           }
         } catch (e) {
@@ -4465,10 +4565,10 @@ ${eliMsg.text}`,
           requests = requests.filter((r) => r !== targetUser);
           if (!friends.includes(targetUser)) friends.push(targetUser);
           try {
-            await updateDoc(uRef, {
+            await setDoc(uRef, {
               friend_requests: requests,
               friends_list: friends,
-            });
+            }, { merge: true });
           } catch (e) {}
         }
         const tRef = doc(fdb, "users", targetUser);
@@ -4478,7 +4578,7 @@ ${eliMsg.text}`,
           if (!tFriends.includes(currentUsername))
             tFriends.push(currentUsername);
           try {
-            await updateDoc(tRef, { friends_list: tFriends });
+            await setDoc(tRef, { friends_list: tFriends }, { merge: true });
           } catch (e) {}
         }
       } else {
@@ -4511,7 +4611,7 @@ ${eliMsg.text}`,
           let requests = docSnap.data().friend_requests || [];
           requests = requests.filter((r) => r !== targetUser);
           try {
-            await updateDoc(uRef, { friend_requests: requests });
+            await setDoc(uRef, { friend_requests: requests }, { merge: true });
           } catch (e) {}
         }
       } else {
@@ -4534,7 +4634,7 @@ ${eliMsg.text}`,
           let friends = docSnap.data().friends_list || [];
           friends = friends.filter((f) => f !== targetUser);
           try {
-            await updateDoc(uRef, { friends_list: friends });
+            await setDoc(uRef, { friends_list: friends }, { merge: true });
           } catch (e) {}
         }
         const tRef = doc(fdb, "users", targetUser);
@@ -4543,7 +4643,7 @@ ${eliMsg.text}`,
           let tFriends = tSnap.data().friends_list || [];
           tFriends = tFriends.filter((f) => f !== currentUsername);
           try {
-            await updateDoc(tRef, { friends_list: tFriends });
+            await setDoc(tRef, { friends_list: tFriends }, { merge: true });
           } catch (e) {}
         }
       } else {
@@ -4587,7 +4687,7 @@ ${eliMsg.text}`,
             isBanned = true;
           }
           try {
-            await updateDoc(uRef, { blocked_list: blocked });
+            await setDoc(uRef, { blocked_list: blocked }, { merge: true });
           } catch (e) {}
           if (activeUsers[currentUsername])
             activeUsers[currentUsername].blocked_list = blocked;
@@ -4852,7 +4952,7 @@ ${msg.text}`,
         // Deduct token
         activeUsers[currentUsername].lizCoins -= 1;
         if (fdb) {
-           updateDoc(doc(fdb, "users", currentUsername), { lizCoins: activeUsers[currentUsername].lizCoins }).catch(()=>{});
+           setDoc(doc(fdb, "users", currentUsername), { lizCoins: activeUsers[currentUsername].lizCoins }, { merge: true }).catch(()=>{});
         } else {
            if (fallbackState.users[currentUsername]) {
                fallbackState.users[currentUsername].lizCoins = activeUsers[currentUsername].lizCoins;
@@ -5111,12 +5211,12 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
       activeUsers[hostName].lizCoins -= bet;
       if (fdb) {
         try {
-          await updateDoc(doc(fdb, "users", currentUsername), {
+          await setDoc(doc(fdb, "users", currentUsername), {
             lizCoins: activeUsers[currentUsername].lizCoins,
-          });
-          await updateDoc(doc(fdb, "users", hostName), {
+          }, { merge: true });
+          await setDoc(doc(fdb, "users", hostName), {
             lizCoins: activeUsers[hostName].lizCoins,
-          });
+          }, { merge: true });
         } catch (e) {}
       } else {
         if (fallbackState.users[currentUsername])
@@ -5185,14 +5285,14 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
           activeUsers[loserName].elo = Math.max(0, loserElo - eloChange);
         if (fdb) {
           try {
-            await updateDoc(doc(fdb, "users", winnerName), {
+            await setDoc(doc(fdb, "users", winnerName), {
               lizCoins: activeUsers[winnerName]?.lizCoins,
               elo: activeUsers[winnerName]?.elo,
-            });
-            await updateDoc(doc(fdb, "users", loserName), {
+            }, { merge: true });
+            await setDoc(doc(fdb, "users", loserName), {
               lizCoins: activeUsers[loserName]?.lizCoins,
               elo: activeUsers[loserName]?.elo,
-            });
+            }, { merge: true });
           } catch (e) {}
         } else {
           if (fallbackState.users[winnerName]) {
@@ -5214,13 +5314,13 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
         if (fdb) {
           try {
             if (activeUsers[game.host])
-              await updateDoc(doc(fdb, "users", game.host), {
+              await setDoc(doc(fdb, "users", game.host), {
                 lizCoins: activeUsers[game.host].lizCoins,
-              });
+              }, { merge: true });
             if (activeUsers[game.guest])
-              await updateDoc(doc(fdb, "users", game.guest), {
+              await setDoc(doc(fdb, "users", game.guest), {
                 lizCoins: activeUsers[game.guest].lizCoins,
-              });
+              }, { merge: true });
           } catch (e) {}
         } else {
           if (fallbackState.users[game.host] && activeUsers[game.host])
@@ -5264,9 +5364,9 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
       activeUsers[currentUsername].lizCoins -= bet;
       if (fdb) {
         try {
-          await updateDoc(doc(fdb, "users", currentUsername), {
+          await setDoc(doc(fdb, "users", currentUsername), {
             lizCoins: activeUsers[currentUsername].lizCoins,
-          });
+          }, { merge: true });
         } catch (e) {}
       } else {
         if (fallbackState.users[currentUsername])
@@ -5293,18 +5393,18 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
         activeUsers[currentUsername].lizCoins += game.bet * 2;
         if (fdb) {
           try {
-            await updateDoc(doc(fdb, "users", currentUsername), {
+            await setDoc(doc(fdb, "users", currentUsername), {
               lizCoins: activeUsers[currentUsername].lizCoins,
-            });
+            }, { merge: true });
           } catch (e) {}
         }
       } else if (data.result === "draw") {
         activeUsers[currentUsername].lizCoins += game.bet;
         if (fdb) {
           try {
-            await updateDoc(doc(fdb, "users", currentUsername), {
+            await setDoc(doc(fdb, "users", currentUsername), {
               lizCoins: activeUsers[currentUsername].lizCoins,
-            });
+            }, { merge: true });
           } catch (e) {}
         }
       }
@@ -5398,25 +5498,22 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
             // Update User A
             const aRef = doc(fdb, "users", userA);
             const aSnap = await getDoc(aRef);
-            if (aSnap.exists()) {
-              let reqs = (aSnap.data().friend_requests || []).filter((r: string) => r !== userB);
-              let friends = aSnap.data().friends_list || [];
-              if (data.status === 'accepted' && !friends.includes(userB)) {
-                friends.push(userB);
-              }
-              await updateDoc(aRef, { friend_requests: reqs, friends_list: friends });
+            let reqs = (aSnap.exists() ? (aSnap.data().friend_requests || []) : []).filter((r: string) => r !== userB);
+            let friends = aSnap.exists() ? (aSnap.data().friends_list || []) : [];
+            if (data.status === 'accepted' && !friends.includes(userB)) {
+              friends.push(userB);
             }
+            await setDoc(aRef, { friend_requests: reqs, friends_list: friends }, { merge: true });
+            
             // Update User B
             const bRef = doc(fdb, "users", userB);
             const bSnap = await getDoc(bRef);
-            if (bSnap.exists()) {
-              let reqs = (bSnap.data().friend_requests || []).filter((r: string) => r !== userA);
-              let friends = bSnap.data().friends_list || [];
-              if (data.status === 'accepted' && !friends.includes(userA)) {
-                friends.push(userA);
-              }
-              await updateDoc(bRef, { friend_requests: reqs, friends_list: friends });
+            let bReqs = (bSnap.exists() ? (bSnap.data().friend_requests || []) : []).filter((r: string) => r !== userA);
+            let bFriends = bSnap.exists() ? (bSnap.data().friends_list || []) : [];
+            if (data.status === 'accepted' && !bFriends.includes(userA)) {
+              bFriends.push(userA);
             }
+            await setDoc(bRef, { friend_requests: bReqs, friends_list: bFriends }, { merge: true });
           } else {
             // Update in fallbackState
             if (fallbackState.users[userA]) {

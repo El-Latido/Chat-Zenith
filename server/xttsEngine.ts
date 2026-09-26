@@ -922,8 +922,76 @@ export const XTTS_V2_SPEAKERS: Record<string, XttsSpeakerProfile> = {
   }
 };
 
+// Helper para añadir cabecera WAV de 24kHz a los buffers de voz (RIFF/WAVE 44 bytes estándar)
+export function addwavheader(pcmbuffer: Buffer, samplerate = 24000): Buffer {
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + pcmbuffer.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // Mono
+  header.writeUInt32LE(samplerate, 24); // 24000 Hz
+  header.writeUInt32LE(samplerate * 2, 28); // Byte rate (24000 * 2)
+  header.writeUInt16LE(2, 32); // Block align (1 * 16 / 8)
+  header.writeUInt16LE(16, 34); // Bits per sample
+  header.write('data', 36);
+  header.writeUInt32LE(pcmbuffer.length, 40);
+  return Buffer.concat([header, pcmbuffer]);
+}
+export const addWavHeader = addwavheader;
+
+// Convierte matriz o buffer Float32 nativo de XTTS v2 (-1.0 a 1.0) a PCM Int16
+export function convertFloat32ToInt16(floatBuffer: Buffer): Buffer {
+  const numSamples = Math.floor(floatBuffer.length / 4);
+  const int16Buffer = Buffer.alloc(numSamples * 2);
+  for (let i = 0; i < numSamples; i++) {
+    let sample = floatBuffer.readFloatLE(i * 4);
+    if (isNaN(sample)) sample = 0;
+    sample = Math.max(-1, Math.min(1, sample));
+    const intSample = sample < 0 ? Math.floor(sample * 32768) : Math.floor(sample * 32767);
+    int16Buffer.writeInt16LE(Math.max(-32768, Math.min(32767, intSample)), i * 2);
+  }
+  return int16Buffer;
+}
+
+// Procesa cualquier flujo de audio de XTTS v2 para asegurar que sea Int16 PCM a 24000 Hz con cabecera WAV de 44 bytes
+export function processXttsAudioBuffer(rawBuffer: Buffer, targetSampleRate = 24000): Buffer {
+  if (!rawBuffer || rawBuffer.length === 0) {
+    return addwavheader(Buffer.alloc(0), targetSampleRate);
+  }
+  // Si ya es un archivo WAV con cabecera RIFF completa
+  if (rawBuffer.length >= 44 && rawBuffer.toString("ascii", 0, 4) === "RIFF" && rawBuffer.toString("ascii", 8, 12) === "WAVE") {
+    return rawBuffer;
+  }
+
+  // Detectar si el buffer viene como Float32 (múltiplo de 4 bytes con valores en rango float)
+  if (rawBuffer.length >= 8 && rawBuffer.length % 4 === 0) {
+    let isFloat = true;
+    const testSamples = Math.min(30, Math.floor(rawBuffer.length / 4));
+    for (let i = 0; i < testSamples; i++) {
+      const val = rawBuffer.readFloatLE(i * 4);
+      if (isNaN(val) || Math.abs(val) > 2.0) {
+        isFloat = false;
+        break;
+      }
+    }
+    if (isFloat) {
+      const pcm16 = convertFloat32ToInt16(rawBuffer);
+      return addwavheader(pcm16, targetSampleRate);
+    }
+  }
+
+  // Si es PCM Int16 directo
+  return addwavheader(rawBuffer, targetSampleRate);
+}
+
 // Convierte un buffer PCM a un archivo WAV completo con cabecera estándar RIFF de 44 bytes
 export function pcmToWavBuffer(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): Buffer {
+  if (numChannels === 1 && bitsPerSample === 16) {
+    return addwavheader(pcmBuffer, sampleRate);
+  }
   const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
   const blockAlign = (numChannels * bitsPerSample) / 8;
   const subChunk2Size = pcmBuffer.length;
@@ -950,11 +1018,8 @@ export function pcmToWavBuffer(pcmBuffer: Buffer, sampleRate = 24000, numChannel
 export function ensureWavFormat(base64Audio: string, mimeType?: string, sampleRate = 24000): string {
   const cleanBase64 = base64Audio.replace(/^data:audio\/\w+;base64,/, "");
   const buffer = Buffer.from(cleanBase64, "base64");
-  if (buffer.length >= 4 && buffer.toString("ascii", 0, 4) === "RIFF") {
-    return `data:audio/wav;base64,${cleanBase64}`;
-  }
-  const wavBuf = pcmToWavBuffer(buffer, sampleRate);
-  return `data:audio/wav;base64,${wavBuf.toString("base64")}`;
+  const processed = processXttsAudioBuffer(buffer, sampleRate);
+  return `data:audio/wav;base64,${processed.toString("base64")}`;
 }
 
 // Configuración dinámica de Coqui XTTS v2
@@ -1069,13 +1134,22 @@ async function callRemoteXttsServer(
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("audio") || contentType.includes("octet-stream")) {
       const arrayBuf = await res.arrayBuffer();
-      const wavBuffer = Buffer.from(arrayBuf);
+      const rawBuffer = Buffer.from(arrayBuf);
+      const wavBuffer = processXttsAudioBuffer(rawBuffer, 24000);
       return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
     } else {
       const data: any = await res.json().catch(() => ({}));
       if (data?.audio_base64 || data?.audioBase64) {
         const raw = (data.audio_base64 || data.audioBase64).replace(/^data:audio\/\w+;base64,/, "");
-        const wavBuffer = Buffer.from(raw, "base64");
+        const rawBuffer = Buffer.from(raw, "base64");
+        const wavBuffer = processXttsAudioBuffer(rawBuffer, 24000);
+        return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
+      } else if (Array.isArray(data?.audio)) {
+        // Matriz de float32 directa desde XTTS v2 en Python
+        const floatBuf = Buffer.alloc(data.audio.length * 4);
+        data.audio.forEach((val: number, idx: number) => floatBuf.writeFloatLE(val, idx * 4));
+        const pcm16 = convertFloat32ToInt16(floatBuf);
+        const wavBuffer = addwavheader(pcm16, 24000);
         return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
       }
     }

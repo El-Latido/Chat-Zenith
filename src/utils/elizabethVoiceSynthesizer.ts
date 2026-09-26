@@ -1047,6 +1047,33 @@ export function isSpeaking(): boolean {
   return isAudioSpeaking || isSynthSpeaking;
 }
 
+// Helper frontend para añadir cabecera WAV estándar de 24kHz (RIFF 44 bytes) a buffers de voz
+export function addwavheader(pcmbuffer: Uint8Array, samplerate = 24000): Uint8Array {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + pcmbuffer.byteLength, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, samplerate, true); // 24000 Hz
+  view.setUint32(28, samplerate * 2, true); // Byte rate
+  view.setUint16(32, 2, true); // Block align
+  view.setUint16(34, 16, true); // 16 bits
+  writeString(36, 'data');
+  view.setUint32(40, pcmbuffer.byteLength, true);
+
+  const result = new Uint8Array(44 + pcmbuffer.byteLength);
+  result.set(new Uint8Array(header), 0);
+  result.set(pcmbuffer, 44);
+  return result;
+}
+
 /**
  * Función Principal para hablar un mensaje de Elizabeth:
  * 1. Invoca el motor Coqui XTTS v2 con audio MP3 humano en español
@@ -1097,7 +1124,20 @@ export async function speakElizabethMessage(
     });
 
     const data = await res.json();
-    if (data?.success && data.audioBase64 && data.audioBase64.length > 500 && (data.audioBase64.startsWith("data:audio/mp3") || data.audioBase64.startsWith("data:audio/mpeg"))) {
+    if (
+      data?.success &&
+      data.audioBase64 &&
+      data.audioBase64.length > 100 &&
+      (
+        data.audioBase64.startsWith("data:audio/wav") ||
+        data.audioBase64.startsWith("data:audio/wave") ||
+        data.audioBase64.startsWith("data:audio/x-wav") ||
+        data.audioBase64.startsWith("data:audio/mp3") ||
+        data.audioBase64.startsWith("data:audio/mpeg") ||
+        data.audioBase64.startsWith("data:audio/ogg")
+      )
+    ) {
+      // Reproducir mediante Audio nativo decodificando audio/wav a 24 kHz sin saturación
       const audio = new Audio(data.audioBase64);
       audio.volume = Math.max(0, Math.min(1, config.volume));
 
