@@ -314,7 +314,13 @@ export async function applyVoiceEffect(
     return audioBlob;
   }
 
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+  let audioContext: AudioContext;
+  try {
+    audioContext = new AudioCtxClass({ sampleRate: 24000 });
+  } catch (_) {
+    audioContext = new AudioCtxClass();
+  }
   const arrayBuffer = await audioBlob.arrayBuffer();
   const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
 

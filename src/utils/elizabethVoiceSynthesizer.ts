@@ -940,8 +940,106 @@ export function sanitizeTextForSpeech(rawText: string): string {
     .trim();
 }
 
+// Gestor de audio global para prevenir mezclas de voz y peticiones solapadas
+export let currentAudio: HTMLAudioElement | null = null;
+export let currentAbortController: AbortController | null = null;
 let activeAudioElement: HTMLAudioElement | null = null;
 let currentSpeakingCallbacks: { onStart?: () => void; onEnd?: () => void; onError?: (err?: any) => void; } | null = null;
+
+/**
+ * Gestor global de vista previa de voces para evitar solapamientos y mezclas de sonido.
+ * Cancela cualquier petición anterior con AbortController y detiene el audio previo.
+ */
+export async function playVoicePreview(
+  text: string,
+  speakerId: string,
+  callbacks?: {
+    onStart?: () => void;
+    onEnd?: () => void;
+    onError?: (err: any) => void;
+  }
+): Promise<void> {
+  // A. Detener el audio que esté sonando actualmente
+  if (currentAudio) {
+    try {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      currentAudio.src = '';
+    } catch (_) {}
+    currentAudio = null;
+  }
+  if (activeAudioElement) {
+    try {
+      activeAudioElement.pause();
+      activeAudioElement.currentTime = 0;
+      activeAudioElement.src = '';
+    } catch (_) {}
+    activeAudioElement = null;
+  }
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (_) {}
+  }
+
+  // B. Cancelar la petición de red anterior si aún estaba cargando
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+  currentAbortController = new AbortController();
+
+  try {
+    const response = await fetch('/api/voice-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, speakerId }),
+      signal: currentAbortController.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Error en servidor de audio: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    // Decodificar con formato audio/wav nativo de 24 kHz
+    const wavBlob = blob.type.includes('wav') ? blob : new Blob([blob], { type: 'audio/wav' });
+    const audioUrl = URL.createObjectURL(wavBlob);
+
+    // C. Instanciar y reproducir la nueva voz de forma aislada
+    currentAudio = new Audio(audioUrl);
+    activeAudioElement = currentAudio;
+
+    currentAudio.onplay = () => {
+      callbacks?.onStart?.();
+    };
+
+    currentAudio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      if (currentAudio === activeAudioElement) {
+        activeAudioElement = null;
+      }
+      currentAudio = null;
+      callbacks?.onEnd?.();
+    };
+
+    currentAudio.onerror = (e) => {
+      URL.revokeObjectURL(audioUrl);
+      if (currentAudio === activeAudioElement) {
+        activeAudioElement = null;
+      }
+      currentAudio = null;
+      callbacks?.onError?.(e);
+    };
+
+    await currentAudio.play();
+  } catch (error: any) {
+    if (error?.name !== 'AbortError') {
+      console.error('Error al reproducir voz:', error);
+      callbacks?.onError?.(error);
+      speakWithBrowserSpeech(text, speakerId, 1.0, 1.0, 1.0, callbacks);
+    }
+  }
+}
 
 /**
  * Síntesis de voz humana mediante Web Speech API (Garantiza locución natural en español en cualquier dispositivo)
@@ -1017,6 +1115,22 @@ export function speakWithBrowserSpeech(
 }
 
 export function stopSpeaking(): void {
+  if (currentAbortController) {
+    try {
+      currentAbortController.abort();
+    } catch (_) {}
+    currentAbortController = null;
+  }
+
+  if (currentAudio) {
+    try {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      currentAudio.src = '';
+    } catch (e) {}
+    currentAudio = null;
+  }
+
   if (activeAudioElement) {
     try {
       activeAudioElement.pause();
@@ -1042,7 +1156,7 @@ export function stopSpeaking(): void {
 }
 
 export function isSpeaking(): boolean {
-  const isAudioSpeaking = !!(activeAudioElement && !activeAudioElement.paused);
+  const isAudioSpeaking = !!((currentAudio && !currentAudio.paused) || (activeAudioElement && !activeAudioElement.paused));
   const isSynthSpeaking = typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.speaking;
   return isAudioSpeaking || isSynthSpeaking;
 }
@@ -1097,6 +1211,7 @@ export async function speakElizabethMessage(
 
   // Detener locuciones anteriores
   stopSpeaking();
+  currentAbortController = new AbortController();
 
   const config: ElizabethVoiceConfig = {
     ...getSavedElizabethVoiceConfig(),
@@ -1110,8 +1225,10 @@ export async function speakElizabethMessage(
     const res = await fetch("/api/ai/synthesize_voice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: currentAbortController.signal,
       body: JSON.stringify({
         text: cleanText,
+        speakerId: config.archetypeId,
         archetypeId: config.archetypeId,
         mimicUsername: config.mimicUsername,
         pitch: config.pitch,
@@ -1147,22 +1264,28 @@ export async function speakElizabethMessage(
 
       audio.onended = () => {
         activeAudioElement = null;
+        currentAudio = null;
         callbacks?.onEnd?.();
       };
 
       audio.onerror = (err) => {
         console.warn("Fallo reproducción de audio del servidor, usando voz nativa humana:", err);
         activeAudioElement = null;
+        currentAudio = null;
         speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
       };
 
       activeAudioElement = audio;
+      currentAudio = audio;
       await audio.play();
       return true;
     } else {
       return speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      return false;
+    }
     console.warn("Fallo endpoint de voz, usando voz nativa humana:", err);
     return speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
   }

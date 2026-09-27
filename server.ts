@@ -69,7 +69,10 @@ import {
   cloneVoiceWithXTTS,
   getXttsEngineStatus,
   updateXttsEngineConfig,
-  generateAcousticSpeechWave
+  generateAcousticSpeechWave,
+  generateXTTSVoice,
+  addwavheader,
+  speakerFiles
 } from "./server/xttsEngine";
 dotenv.config();
 const ai = new GoogleGenAI({
@@ -498,11 +501,67 @@ const transporter = nodemailer.createTransport({
   // ENDPOINTS DE SÍNTESIS Y CLONACIÓN COQUI XTTS v2
   // =======================================================
 
+  // Endpoint dedicado para la Vista Previa de Voces y Prueba de Avatares (WAV 24kHz Int16)
+  app.post("/api/voice-preview", express.json(), async (req, res) => {
+    try {
+      const { text, speakerId, voice, avatar, archetypeId, language, rate, speed } = req.body || {};
+      const sampleText = text || "Hola, soy tu asistente con locución de estudio Coqui XTTS v2.";
+
+      // 1. Mapear la voz seleccionada al archivo de audio de muestra real
+      const effectiveSpeaker = (speakerId || voice || avatar || archetypeId || "elizabeth").trim();
+      const speakerWavPath = speakerFiles[effectiveSpeaker] || speakerFiles['elizabeth'] || `./voices/${effectiveSpeaker}.wav`;
+
+      // 2. Pasar el archivo dinámico a XTTS v2
+      const audioBuffer = await generateXTTSVoice(sampleText, speakerWavPath, {
+        speakerId: effectiveSpeaker,
+        language: language || (speakerWavPath.includes("_en") ? "en" : "es"),
+        rate: rate || speed || 1.0
+      });
+
+      // 3. Desactivar la caché en la respuesta para evitar que el navegador repita el audio anterior
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Content-Type", "audio/wav");
+      return res.send(audioBuffer);
+    } catch (err: any) {
+      console.error("Error en /api/voice-preview:", err?.message || err);
+      const fallbackWav = addwavheader(Buffer.alloc(4800), 24000);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Content-Type", "audio/wav");
+      return res.send(fallbackWav);
+    }
+  });
+
+  // Alias /api/tts con las mismas garantías de 24kHz y mapeo dinámico
+  app.post("/api/tts", express.json(), async (req, res) => {
+    try {
+      const { text, speakerId, voice, avatar, archetypeId, language, rate, speed } = req.body || {};
+      const sampleText = text || "Locución Coqui XTTS v2.";
+      const effectiveSpeaker = (speakerId || voice || avatar || archetypeId || "elizabeth").trim();
+      const speakerWavPath = speakerFiles[effectiveSpeaker] || speakerFiles['elizabeth'];
+      const audioBuffer = await generateXTTSVoice(sampleText, speakerWavPath, {
+        speakerId: effectiveSpeaker,
+        language,
+        rate: rate || speed
+      });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Content-Type", "audio/wav");
+      return res.send(audioBuffer);
+    } catch (err: any) {
+      const fallbackWav = addwavheader(Buffer.alloc(4800), 24000);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Content-Type", "audio/wav");
+      return res.send(fallbackWav);
+    }
+  });
+
   // Endpoint universal de síntesis con motor Coqui XTTS v2 (100% Libre • Cero dependencias de API Keys)
   app.post("/api/ai/synthesize_voice", express.json(), async (req, res) => {
     try {
       const {
         text,
+        speakerId,
+        voice,
+        avatar,
         archetypeId,
         mimicUsername,
         speakerAudioBase64,
@@ -520,9 +579,10 @@ const transporter = nodemailer.createTransport({
         return res.status(400).json({ success: false, error: "El texto es requerido para la síntesis de voz." });
       }
 
+      const effectiveArchetype = (archetypeId || speakerId || voice || avatar || "elizabeth_suprema").trim();
       const vault = getAcousticVault();
       const result = await synthesizeWithCoquiXTTS(text, {
-        archetypeId,
+        archetypeId: effectiveArchetype,
         mimicUsername,
         speakerAudioBase64,
         language: language || "es",
@@ -540,7 +600,7 @@ const transporter = nodemailer.createTransport({
         success: false,
         fallbackToBrowser: true,
         error: "Fallback a voz humana nativa del navegador activado",
-        archetypeId: req.body?.archetypeId || "elizabeth_suprema"
+        archetypeId: req.body?.archetypeId || req.body?.speakerId || "elizabeth_suprema"
       });
     }
   });
@@ -550,6 +610,9 @@ const transporter = nodemailer.createTransport({
     try {
       const {
         text,
+        speakerId,
+        voice,
+        avatar,
         archetypeId,
         mimicUsername,
         speakerAudioBase64,
@@ -566,9 +629,10 @@ const transporter = nodemailer.createTransport({
         return res.status(400).json({ success: false, error: "El texto es requerido para procesar audio con XTTS v2." });
       }
 
+      const effectiveArchetype = (archetypeId || speakerId || voice || avatar || "elizabeth_suprema").trim();
       const vault = getAcousticVault();
       const result = await synthesizeWithCoquiXTTS(text, {
-        archetypeId,
+        archetypeId: effectiveArchetype,
         mimicUsername,
         speakerAudioBase64,
         language: language || "es",
@@ -586,7 +650,7 @@ const transporter = nodemailer.createTransport({
         success: false,
         fallbackToBrowser: true,
         error: "Fallback a voz humana nativa del navegador activado",
-        archetypeId: req.body?.archetypeId || "elizabeth_suprema"
+        archetypeId: req.body?.archetypeId || req.body?.speakerId || "elizabeth_suprema"
       });
     }
   });

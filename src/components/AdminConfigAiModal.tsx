@@ -41,6 +41,7 @@ import {
   saveElizabethVoiceConfig,
   speakElizabethMessage,
   stopSpeaking,
+  playVoicePreview,
   isSpeaking,
   VoiceEvolutionState,
   VoiceEvolutionLog,
@@ -493,7 +494,8 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
     }
     const phrase = phraseOverride || testPhrase;
     setIsPlayingVoice(true);
-    speakElizabethMessage(phrase, voiceConfig, {
+    setPreviewingVoiceId(voiceConfig.archetypeId);
+    playVoicePreview(phrase, voiceConfig.archetypeId, {
       onStart: () => setIsPlayingVoice(true),
       onEnd: () => {
         setIsPlayingVoice(false);
@@ -519,7 +521,7 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
     const phrase = phraseOverride || (speaker ? getVoiceSamplePhrase(speaker) : `Hola, soy Elizabeth con locución de estudio Coqui XTTS v2.`);
     setIsPlayingVoice(true);
     setPreviewingVoiceId(archetypeId);
-    speakElizabethMessage(phrase, { ...voiceConfig, archetypeId, engine: 'xtts_v2' }, {
+    playVoicePreview(phrase, archetypeId, {
       onStart: () => setIsPlayingVoice(true),
       onEnd: () => {
         setIsPlayingVoice(false);
