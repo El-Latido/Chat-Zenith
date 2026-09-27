@@ -35,7 +35,7 @@ export async function deployToHuggingFaceSpace(
 
   // 2. Recolectar archivos del proyecto Chat-Liz
   const rootDir = process.cwd();
-  const allowedRoots = new Set(["src", "public", "server"]);
+  const allowedRoots = new Set(["src", "public", "server", "voices"]);
   const allowedRootFiles = new Set([
     "Dockerfile",
     "README.md",

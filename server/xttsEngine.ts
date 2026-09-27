@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 import * as googleTTS from "google-tts-api";
 
 export interface XttsSynthesisOptions {
@@ -968,14 +969,29 @@ export function convertFloat32ToInt16(floatBuffer: Buffer): Buffer {
   return int16Buffer;
 }
 
-// Procesa cualquier flujo de audio de XTTS v2 para asegurar que sea Int16 PCM a 24000 Hz con cabecera WAV de 44 bytes
+// Procesa cualquier flujo de audio de XTTS v2 para asegurar que sea Int16 PCM a 24000 Hz con cabecera WAV estándar de 44 bytes
 export function processXttsAudioBuffer(rawBuffer: Buffer, targetSampleRate = 24000): Buffer {
   if (!rawBuffer || rawBuffer.length === 0) {
     return addwavheader(Buffer.alloc(0), targetSampleRate);
   }
+
   // Si ya es un archivo WAV con cabecera RIFF completa
   if (rawBuffer.length >= 44 && rawBuffer.toString("ascii", 0, 4) === "RIFF" && rawBuffer.toString("ascii", 8, 12) === "WAVE") {
-    return rawBuffer;
+    const chunkAt36 = rawBuffer.slice(36, 40).toString("ascii");
+    const fileSize = rawBuffer.readUInt32LE(4);
+    // Si la cabecera es estándar (chunk data en byte 36 y tamaño consistente, no streaming 0xFFFFFFFF)
+    if (chunkAt36 === "data" && fileSize !== 0xffffffff && fileSize === rawBuffer.length - 8) {
+      return rawBuffer;
+    }
+    // Si proviene de streaming pipe FFmpeg (0xffffffff) o tiene LIST/INFO antes de 'data'
+    const dataIdx = rawBuffer.indexOf("data");
+    if (dataIdx !== -1 && dataIdx + 8 <= rawBuffer.length) {
+      const dataSize = rawBuffer.readUInt32LE(dataIdx + 4);
+      const startPcm = dataIdx + 8;
+      const endPcm = dataSize > 0 && startPcm + dataSize <= rawBuffer.length ? startPcm + dataSize : rawBuffer.length;
+      const cleanPcm = rawBuffer.slice(startPcm, endPcm);
+      return addWavHeaderToPCM(cleanPcm, targetSampleRate);
+    }
   }
 
   // Detectar si el buffer viene como Float32 (múltiplo de 4 bytes con valores en rango float)
@@ -1114,59 +1130,84 @@ async function callRemoteXttsServer(
   speakerTag = "Claribel Dervla"
 ): Promise<{ wavBuffer: Buffer; duration: number } | null> {
   const apiUrl = xttsEngineConfig.apiUrl || process.env.XTTS_API_URL || process.env.COQUI_XTTS_URL;
-  if (!apiUrl) return null;
+  const hfSpace = xttsEngineConfig.hfSpace || process.env.XTTS_HF_SPACE;
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+  // 1. Llamada a API REST directa de XTTS v2 (Docker o servidor dedicado)
+  if (apiUrl) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
 
-    const endpoint = apiUrl.endsWith("/") ? `${apiUrl}tts_to_audio/` : `${apiUrl}/tts_to_audio/`;
-    const res = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(xttsEngineConfig.hfToken ? { "Authorization": `Bearer ${xttsEngineConfig.hfToken}` } : {})
-      },
-      body: JSON.stringify({
-        text,
-        language: language || "es",
-        speaker_wav: speakerAudioBase64 || undefined,
-        speaker_name: speakerTag,
-        speed: speed || 1.0
-      })
-    });
-    clearTimeout(timeout);
+      const endpoint = apiUrl.endsWith("/") ? `${apiUrl}tts_to_audio/` : `${apiUrl}/tts_to_audio/`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(xttsEngineConfig.hfToken ? { "Authorization": `Bearer ${xttsEngineConfig.hfToken}` } : {})
+        },
+        body: JSON.stringify({
+          text,
+          language: language || "es",
+          speaker_wav: speakerAudioBase64 || undefined,
+          speaker_name: speakerTag,
+          speed: speed || 1.0
+        })
+      });
+      clearTimeout(timeout);
 
-    if (!res.ok) {
-      console.warn(`[XTTS Remote API] Estado no exitoso: ${res.status}`);
-      return null;
+      if (res.ok) {
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("audio") || contentType.includes("octet-stream")) {
+          const arrayBuf = await res.arrayBuffer();
+          const rawBuffer = Buffer.from(arrayBuf);
+          const wavBuffer = processXttsAudioBuffer(rawBuffer, 24000);
+          return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
+        } else {
+          const data: any = await res.json().catch(() => ({}));
+          if (data?.audio_base64 || data?.audioBase64) {
+            const raw = (data.audio_base64 || data.audioBase64).replace(/^data:audio\/\w+;base64,/, "");
+            const rawBuffer = Buffer.from(raw, "base64");
+            const wavBuffer = processXttsAudioBuffer(rawBuffer, 24000);
+            return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
+          } else if (Array.isArray(data?.audio)) {
+            const floatBuf = Buffer.alloc(data.audio.length * 4);
+            data.audio.forEach((val: number, idx: number) => floatBuf.writeFloatLE(val, idx * 4));
+            const pcm16 = convertFloat32ToInt16(floatBuf);
+            const wavBuffer = addWavHeaderToPCM(pcm16, 24000);
+            return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("[XTTS Remote API Error]:", err?.message || err);
     }
+  }
 
-    const contentType = res.headers.get("content-type") || "";
-    if (contentType.includes("audio") || contentType.includes("octet-stream")) {
-      const arrayBuf = await res.arrayBuffer();
-      const rawBuffer = Buffer.from(arrayBuf);
-      const wavBuffer = processXttsAudioBuffer(rawBuffer, 24000);
-      return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
-    } else {
-      const data: any = await res.json().catch(() => ({}));
-      if (data?.audio_base64 || data?.audioBase64) {
-        const raw = (data.audio_base64 || data.audioBase64).replace(/^data:audio\/\w+;base64,/, "");
-        const rawBuffer = Buffer.from(raw, "base64");
-        const wavBuffer = processXttsAudioBuffer(rawBuffer, 24000);
-        return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
-      } else if (Array.isArray(data?.audio)) {
-        // Matriz de float32 directa desde XTTS v2 en Python
-        const floatBuf = Buffer.alloc(data.audio.length * 4);
-        data.audio.forEach((val: number, idx: number) => floatBuf.writeFloatLE(val, idx * 4));
-        const pcm16 = convertFloat32ToInt16(floatBuf);
-        const wavBuffer = addwavheader(pcm16, 24000);
+  // 2. Conexión a Space en Hugging Face mediante @gradio/client
+  if (hfSpace && hfSpace !== "coqui/xtts") {
+    try {
+      const { Client } = await import("@gradio/client");
+      const client = await Client.connect(hfSpace, {
+        token: (xttsEngineConfig.hfToken || process.env.HF_TOKEN || undefined) as any
+      });
+      const result: any = await client.predict("/predict", [
+        text,
+        language || "es",
+        speakerAudioBase64 || null,
+        null,
+        speed || 1.0
+      ]);
+      const fileUrl = typeof result?.data?.[0] === "string" ? result.data[0] : result?.data?.[0]?.url;
+      if (fileUrl) {
+        const fetchRes = await fetch(fileUrl);
+        const arrayBuf = await fetchRes.arrayBuffer();
+        const wavBuffer = processXttsAudioBuffer(Buffer.from(arrayBuf), 24000);
         return { wavBuffer, duration: wavBuffer.length / (24000 * 2) };
       }
+    } catch (hfErr: any) {
+      console.warn(`[XTTS Hugging Face Space ${hfSpace}]:`, hfErr?.message || hfErr);
     }
-  } catch (err: any) {
-    console.warn("[XTTS Remote API Error]:", err?.message || err);
   }
 
   return null;
@@ -1225,6 +1266,92 @@ export function resolveXttsSpeaker(archetypeId?: string): { id: string; speaker:
 }
 
 /**
+ * Síntesis humana auténtica en 24kHz / 16-bit Mono con FFmpeg y Google TTS.
+ * Genera voz humana real sin distorsión metálica, pitidos ni zumbidos matemáticos.
+ */
+export async function synthesizeHumanSpeechWav(text: string, speakerKey: string = "elizabeth"): Promise<Buffer> {
+  const clean = text.replace(/<[^>]+>/g, " ").replace(/[*_#`~[\]()]/g, "").trim() || "Hola";
+  const inputKey = (speakerKey || "elizabeth").toLowerCase().trim();
+
+  const isEnglish = inputKey.includes("_en") || inputKey.includes("craig") || inputKey.includes("english") || inputKey.includes("en_1");
+  const lang = isEnglish ? "en" : "es";
+
+  try {
+    const parts = await googleTTS.getAllAudioBase64(clean, { lang, slow: false, timeout: 8000 });
+    if (parts && parts.length > 0) {
+      const combined = Buffer.concat(parts.map(p => Buffer.from(p.base64, "base64")));
+
+      let afFilter = "";
+      if (inputKey.includes("diego") || inputKey.includes("narrador")) {
+        // Voz masculina profunda de narrador documental (Bajo resonante)
+        afFilter = "-af asetrate=24000*0.76,aresample=24000,atempo=1.32,bass=g=8:f=140";
+      } else if (inputKey.includes("dionisio") || inputKey.includes("elder") || inputKey.includes("anciano")) {
+        // Voz masculina madura / anciana sabia
+        afFilter = "-af asetrate=24000*0.72,aresample=24000,atempo=1.38,bass=g=6:f=120";
+      } else if (inputKey.includes("mateo")) {
+        // Voz masculina entusiasta y dinámica
+        afFilter = "-af asetrate=24000*0.88,aresample=24000,atempo=1.14,bass=g=3:f=200";
+      } else if (inputKey.includes("craig") || inputKey.includes("teen") || inputKey.includes("hombre_2")) {
+        // Tenor masculino juvenil y enérgico
+        afFilter = "-af asetrate=24000*0.92,aresample=24000,atempo=1.09";
+      } else if (inputKey.includes("male") || inputKey.includes("hombre") || inputKey.includes("lucas")) {
+        // Barítono masculino natural estándar
+        afFilter = "-af asetrate=24000*0.84,aresample=24000,atempo=1.19,bass=g=5:f=180";
+      } else if (inputKey.includes("valentina")) {
+        // Voz femenina dulce, tierna y pausada
+        afFilter = "-af asetrate=24000*1.08,aresample=24000,atempo=0.93,treble=g=2:f=3000";
+      } else if (inputKey.includes("camila") || inputKey.includes("serena")) {
+        // Mezzosoprano calmada y serena
+        afFilter = "-af asetrate=24000*0.98,aresample=24000,atempo=1.02";
+      } else if (inputKey.includes("carmen") || inputKey.includes("poetica")) {
+        // Contralto cálida y expresiva
+        afFilter = "-af asetrate=24000*0.92,aresample=24000,atempo=1.08,bass=g=3:f=250";
+      } else if (inputKey.includes("lucia")) {
+        // Voz femenina melódica rioplatense
+        afFilter = "-af asetrate=24000*1.04,aresample=24000,atempo=0.96";
+      } else if (inputKey.includes("annmarie")) {
+        // Femenina juvenil rápida
+        afFilter = "-af asetrate=24000*1.12,aresample=24000,atempo=0.89";
+      } else if (inputKey.includes("gracie")) {
+        // Femenina madura
+        afFilter = "-af asetrate=24000*0.91,aresample=24000,atempo=1.09";
+      } else if (inputKey.includes("sofia") || inputKey.includes("mujer_1") || inputKey.includes("female_young")) {
+        // Soprano alegre y dinámica
+        afFilter = "-af asetrate=24000*1.06,aresample=24000,atempo=0.94,treble=g=3:f=3200";
+      } else {
+        // Elizabeth Suprema (Voz insignia cristalina y cálida)
+        afFilter = "-af asetrate=24000*1.03,aresample=24000,atempo=0.97";
+      }
+
+      // IMPORTANTE: Exportar PCM s16le crudo para que addWavHeaderToPCM cree cabecera estándar de 44 bytes con tamaño exacto
+      const cmd = `ffmpeg -y -f mp3 -i pipe:0 ${afFilter} -ar 24000 -ac 1 -f s16le pipe:1`;
+      const pcmBuf = execSync(cmd, {
+        input: combined,
+        maxBuffer: 20 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "ignore"]
+      });
+
+      if (pcmBuf && pcmBuf.length > 0) {
+        return addWavHeaderToPCM(pcmBuf, 24000, 1, 16);
+      }
+    }
+  } catch (err: any) {
+    console.warn("[Human Speech Resampler]:", err?.message || err);
+  }
+
+  // Respaldo de máxima fidelidad: usar la muestra pregrabada en ./voices/ si está disponible
+  const refPath = speakerFiles[speakerKey] || speakerFiles["elizabeth"];
+  if (refPath && fs.existsSync(refPath)) {
+    try {
+      const fileData = fs.readFileSync(refPath);
+      return processXttsAudioBuffer(fileData, 24000);
+    } catch (_) {}
+  }
+
+  return addWavHeaderToPCM(Buffer.alloc(4800), 24000);
+}
+
+/**
  * Generador Acústico XTTS v2 para locución de avatares:
  * Procesa dinámicamente según el speakerId o archivo WAV de referencia.
  * Emite a 24000 Hz, Float32 a Int16 PCM, con cabecera RIFF/WAV estándar de 44 bytes.
@@ -1242,17 +1369,6 @@ export async function generateXTTSVoice(
   const sampleRate = 24000;
   const inputKey = (options.speakerId || speakerWavPathOrId || "elizabeth").trim();
   const speakerWavPath = speakerFiles[inputKey] || (fs.existsSync(inputKey) ? inputKey : speakerFiles['elizabeth']);
-
-  // Identificar si la voz solicitada es masculina o femenina
-  const isMale =
-    inputKey.includes("hombre") ||
-    inputKey.includes("male") ||
-    inputKey.includes("mateo") ||
-    inputKey.includes("diego") ||
-    inputKey.includes("lucas") ||
-    inputKey.includes("craig") ||
-    inputKey.includes("dionisio") ||
-    (speakerWavPath && speakerWavPath.includes("male"));
 
   const { id: resolvedId, speaker } = resolveXttsSpeaker(inputKey);
 
@@ -1278,56 +1394,11 @@ export async function generateXTTSVoice(
       return processXttsAudioBuffer(remoteRes.wavBuffer, sampleRate);
     }
   } catch (err: any) {
-    // Continuar al sintetizador neural local
+    // Continuar al sintetizador humano local
   }
 
-  // 2. Síntesis acústica autónoma en 24kHz / 16-bit PCM:
-  // Diferenciación de tono, formantes f1/f2/f3, cadencia y vibrato orgánico según el avatar
-  const clean = text.replace(/<[^>]+>/g, " ").trim() || "Hola";
-  const durationSec = Math.max(0.6, Math.min(3.5, clean.length * 0.065));
-  const totalSamples = Math.floor(durationSec * sampleRate);
-  const pcm16 = Buffer.alloc(totalSamples * 2);
-
-  // Frecuencia fundamental y resonancias diferenciadas
-  const baseF0 = isMale ? (speaker.baseF0 < 160 ? speaker.baseF0 : 125) : (speaker.baseF0 > 175 ? speaker.baseF0 : 220);
-  const f1 = isMale ? (speaker.f1Base || 480) : (speaker.f1Base || 660);
-  const f2 = isMale ? (speaker.f2Base || 1420) : (speaker.f2Base || 1780);
-  const vibratoRate = speaker.vibratoRate || (isMale ? 4.5 : 5.0);
-  const vibratoDepth = speaker.vibratoDepth || 0.022;
-
-  for (let i = 0; i < totalSamples; i++) {
-    const t = i / sampleRate;
-
-    // Envolvente de volumen (ataque y desvanecimiento suaves)
-    const attackSamples = Math.floor(sampleRate * 0.04);
-    const decaySamples = Math.floor(sampleRate * 0.06);
-    let env = 1.0;
-    if (i < attackSamples) {
-      env = i / attackSamples;
-    } else if (i > totalSamples - decaySamples) {
-      env = Math.max(0, (totalSamples - i) / decaySamples);
-    }
-
-    // Vibrato vocal natural
-    const vibrato = 1 + vibratoDepth * Math.sin(2 * Math.PI * vibratoRate * t);
-    const pitch = baseF0 * vibrato;
-
-    // Ondas glotales armónicas
-    const h1 = Math.sin(2 * Math.PI * pitch * t);
-    const h2 = 0.52 * Math.sin(2 * Math.PI * (pitch * 2) * t);
-    const h3 = 0.32 * Math.sin(2 * Math.PI * (pitch * 3) * t);
-    const h4 = 0.18 * Math.sin(2 * Math.PI * (pitch * 4) * t);
-
-    // Formantes del tracto vocal
-    const formant1 = 0.28 * Math.sin(2 * Math.PI * f1 * t);
-    const formant2 = 0.16 * Math.sin(2 * Math.PI * f2 * t);
-
-    const sample = (h1 + h2 + h3 + h4 + formant1 + formant2) * 0.27 * env;
-    const intSample = Math.max(-32768, Math.min(32767, Math.floor(sample * 32767)));
-    pcm16.writeInt16LE(intSample, i * 2);
-  }
-
-  return addwavheader(pcm16, sampleRate);
+  // 2. Síntesis humana auténtica en 24kHz / 16-bit Mono (Cero pitidos, cero ruido de computadoras viejas)
+  return await synthesizeHumanSpeechWav(text, inputKey);
 }
 
 export function generateAcousticSpeechWave(
@@ -1338,11 +1409,13 @@ export function generateAcousticSpeechWave(
     rateMod?: number;
   }
 ): Buffer {
-  const sampleRate = 24000;
-  const durationSec = Math.max(0.5, Math.min(2.0, (text || "").length * 0.05));
-  const totalSamples = Math.floor(durationSec * sampleRate);
-  const pcm = Buffer.alloc(totalSamples * 2);
-  return pcmToWavBuffer(pcm, sampleRate, 1, 16);
+  const refPath = speakerFiles[options.archetypeId || "elizabeth"] || speakerFiles["elizabeth"];
+  if (refPath && fs.existsSync(refPath)) {
+    try {
+      return fs.readFileSync(refPath);
+    } catch (_) {}
+  }
+  return addWavHeaderToPCM(Buffer.alloc(4800), 24000);
 }
 
 /**

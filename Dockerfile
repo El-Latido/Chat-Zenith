@@ -1,7 +1,7 @@
 FROM node:22-alpine
 
 # Instalar utilidades del sistema
-RUN apk add --no-cache python3 git
+RUN apk add --no-cache python3 git ffmpeg
 
 # Configurar permisos para Hugging Face (requiere que la app corra con permisos seguros, no root)
 RUN mkdir -p /app && chown -R node:node /app
