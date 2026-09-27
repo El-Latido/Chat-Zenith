@@ -241,8 +241,17 @@ async function saveVaultToStorage() {
 
   if (dbRef) {
     try {
+      // Sanitizar perfiles para no superar el límite de 1MB por documento de Firestore
+      const sanitizedProfiles: Record<string, any> = {};
+      for (const [key, profile] of Object.entries(acousticVaultCache)) {
+        sanitizedProfiles[key] = {
+          ...profile,
+          lastSampleSnippet: profile.lastSampleSnippet ? profile.lastSampleSnippet.slice(0, 500) : undefined
+        };
+      }
+
       await setDoc(doc(dbRef, "system_settings", "elizabeth_voice_vault"), {
-        profiles: acousticVaultCache,
+        profiles: sanitizedProfiles,
         settings: voiceSettingsCache,
         updatedAt: Date.now()
       }, { merge: true });

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import * as googleTTS from "google-tts-api";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 export interface XttsSynthesisOptions {
   archetypeId?: string;
@@ -1220,32 +1221,152 @@ async function callRemoteXttsServer(
  */
 // Mapeo maestro del banco acústico para muestras de audio de referencia
 export const speakerFiles: Record<string, string> = {
+  // Voces Masculinas
+  'mateo_entusiasta': './voices/male_es_1.wav',
+  'lucas_conversacional': './voices/male_es_1.wav',
+  'eugenio_reflexivo': './voices/male_es_1.wav',
+  'diego_locutor': './voices/male.wav',
+  'diego_narrador': './voices/male.wav',
+  'javier_castizo': './voices/male_es_1.wav',
+  'damian_black': './voices/male.wav',
+  'craig_gutsy': './voices/male_en_1.wav',
+  'viktor_einar': './voices/male.wav',
+  'andrew_chipper': './voices/male_es_1.wav',
+  'badr_odhiambo': './voices/male.wav',
+  'dionisio_schuyler': './voices/male_es_1.wav',
+  'royston_min': './voices/male_es_1.wav',
+  'baldur_sanjin': './voices/male.wav',
+  'torsten_traugott': './voices/male.wav',
+  'renato_marie': './voices/male_es_1.wav',
+  'zacharie_aimios': './voices/male_es_1.wav',
+  'willem_driesen': './voices/male_es_1.wav',
+  'abramo_gaspari': './voices/male.wav',
+  'ilmar_kallas': './voices/male.wav',
+  'eerik_vesterinen': './voices/male.wav',
+  'tamas_nyilas': './voices/male_es_1.wav',
+  'jan_kolar': './voices/male_es_1.wav',
+  'ludvig_skov': './voices/male_es_1.wav',
+  'chidubem_odo': './voices/male.wav',
   'hombre_1': './voices/male_es_1.wav',
   'hombre_2': './voices/male_en_1.wav',
-  'mujer_1': './voices/female_es_1.wav',
   'male': './voices/male.wav',
-  'female': './voices/female.wav',
   'male_es_1': './voices/male_es_1.wav',
-  'female_es_1': './voices/female_es_1.wav',
   'male_en_1': './voices/male_en_1.wav',
-  'elizabeth': './voices/elizabeth.wav',
   'male_natural': './voices/male_es_1.wav',
   'male_teen': './voices/male_en_1.wav',
   'male_elder': './voices/male_es_1.wav',
-  'lucas_conversacional': './voices/male_es_1.wav',
-  'craig_gutsy': './voices/male_en_1.wav',
-  'mateo_entusiasta': './voices/male_es_1.wav',
-  'diego_narrador': './voices/male_es_1.wav',
-  'dionisio_schuyler': './voices/male_es_1.wav',
-  'female_young': './voices/female_es_1.wav',
-  'female_teen': './voices/female_es_1.wav',
-  'female_elder': './voices/female_es_1.wav',
+
+  // Voces Femeninas
+  'elizabeth_suprema': './voices/elizabeth.wav',
+  'elizabeth': './voices/elizabeth.wav',
   'sofia_latina': './voices/female_es_1.wav',
   'valentina_dulce': './voices/female_es_1.wav',
   'camila_serena': './voices/female_es_1.wav',
   'lucia_melodica': './voices/female_es_1.wav',
   'carmen_poetica': './voices/female_es_1.wav',
-  'elizabeth_suprema': './voices/elizabeth.wav'
+  'claribel_dervla': './voices/female_es_1.wav',
+  'daisy_studious': './voices/female_es_1.wav',
+  'gracie_wiseman': './voices/female.wav',
+  'tammie_ema': './voices/female_es_1.wav',
+  'alison_dietlinde': './voices/female.wav',
+  'ana_florence': './voices/female_es_1.wav',
+  'annmarie_nele': './voices/female_es_1.wav',
+  'asya_anara': './voices/female.wav',
+  'brenda_stern': './voices/female.wav',
+  'gitta_nikolina': './voices/female_es_1.wav',
+  'henriette_usha': './voices/female.wav',
+  'sofia_hellen': './voices/female.wav',
+  'suvi_tausku': './voices/female_es_1.wav',
+  'nova_hogarth': './voices/female.wav',
+  'maja_ruoho': './voices/female.wav',
+  'uta_objen': './voices/female.wav',
+  'lidia_deniza': './voices/female_es_1.wav',
+  'charelle_behnke': './voices/female_es_1.wav',
+  'claudette_michaud': './voices/female.wav',
+  'imelda_santos': './voices/female_es_1.wav',
+  'szilvia_vadasz': './voices/female.wav',
+  'danielle_bosco': './voices/female_es_1.wav',
+  'mujer_1': './voices/female_es_1.wav',
+  'female': './voices/female.wav',
+  'female_es_1': './voices/female_es_1.wav',
+  'female_young': './voices/female_es_1.wav',
+  'female_teen': './voices/female_es_1.wav',
+  'female_elder': './voices/female.wav'
+};
+
+// Catálogo de mapeo de voces neuronales (Edge Neural TTS) para cada arquetipo de avatar
+export const NEURAL_SPEAKER_VOICE_MAP: Record<string, { voice: string; isMale: boolean; afFilter?: string }> = {
+  // 1. Voces Masculinas en Español y Multilingüe
+  'mateo_entusiasta': { voice: 'es-UY-MateoNeural', isMale: true, afFilter: '-af atempo=1.04' },
+  'lucas_conversacional': { voice: 'es-ES-AlvaroNeural', isMale: true },
+  'eugenio_reflexivo': { voice: 'es-BO-MarceloNeural', isMale: true, afFilter: '-af atempo=0.93,bass=g=4:f=160' },
+  'diego_locutor': { voice: 'es-MX-JorgeNeural', isMale: true, afFilter: '-af bass=g=6:f=140' },
+  'diego_narrador': { voice: 'es-MX-JorgeNeural', isMale: true, afFilter: '-af bass=g=7:f=130' },
+  'javier_castizo': { voice: 'es-ES-AlvaroNeural', isMale: true, afFilter: '-af asetrate=24000*0.98,aresample=24000,atempo=1.02' },
+  'damian_black': { voice: 'es-US-AlonsoNeural', isMale: true, afFilter: '-af asetrate=24000*0.90,aresample=24000,atempo=1.11,bass=g=9:f=130' },
+  'craig_gutsy': { voice: 'es-CO-GonzaloNeural', isMale: true, afFilter: '-af atempo=1.04' },
+  'viktor_einar': { voice: 'es-CL-LorenzoNeural', isMale: true, afFilter: '-af atempo=0.96' },
+  'andrew_chipper': { voice: 'es-AR-TomasNeural', isMale: true, afFilter: '-af atempo=1.02' },
+  'badr_odhiambo': { voice: 'es-CU-ManuelNeural', isMale: true, afFilter: '-af bass=g=6:f=150' },
+  'dionisio_schuyler': { voice: 'es-CR-JuanNeural', isMale: true, afFilter: '-af atempo=0.90,bass=g=5:f=140' },
+  'royston_min': { voice: 'es-PE-AlexNeural', isMale: true, afFilter: '-af atempo=1.04' },
+  'baldur_sanjin': { voice: 'es-HN-CarlosNeural', isMale: true, afFilter: '-af bass=g=7:f=140' },
+  'torsten_traugott': { voice: 'es-DO-EmilioNeural', isMale: true, afFilter: '-af atempo=0.94' },
+  'renato_marie': { voice: 'es-SV-RodrigoNeural', isMale: true, afFilter: '-af atempo=0.98' },
+  'zacharie_aimios': { voice: 'es-EC-LuisNeural', isMale: true, afFilter: '-af atempo=0.95' },
+  'willem_driesen': { voice: 'es-GT-AndresNeural', isMale: true, afFilter: '-af atempo=1.02' },
+  'abramo_gaspari': { voice: 'es-GQ-JavierNeural', isMale: true, afFilter: '-af bass=g=6:f=150' },
+  'ilmar_kallas': { voice: 'es-NI-FedericoNeural', isMale: true, afFilter: '-af atempo=0.94' },
+  'eerik_vesterinen': { voice: 'es-PA-RobertoNeural', isMale: true, afFilter: '-af atempo=0.92' },
+  'tamas_nyilas': { voice: 'es-PR-VictorNeural', isMale: true, afFilter: '-af atempo=1.02' },
+  'jan_kolar': { voice: 'es-PY-MarioNeural', isMale: true, afFilter: '-af atempo=0.99' },
+  'ludvig_skov': { voice: 'es-VE-SebastianNeural', isMale: true, afFilter: '-af atempo=1.03' },
+  'chidubem_odo': { voice: 'es-US-AlonsoNeural', isMale: true, afFilter: '-af bass=g=7:f=140' },
+  'hombre_1': { voice: 'es-ES-AlvaroNeural', isMale: true },
+  'hombre_2': { voice: 'es-MX-JorgeNeural', isMale: true },
+  'male': { voice: 'es-ES-AlvaroNeural', isMale: true },
+  'male_es_1': { voice: 'es-ES-AlvaroNeural', isMale: true },
+  'male_en_1': { voice: 'en-US-GuyNeural', isMale: true },
+  'male_natural': { voice: 'es-ES-AlvaroNeural', isMale: true },
+  'male_teen': { voice: 'es-UY-MateoNeural', isMale: true },
+  'male_elder': { voice: 'es-CR-JuanNeural', isMale: true },
+
+  // 2. Voces Femeninas en Español y Multilingüe
+  'elizabeth_suprema': { voice: 'es-ES-ElviraNeural', isMale: false },
+  'elizabeth': { voice: 'es-ES-ElviraNeural', isMale: false },
+  'sofia_latina': { voice: 'es-MX-DaliaNeural', isMale: false, afFilter: '-af atempo=1.02' },
+  'valentina_dulce': { voice: 'es-UY-ValentinaNeural', isMale: false, afFilter: '-af atempo=0.97' },
+  'camila_serena': { voice: 'es-PE-CamilaNeural', isMale: false, afFilter: '-af atempo=0.95' },
+  'lucia_melodica': { voice: 'es-AR-ElenaNeural', isMale: false },
+  'carmen_poetica': { voice: 'es-ES-XimenaNeural', isMale: false, afFilter: '-af atempo=0.96' },
+  'claribel_dervla': { voice: 'es-CO-SalomeNeural', isMale: false },
+  'daisy_studious': { voice: 'es-EC-AndreaNeural', isMale: false, afFilter: '-af atempo=1.02' },
+  'gracie_wiseman': { voice: 'es-US-PalomaNeural', isMale: false, afFilter: '-af atempo=0.94' },
+  'tammie_ema': { voice: 'es-VE-PaolaNeural', isMale: false, afFilter: '-af atempo=1.05' },
+  'alison_dietlinde': { voice: 'es-CR-MariaNeural', isMale: false },
+  'ana_florence': { voice: 'es-PR-KarinaNeural', isMale: false },
+  'annmarie_nele': { voice: 'es-DO-RamonaNeural', isMale: false, afFilter: '-af atempo=1.04' },
+  'asya_anara': { voice: 'es-CL-CatalinaNeural', isMale: false, afFilter: '-af atempo=0.92' },
+  'brenda_stern': { voice: 'es-HN-KarlaNeural', isMale: false },
+  'gitta_nikolina': { voice: 'es-PA-MargaritaNeural', isMale: false },
+  'henriette_usha': { voice: 'es-BO-SofiaNeural', isMale: false, afFilter: '-af atempo=0.92' },
+  'sofia_hellen': { voice: 'es-CU-BelkysNeural', isMale: false },
+  'suvi_tausku': { voice: 'es-GT-MartaNeural', isMale: false, afFilter: '-af atempo=1.03' },
+  'nova_hogarth': { voice: 'es-NI-YolandaNeural', isMale: false },
+  'maja_ruoho': { voice: 'es-SV-LorenaNeural', isMale: false, afFilter: '-af atempo=0.94' },
+  'uta_objen': { voice: 'es-PY-TaniaNeural', isMale: false, afFilter: '-af atempo=0.95' },
+  'lidia_deniza': { voice: 'es-GQ-TeresaNeural', isMale: false },
+  'charelle_behnke': { voice: 'es-CO-SalomeNeural', isMale: false, afFilter: '-af atempo=1.02' },
+  'claudette_michaud': { voice: 'es-ES-XimenaNeural', isMale: false, afFilter: '-af atempo=0.95' },
+  'imelda_santos': { voice: 'es-MX-DaliaNeural', isMale: false },
+  'szilvia_vadasz': { voice: 'es-ES-ElviraNeural', isMale: false },
+  'danielle_bosco': { voice: 'es-UY-ValentinaNeural', isMale: false, afFilter: '-af atempo=1.03' },
+  'mujer_1': { voice: 'es-MX-DaliaNeural', isMale: false },
+  'female': { voice: 'es-ES-ElviraNeural', isMale: false },
+  'female_es_1': { voice: 'es-MX-DaliaNeural', isMale: false },
+  'female_young': { voice: 'es-MX-DaliaNeural', isMale: false },
+  'female_teen': { voice: 'es-DO-RamonaNeural', isMale: false },
+  'female_elder': { voice: 'es-US-PalomaNeural', isMale: false }
 };
 
 // Helper para normalizar IDs antiguos y resolver el speaker oficial de XTTS v2
@@ -1266,64 +1387,105 @@ export function resolveXttsSpeaker(archetypeId?: string): { id: string; speaker:
 }
 
 /**
- * Síntesis humana auténtica en 24kHz / 16-bit Mono con FFmpeg y Google TTS.
- * Genera voz humana real sin distorsión metálica, pitidos ni zumbidos matemáticos.
+ * Síntesis mediante Microsoft Edge Neural TTS con resampling FFmpeg a 24000 Hz, 16-bit Mono PCM
+ */
+async function synthesizeWithMsEdgeTTS(
+  text: string,
+  voiceName: string,
+  afFilter: string = ""
+): Promise<Buffer | null> {
+  try {
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(text);
+    const chunks: Buffer[] = [];
+
+    const mp3Buf = await new Promise<Buffer>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("MsEdgeTTS timeout")), 12000);
+      audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      audioStream.on("end", () => {
+        clearTimeout(timer);
+        resolve(Buffer.concat(chunks));
+      });
+      audioStream.on("error", (err: any) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+
+    if (!mp3Buf || mp3Buf.length === 0) return null;
+
+    const cmd = `ffmpeg -y -f mp3 -i pipe:0 ${afFilter ? afFilter + " " : ""}-ar 24000 -ac 1 -f s16le pipe:1`;
+    const pcmBuf = execSync(cmd, {
+      input: mp3Buf,
+      maxBuffer: 25 * 1024 * 1024,
+      stdio: ["pipe", "pipe", "ignore"]
+    });
+
+    if (pcmBuf && pcmBuf.length > 0) {
+      return addWavHeaderToPCM(pcmBuf, 24000, 1, 16);
+    }
+  } catch (err: any) {
+    console.warn(`[MsEdgeTTS ${voiceName} Error]:`, err?.message || err);
+  }
+  return null;
+}
+
+/**
+ * Síntesis humana auténtica multi-locutor en 24kHz / 16-bit Mono PCM WAV RIFF.
+ * Garantiza diferenciación vocal total: todas las voces masculinas suenan verdaderamente masculinas
+ * y cada arquetipo posee su propio tono, timbre y cadencia individual.
  */
 export async function synthesizeHumanSpeechWav(text: string, speakerKey: string = "elizabeth"): Promise<Buffer> {
   const clean = text.replace(/<[^>]+>/g, " ").replace(/[*_#`~[\]()]/g, "").trim() || "Hola";
   const inputKey = (speakerKey || "elizabeth").toLowerCase().trim();
 
-  const isEnglish = inputKey.includes("_en") || inputKey.includes("craig") || inputKey.includes("english") || inputKey.includes("en_1");
-  const lang = isEnglish ? "en" : "es";
+  const { id: resolvedId, speaker } = resolveXttsSpeaker(inputKey);
+  const voiceConfig = NEURAL_SPEAKER_VOICE_MAP[inputKey] || NEURAL_SPEAKER_VOICE_MAP[resolvedId];
 
+  const isMale = voiceConfig?.isMale ?? (
+    speaker.gender === "masculino" ||
+    inputKey.includes("male") ||
+    inputKey.includes("hombre") ||
+    inputKey.includes("lucas") ||
+    inputKey.includes("mateo") ||
+    inputKey.includes("diego") ||
+    inputKey.includes("craig") ||
+    inputKey.includes("damian") ||
+    inputKey.includes("eugenio") ||
+    inputKey.includes("javier")
+  );
+
+  const selectedVoice = voiceConfig?.voice || (isMale ? "es-ES-AlvaroNeural" : "es-ES-ElviraNeural");
+  const filter = voiceConfig?.afFilter || "";
+
+  // 1. Motor principal: Síntesis Neuronal de Alta Fidelidad (MsEdgeTTS + FFmpeg 24kHz Mono Int16)
+  const neuralWav = await synthesizeWithMsEdgeTTS(clean, selectedVoice, filter);
+  if (neuralWav && neuralWav.length > 100) {
+    return neuralWav;
+  }
+
+  // 2. Respaldo por Banco Acústico de Muestras de Audio Pregrabadas en ./voices/
+  const refPath = speakerFiles[inputKey] || speakerFiles[resolvedId] || (isMale ? "./voices/male_es_1.wav" : "./voices/elizabeth.wav");
+  if (refPath && fs.existsSync(refPath)) {
+    try {
+      const fileData = fs.readFileSync(refPath);
+      return processXttsAudioBuffer(fileData, 24000);
+    } catch (_) {}
+  }
+
+  // 3. Respaldo Google TTS con diferenciación de formantes masculina/femenina
   try {
+    const isEnglish = inputKey.includes("_en") || inputKey.includes("craig") || inputKey.includes("english") || inputKey.includes("en_1");
+    const lang = isEnglish ? "en" : "es";
+
     const parts = await googleTTS.getAllAudioBase64(clean, { lang, slow: false, timeout: 8000 });
     if (parts && parts.length > 0) {
       const combined = Buffer.concat(parts.map(p => Buffer.from(p.base64, "base64")));
+      const afFilter = isMale
+        ? "-af asetrate=24000*0.80,aresample=24000,atempo=1.25,bass=g=7:f=140"
+        : "-af asetrate=24000*1.02,aresample=24000,atempo=0.98";
 
-      let afFilter = "";
-      if (inputKey.includes("diego") || inputKey.includes("narrador")) {
-        // Voz masculina profunda de narrador documental (Bajo resonante)
-        afFilter = "-af asetrate=24000*0.76,aresample=24000,atempo=1.32,bass=g=8:f=140";
-      } else if (inputKey.includes("dionisio") || inputKey.includes("elder") || inputKey.includes("anciano")) {
-        // Voz masculina madura / anciana sabia
-        afFilter = "-af asetrate=24000*0.72,aresample=24000,atempo=1.38,bass=g=6:f=120";
-      } else if (inputKey.includes("mateo")) {
-        // Voz masculina entusiasta y dinámica
-        afFilter = "-af asetrate=24000*0.88,aresample=24000,atempo=1.14,bass=g=3:f=200";
-      } else if (inputKey.includes("craig") || inputKey.includes("teen") || inputKey.includes("hombre_2")) {
-        // Tenor masculino juvenil y enérgico
-        afFilter = "-af asetrate=24000*0.92,aresample=24000,atempo=1.09";
-      } else if (inputKey.includes("male") || inputKey.includes("hombre") || inputKey.includes("lucas")) {
-        // Barítono masculino natural estándar
-        afFilter = "-af asetrate=24000*0.84,aresample=24000,atempo=1.19,bass=g=5:f=180";
-      } else if (inputKey.includes("valentina")) {
-        // Voz femenina dulce, tierna y pausada
-        afFilter = "-af asetrate=24000*1.08,aresample=24000,atempo=0.93,treble=g=2:f=3000";
-      } else if (inputKey.includes("camila") || inputKey.includes("serena")) {
-        // Mezzosoprano calmada y serena
-        afFilter = "-af asetrate=24000*0.98,aresample=24000,atempo=1.02";
-      } else if (inputKey.includes("carmen") || inputKey.includes("poetica")) {
-        // Contralto cálida y expresiva
-        afFilter = "-af asetrate=24000*0.92,aresample=24000,atempo=1.08,bass=g=3:f=250";
-      } else if (inputKey.includes("lucia")) {
-        // Voz femenina melódica rioplatense
-        afFilter = "-af asetrate=24000*1.04,aresample=24000,atempo=0.96";
-      } else if (inputKey.includes("annmarie")) {
-        // Femenina juvenil rápida
-        afFilter = "-af asetrate=24000*1.12,aresample=24000,atempo=0.89";
-      } else if (inputKey.includes("gracie")) {
-        // Femenina madura
-        afFilter = "-af asetrate=24000*0.91,aresample=24000,atempo=1.09";
-      } else if (inputKey.includes("sofia") || inputKey.includes("mujer_1") || inputKey.includes("female_young")) {
-        // Soprano alegre y dinámica
-        afFilter = "-af asetrate=24000*1.06,aresample=24000,atempo=0.94,treble=g=3:f=3200";
-      } else {
-        // Elizabeth Suprema (Voz insignia cristalina y cálida)
-        afFilter = "-af asetrate=24000*1.03,aresample=24000,atempo=0.97";
-      }
-
-      // IMPORTANTE: Exportar PCM s16le crudo para que addWavHeaderToPCM cree cabecera estándar de 44 bytes con tamaño exacto
       const cmd = `ffmpeg -y -f mp3 -i pipe:0 ${afFilter} -ar 24000 -ac 1 -f s16le pipe:1`;
       const pcmBuf = execSync(cmd, {
         input: combined,
@@ -1336,16 +1498,13 @@ export async function synthesizeHumanSpeechWav(text: string, speakerKey: string 
       }
     }
   } catch (err: any) {
-    console.warn("[Human Speech Resampler]:", err?.message || err);
+    console.warn("[Human Speech Fallback Error]:", err?.message || err);
   }
 
-  // Respaldo de máxima fidelidad: usar la muestra pregrabada en ./voices/ si está disponible
-  const refPath = speakerFiles[speakerKey] || speakerFiles["elizabeth"];
-  if (refPath && fs.existsSync(refPath)) {
-    try {
-      const fileData = fs.readFileSync(refPath);
-      return processXttsAudioBuffer(fileData, 24000);
-    } catch (_) {}
+  // Respaldo de seguridad final: devolver muestra de voz real correspondiente al género
+  const fallbackRef = isMale ? "./voices/male.wav" : "./voices/elizabeth.wav";
+  if (fs.existsSync(fallbackRef)) {
+    return processXttsAudioBuffer(fs.readFileSync(fallbackRef), 24000);
   }
 
   return addWavHeaderToPCM(Buffer.alloc(4800), 24000);

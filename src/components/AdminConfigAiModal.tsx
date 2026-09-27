@@ -48,7 +48,8 @@ import {
   requestInstantEvolutionLeap,
   requestVoiceCloneFromSample,
   getVoiceAvatarUrl,
-  getVoiceSamplePhrase
+  getVoiceSamplePhrase,
+  runVoiceDiagnostics
 } from '../utils/elizabethVoiceSynthesizer';
 
 interface AdminConfigAiModalProps {
@@ -999,6 +1000,14 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
                            {isPreviewingActive ? <Square size={13} /> : <Play size={13} fill="currentColor" />}
                            <span>{isPreviewingActive ? 'Detener' : 'Escuchar'}</span>
                          </button>
+                         <button
+                           type="button"
+                           onClick={() => runVoiceDiagnostics(activeSpeaker.id)}
+                           className="px-2.5 py-1 rounded-xl border border-pink-500/30 text-[10px] text-pink-300 hover:bg-pink-500/10 flex items-center justify-center gap-1 font-semibold transition-all"
+                           title="Diagnóstico técnico del audio (RIFF, 24kHz, Web Audio)"
+                         >
+                           <span>🩺 Diagnóstico</span>
+                         </button>
                        </div>
                      </div>
                    </div>
@@ -1014,7 +1023,17 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
                        {VOICE_ARCHETYPES.length} Avatares
                      </span>
                    </label>
-                   <span className="text-[10px] text-gray-400">Escucha y guarda la que prefieras</span>
+                   <div className="flex items-center gap-2">
+                     <button
+                       type="button"
+                       onClick={() => runVoiceDiagnostics(voiceConfig.archetypeId || 'elizabeth_suprema')}
+                       className="px-2.5 py-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[10px] font-bold flex items-center gap-1 transition-all"
+                       title="Abrir ventana de diagnóstico acústico técnico"
+                     >
+                       <span>🩺 Diagnóstico de Audio</span>
+                     </button>
+                     <span className="text-[10px] text-gray-400">Escucha y guarda la que prefieras</span>
+                   </div>
                  </div>
 
                  {/* Buscador */}

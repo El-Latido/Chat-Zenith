@@ -1077,6 +1077,10 @@ export async function playVoicePreview(
 
     const arrayBuffer = await response.arrayBuffer();
 
+    if (typeof window !== "undefined" && (window as any).__ENABLE_AUDIO_DIAGNOSTICS__) {
+      testVoiceWithDiagnostics(arrayBuffer);
+    }
+
     // Intentar primero Opción B: Web Audio API con decodeAudioData (resampling limpio de 24kHz a frecuencia del sistema)
     try {
       await playPCMWithAudioContext(arrayBuffer, callbacks);
@@ -1118,6 +1122,189 @@ export async function playVoicePreview(
       callbacks?.onError?.(error);
       speakWithBrowserSpeech(text, speakerId, 1.0, 1.0, 1.0, callbacks);
     }
+  }
+}
+
+/**
+ * Script de Diagnóstico para el Cliente (Frontend)
+ * Inspecciona cabeceras RIFF/WAV, frecuencia de muestreo, canales, decodificación Web Audio API y reproducción.
+ */
+export async function testVoiceWithDiagnostics(audioSource: string | Blob | ArrayBuffer, mimeTypeHint = "audio/wav") {
+  const report: {
+    timestamp: string;
+    sourceType: string;
+    dataLengthBytes: number;
+    detectedHeader: string;
+    isWavRIFF: boolean;
+    sampleRate: string;
+    numberOfChannels: number | string;
+    durationSeconds: string;
+    decodeSuccess: boolean;
+    errorStage: string;
+    errorMessage: string;
+  } = {
+    timestamp: new Date().toISOString(),
+    sourceType: typeof audioSource === "string" ? "Base64/URL" : "ArrayBuffer/Blob",
+    dataLengthBytes: 0,
+    detectedHeader: "Desconocido",
+    isWavRIFF: false,
+    sampleRate: "N/A",
+    numberOfChannels: "N/A",
+    durationSeconds: "N/A",
+    decodeSuccess: false,
+    errorStage: "Ninguna",
+    errorMessage: "Sin errores registrados",
+  };
+
+  try {
+    let arrayBuffer: ArrayBuffer;
+
+    // 1. Fase de Ingesta / Conversión de Datos
+    report.errorStage = "Conversión de Datos";
+    if (typeof audioSource === "string") {
+      if (audioSource.startsWith("data:") || audioSource.length > 500) {
+        const cleanBase64 = audioSource.replace(/^data:audio\/\w+;base64,/, "");
+        const binaryString = window.atob(cleanBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        arrayBuffer = bytes.buffer;
+      } else {
+        const response = await fetch(audioSource);
+        arrayBuffer = await response.arrayBuffer();
+      }
+    } else if (audioSource instanceof Blob) {
+      arrayBuffer = await audioSource.arrayBuffer();
+    } else if (audioSource instanceof ArrayBuffer) {
+      arrayBuffer = audioSource;
+    } else {
+      throw new Error("Formato de audio no reconocido.");
+    }
+
+    report.dataLengthBytes = arrayBuffer ? arrayBuffer.byteLength : 0;
+
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      throw new Error("El buffer de audio recibido está completamente vacío (0 bytes).");
+    }
+
+    // 2. Inspección de Cabeceras Mágicas (Magic Bytes)
+    report.errorStage = "Inspección de Cabecera";
+    const bytesHeader = new Uint8Array(arrayBuffer.slice(0, 12));
+    const headerStr = Array.from(bytesHeader.slice(0, 4))
+      .map((b) => String.fromCharCode(b))
+      .join("");
+
+    report.detectedHeader = headerStr;
+    report.isWavRIFF = headerStr === "RIFF";
+
+    if (!report.isWavRIFF) {
+      console.warn("Advertencia: El audio no contiene la cabecera 'RIFF' estándar de archivo WAV.");
+    }
+
+    // 3. Fase de Decodificación Web Audio API
+    report.errorStage = "Decodificación Web Audio API";
+    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+    const audioCtx = new AudioCtxClass();
+
+    // Clonamos el buffer porque decodeAudioData lo invalida al procesarlo
+    const bufferCopy = arrayBuffer.slice(0);
+    const decodedBuffer = await audioCtx.decodeAudioData(bufferCopy);
+
+    report.decodeSuccess = true;
+    report.sampleRate = `${decodedBuffer.sampleRate} Hz`;
+    report.numberOfChannels = decodedBuffer.numberOfChannels;
+    report.durationSeconds = `${decodedBuffer.duration.toFixed(2)} seg`;
+
+    // 4. Intentar Reproducción
+    report.errorStage = "Reproducción";
+    const source = audioCtx.createBufferSource();
+    source.buffer = decodedBuffer;
+    source.connect(audioCtx.destination);
+    source.start(0);
+
+    report.errorStage = "Completado Exitosamente";
+  } catch (err: any) {
+    report.decodeSuccess = false;
+    report.errorMessage = err.message || String(err);
+    console.error("Error en Diagnóstico de Audio:", err);
+  } finally {
+    showDiagnosticUI(report);
+  }
+
+  return report;
+}
+
+// Ventana emergente (UI) con el reporte completo
+export function showDiagnosticUI(report: any) {
+  if (typeof document === "undefined") return;
+  const existingModal = document.getElementById("audio-diag-modal");
+  if (existingModal) existingModal.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "audio-diag-modal";
+  modal.style.cssText = `
+    position: fixed; top: 20px; right: 20px; z-index: 99999;
+    width: 380px; background: #111827; color: #f3f4f6;
+    border: 2px solid ${report.decodeSuccess ? "#10b981" : "#ef4444"};
+    border-radius: 10px; padding: 16px; font-family: monospace; font-size: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+  `;
+
+  const statusColor = report.decodeSuccess ? "#10b981" : "#ef4444";
+  const statusText = report.decodeSuccess ? "EXITO (Reproduciendo)" : "FALLO CRÍTICO";
+  const rawJson = JSON.stringify(report, null, 2);
+
+  modal.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+      <strong style="color:${statusColor}; font-size:14px;">Diagnóstico de Audio</strong>
+      <button id="close-audio-diag-btn" style="background:transparent; border:none; color:#9ca3af; cursor:pointer; font-size:16px;">✕</button>
+    </div>
+    <div style="margin-bottom: 6px;">Estado: <b style="color:${statusColor}">${statusText}</b></div>
+    <div style="margin-bottom: 4px;">Bytes: <b>${report.dataLengthBytes}</b></div>
+    <div style="margin-bottom: 4px;">Cabecera: <b>${report.detectedHeader} (${report.isWavRIFF ? 'WAV RIFF Válido' : 'No WAV'})</b></div>
+    <div style="margin-bottom: 4px;">Frecuencia: <b>${report.sampleRate}</b></div>
+    <div style="margin-bottom: 4px;">Canales: <b>${report.numberOfChannels}</b></div>
+    <div style="margin-bottom: 4px;">Duración: <b>${report.durationSeconds}</b></div>
+    ${report.errorMessage && report.errorMessage !== 'Sin errores registrados' ? `<div style="color:#ef4444; margin-top:6px;">Error: ${report.errorMessage}</div>` : ''}
+    <details style="margin-top: 8px; cursor: pointer;">
+      <summary style="color: #60a5fa;">Ver JSON Completo</summary>
+      <pre style="background: #1f2937; padding: 6px; border-radius: 4px; overflow: auto; max-height: 120px; font-size: 10px; margin-top: 4px;">${rawJson}</pre>
+    </details>
+  `;
+
+  document.body.appendChild(modal);
+  const btn = document.getElementById("close-audio-diag-btn");
+  if (btn) btn.onclick = () => modal.remove();
+}
+
+/**
+ * Ejecuta una prueba de diagnóstico completa para cualquier voz solicitando el audio al servidor
+ */
+export async function runVoiceDiagnostics(archetypeId: string = "elizabeth_suprema", textOverride?: string) {
+  try {
+    const text = textOverride || "Prueba de diagnóstico acústico con Coqui XTTS v2 y audio neuronal.";
+    const response = await fetch('/api/voice-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, speakerId: archetypeId })
+    });
+    const arrayBuffer = await response.arrayBuffer();
+    return await testVoiceWithDiagnostics(arrayBuffer);
+  } catch (err: any) {
+    showDiagnosticUI({
+      timestamp: new Date().toISOString(),
+      sourceType: "Network Fetch",
+      dataLengthBytes: 0,
+      detectedHeader: "Error de Red",
+      isWavRIFF: false,
+      sampleRate: "N/A",
+      numberOfChannels: "N/A",
+      durationSeconds: "N/A",
+      decodeSuccess: false,
+      errorStage: "Petición HTTP",
+      errorMessage: err?.message || String(err)
+    });
   }
 }
 
