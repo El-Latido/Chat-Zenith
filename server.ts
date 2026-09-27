@@ -72,6 +72,7 @@ import {
   generateAcousticSpeechWave,
   generateXTTSVoice,
   addwavheader,
+  addWavHeaderToPCM,
   speakerFiles
 } from "./server/xttsEngine";
 dotenv.config();
@@ -524,7 +525,7 @@ const transporter = nodemailer.createTransport({
       return res.send(audioBuffer);
     } catch (err: any) {
       console.error("Error en /api/voice-preview:", err?.message || err);
-      const fallbackWav = addwavheader(Buffer.alloc(4800), 24000);
+      const fallbackWav = addWavHeaderToPCM(Buffer.alloc(4800), 24000);
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
       res.setHeader("Content-Type", "audio/wav");
       return res.send(fallbackWav);
@@ -547,7 +548,7 @@ const transporter = nodemailer.createTransport({
       res.setHeader("Content-Type", "audio/wav");
       return res.send(audioBuffer);
     } catch (err: any) {
-      const fallbackWav = addwavheader(Buffer.alloc(4800), 24000);
+      const fallbackWav = addWavHeaderToPCM(Buffer.alloc(4800), 24000);
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
       res.setHeader("Content-Type", "audio/wav");
       return res.send(fallbackWav);

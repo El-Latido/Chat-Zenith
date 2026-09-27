@@ -922,25 +922,37 @@ export const XTTS_V2_SPEAKERS: Record<string, XttsSpeakerProfile> = {
   }
 };
 
-// Helper para añadir cabecera WAV de 24kHz a los buffers de voz (RIFF/WAVE 44 bytes estándar)
-export function addwavheader(pcmbuffer: Buffer, samplerate = 24000): Buffer {
+// Helper en Node.js para agregar la cabecera WAV de 44 bytes a un buffer PCM de 24 kHz 16-bit Mono
+export function addWavHeaderToPCM(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitDepth = 16): Buffer {
   const header = Buffer.alloc(44);
-  header.write('RIFF', 0);
-  header.writeUInt32LE(36 + pcmbuffer.length, 4);
-  header.write('WAVE', 8);
-  header.write('fmt ', 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // PCM
-  header.writeUInt16LE(1, 22); // Mono
-  header.writeUInt32LE(samplerate, 24); // 24000 Hz
-  header.writeUInt32LE(samplerate * 2, 28); // Byte rate (24000 * 2)
-  header.writeUInt16LE(2, 32); // Block align (1 * 16 / 8)
-  header.writeUInt16LE(16, 34); // Bits per sample
-  header.write('data', 36);
-  header.writeUInt32LE(pcmbuffer.length, 40);
-  return Buffer.concat([header, pcmbuffer]);
+  const dataSize = pcmBuffer.length;
+  const fileSize = dataSize + 36;
+  const byteRate = (sampleRate * numChannels * bitDepth) / 8;
+  const blockAlign = (numChannels * bitDepth) / 8;
+
+  // RIFF Chunk Descriptor
+  header.write("RIFF", 0);
+  header.writeUInt32LE(fileSize, 4);
+  header.write("WAVE", 8);
+
+  // fmt Sub-chunk
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);          // Subchunk1Size (16 para PCM)
+  header.writeUInt16LE(1, 20);           // AudioFormat (1 para PCM)
+  header.writeUInt16LE(numChannels, 22); // NumChannels
+  header.writeUInt32LE(sampleRate, 24);  // SampleRate
+  header.writeUInt32LE(byteRate, 28);    // ByteRate
+  header.writeUInt16LE(blockAlign, 32);  // BlockAlign
+  header.writeUInt16LE(bitDepth, 34);    // BitsPerSample
+
+  // data Sub-chunk
+  header.write("data", 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
 }
-export const addWavHeader = addwavheader;
+export const addwavheader = addWavHeaderToPCM;
+export const addWavHeader = addWavHeaderToPCM;
 
 // Convierte matriz o buffer Float32 nativo de XTTS v2 (-1.0 a 1.0) a PCM Int16
 export function convertFloat32ToInt16(floatBuffer: Buffer): Buffer {
@@ -1170,6 +1182,11 @@ export const speakerFiles: Record<string, string> = {
   'hombre_1': './voices/male_es_1.wav',
   'hombre_2': './voices/male_en_1.wav',
   'mujer_1': './voices/female_es_1.wav',
+  'male': './voices/male.wav',
+  'female': './voices/female.wav',
+  'male_es_1': './voices/male_es_1.wav',
+  'female_es_1': './voices/female_es_1.wav',
+  'male_en_1': './voices/male_en_1.wav',
   'elizabeth': './voices/elizabeth.wav',
   'male_natural': './voices/male_es_1.wav',
   'male_teen': './voices/male_en_1.wav',

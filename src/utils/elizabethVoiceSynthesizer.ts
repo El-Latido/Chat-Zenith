@@ -943,8 +943,76 @@ export function sanitizeTextForSpeech(rawText: string): string {
 // Gestor de audio global para prevenir mezclas de voz y peticiones solapadas
 export let currentAudio: HTMLAudioElement | null = null;
 export let currentAbortController: AbortController | null = null;
+let globalAudioCtx: AudioContext | null = null;
+let currentBufferSource: AudioBufferSourceNode | null = null;
 let activeAudioElement: HTMLAudioElement | null = null;
 let currentSpeakingCallbacks: { onStart?: () => void; onEnd?: () => void; onError?: (err?: any) => void; } | null = null;
+
+/**
+ * Opción A: Reproducción mediante HTML5 Audio Element (Blob audio/wav)
+ */
+export async function playWavAudio(base64Audio: string): Promise<HTMLAudioElement> {
+  const cleanBase64 = base64Audio.replace(/^data:audio\/[a-zA-Z0-9_\-]+;base64,/, "");
+  const binaryString = window.atob(cleanBase64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  const blob = new Blob([bytes.buffer], { type: "audio/wav" });
+  const audioUrl = URL.createObjectURL(blob);
+  const audio = new Audio(audioUrl);
+  await audio.play();
+  return audio;
+}
+
+/**
+ * Opción B: Reproducción mediante Web Audio API con Resampling automático a la tasa nativa del sistema
+ * decodeAudioData resamplea automáticamente los 24kHz del buffer a la tasa del sistema (44.1k/48k)
+ * eliminando chirridos, estática aguda o desfases de frecuencia.
+ */
+export async function playPCMWithAudioContext(
+  arrayBuffer: ArrayBuffer,
+  callbacks?: { onStart?: () => void; onEnd?: () => void; onError?: (err: any) => void }
+): Promise<void> {
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!globalAudioCtx || globalAudioCtx.state === 'closed') {
+    globalAudioCtx = new AudioContextClass();
+  }
+  if (globalAudioCtx.state === 'suspended') {
+    await globalAudioCtx.resume();
+  }
+
+  if (currentBufferSource) {
+    try {
+      currentBufferSource.stop();
+      currentBufferSource.disconnect();
+    } catch (_) {}
+    currentBufferSource = null;
+  }
+
+  try {
+    // decodeAudioData resamplea automáticamente los 24kHz del buffer a la tasa del sistema (44.1k/48k)
+    const decodedBuffer = await globalAudioCtx.decodeAudioData(arrayBuffer);
+    const source = globalAudioCtx.createBufferSource();
+    source.buffer = decodedBuffer;
+    source.connect(globalAudioCtx.destination);
+
+    source.onended = () => {
+      if (currentBufferSource === source) {
+        currentBufferSource = null;
+      }
+      callbacks?.onEnd?.();
+    };
+
+    currentBufferSource = source;
+    callbacks?.onStart?.();
+    source.start(0);
+  } catch (err) {
+    callbacks?.onError?.(err);
+    throw err;
+  }
+}
 
 /**
  * Gestor global de vista previa de voces para evitar solapamientos y mezclas de sonido.
@@ -960,6 +1028,13 @@ export async function playVoicePreview(
   }
 ): Promise<void> {
   // A. Detener el audio que esté sonando actualmente
+  if (currentBufferSource) {
+    try {
+      currentBufferSource.stop();
+      currentBufferSource.disconnect();
+    } catch (_) {}
+    currentBufferSource = null;
+  }
   if (currentAudio) {
     try {
       currentAudio.pause();
@@ -1000,38 +1075,43 @@ export async function playVoicePreview(
       throw new Error(`Error en servidor de audio: ${response.status}`);
     }
 
-    const blob = await response.blob();
-    // Decodificar con formato audio/wav nativo de 24 kHz
-    const wavBlob = blob.type.includes('wav') ? blob : new Blob([blob], { type: 'audio/wav' });
-    const audioUrl = URL.createObjectURL(wavBlob);
+    const arrayBuffer = await response.arrayBuffer();
 
-    // C. Instanciar y reproducir la nueva voz de forma aislada
-    currentAudio = new Audio(audioUrl);
-    activeAudioElement = currentAudio;
+    // Intentar primero Opción B: Web Audio API con decodeAudioData (resampling limpio de 24kHz a frecuencia del sistema)
+    try {
+      await playPCMWithAudioContext(arrayBuffer, callbacks);
+    } catch (audioCtxErr) {
+      // Opción A: Fallback a HTML5 Audio Element mediante Blob audio/wav
+      const wavBlob = new Blob([arrayBuffer], { type: 'audio/wav' });
+      const audioUrl = URL.createObjectURL(wavBlob);
 
-    currentAudio.onplay = () => {
-      callbacks?.onStart?.();
-    };
+      currentAudio = new Audio(audioUrl);
+      activeAudioElement = currentAudio;
 
-    currentAudio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-      if (currentAudio === activeAudioElement) {
-        activeAudioElement = null;
-      }
-      currentAudio = null;
-      callbacks?.onEnd?.();
-    };
+      currentAudio.onplay = () => {
+        callbacks?.onStart?.();
+      };
 
-    currentAudio.onerror = (e) => {
-      URL.revokeObjectURL(audioUrl);
-      if (currentAudio === activeAudioElement) {
-        activeAudioElement = null;
-      }
-      currentAudio = null;
-      callbacks?.onError?.(e);
-    };
+      currentAudio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        if (currentAudio === activeAudioElement) {
+          activeAudioElement = null;
+        }
+        currentAudio = null;
+        callbacks?.onEnd?.();
+      };
 
-    await currentAudio.play();
+      currentAudio.onerror = (e) => {
+        URL.revokeObjectURL(audioUrl);
+        if (currentAudio === activeAudioElement) {
+          activeAudioElement = null;
+        }
+        currentAudio = null;
+        callbacks?.onError?.(e);
+      };
+
+      await currentAudio.play();
+    }
   } catch (error: any) {
     if (error?.name !== 'AbortError') {
       console.error('Error al reproducir voz:', error);
@@ -1122,6 +1202,14 @@ export function stopSpeaking(): void {
     currentAbortController = null;
   }
 
+  if (currentBufferSource) {
+    try {
+      currentBufferSource.stop();
+      currentBufferSource.disconnect();
+    } catch (_) {}
+    currentBufferSource = null;
+  }
+
   if (currentAudio) {
     try {
       currentAudio.pause();
@@ -1156,7 +1244,7 @@ export function stopSpeaking(): void {
 }
 
 export function isSpeaking(): boolean {
-  const isAudioSpeaking = !!((currentAudio && !currentAudio.paused) || (activeAudioElement && !activeAudioElement.paused));
+  const isAudioSpeaking = !!((currentAudio && !currentAudio.paused) || (activeAudioElement && !activeAudioElement.paused) || !!currentBufferSource);
   const isSynthSpeaking = typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis.speaking;
   return isAudioSpeaking || isSynthSpeaking;
 }
@@ -1254,31 +1342,42 @@ export async function speakElizabethMessage(
         data.audioBase64.startsWith("data:audio/ogg")
       )
     ) {
-      // Reproducir mediante Audio nativo decodificando audio/wav a 24 kHz sin saturación
-      const audio = new Audio(data.audioBase64);
-      audio.volume = Math.max(0, Math.min(1, config.volume));
+      // 1. Intentar Opción B: Web Audio API con decodeAudioData (resampling nativo sin desfase de frecuencia)
+      try {
+        const cleanBase64 = data.audioBase64.replace(/^data:audio\/[a-zA-Z0-9_\-]+;base64,/, "");
+        const binaryString = window.atob(cleanBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        await playPCMWithAudioContext(bytes.buffer, callbacks);
+        return true;
+      } catch (audioCtxErr) {
+        // 2. Opción A: Fallback a HTML5 Audio Element mediante Blob audio/wav
+        const audio = await playWavAudio(data.audioBase64);
+        audio.volume = Math.max(0, Math.min(1, config.volume));
 
-      audio.onplay = () => {
-        callbacks?.onStart?.();
-      };
+        audio.onplay = () => {
+          callbacks?.onStart?.();
+        };
 
-      audio.onended = () => {
-        activeAudioElement = null;
-        currentAudio = null;
-        callbacks?.onEnd?.();
-      };
+        audio.onended = () => {
+          activeAudioElement = null;
+          currentAudio = null;
+          callbacks?.onEnd?.();
+        };
 
-      audio.onerror = (err) => {
-        console.warn("Fallo reproducción de audio del servidor, usando voz nativa humana:", err);
-        activeAudioElement = null;
-        currentAudio = null;
-        speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
-      };
+        audio.onerror = (err) => {
+          console.warn("Fallo reproducción de audio del servidor, usando voz nativa humana:", err);
+          activeAudioElement = null;
+          currentAudio = null;
+          speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
+        };
 
-      activeAudioElement = audio;
-      currentAudio = audio;
-      await audio.play();
-      return true;
+        activeAudioElement = audio;
+        currentAudio = audio;
+        return true;
+      }
     } else {
       return speakWithBrowserSpeech(cleanText, config.archetypeId, config.rate, config.pitch, config.volume, callbacks);
     }
