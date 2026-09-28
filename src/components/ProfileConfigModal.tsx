@@ -66,6 +66,7 @@ export function ProfileConfigModal({
   const [bubbleBorder, setBubbleBorder] = useState(user.bubbleBorder || 'border-[#5A52A5]/30');
   const [bubbleShape, setBubbleShape] = useState(user.bubbleShape || 'rounded-2xl rounded-tr-sm');
   const [bubbleTexture, setBubbleTexture] = useState(user.bubbleTexture || 'none');
+  const [bubbleStyle, setBubbleStyle] = useState(user.bubbleStyle || 'default');
   const [audioVisStyle, setAudioVisStyle] = useState(user.audioVisualizerStyle || 'neon_waves');
   const [audioVisColor1, setAudioVisColor1] = useState(user.audioVisualizerColor1 || '#00f2fe');
   const [audioVisColor2, setAudioVisColor2] = useState(user.audioVisualizerColor2 || '#4facfe');
@@ -125,6 +126,7 @@ export function ProfileConfigModal({
         bubbleBorder: bubbleBorder,
         bubbleShape: bubbleShape,
         bubbleTexture: bubbleTexture,
+        bubbleStyle: bubbleStyle,
         updatedAt: new Date()
       }, { merge: true }).catch((err) => {
         console.warn("Firestore background save warning:", err);
@@ -150,7 +152,8 @@ export function ProfileConfigModal({
           bubbleColor: finalBubbleColor,
           bubbleBorder,
           bubbleShape,
-          bubbleTexture
+          bubbleTexture,
+          bubbleStyle
       }));
 
       socket.emit("update_incognito", incognito);
@@ -162,7 +165,8 @@ export function ProfileConfigModal({
         countryLanguage: pais,
         is_friends_public: isFriendsPublic,
         preferred_background: safeBackgroundForFirestore,
-        preferred_theme: preferredTheme
+        preferred_theme: preferredTheme,
+        bubbleStyle: bubbleStyle
       });
 
       setSaveStatus("¡Guardado correctamente!");
@@ -578,6 +582,47 @@ export function ProfileConfigModal({
                             <option value="glow">Resplandor Exterior (Glow)</option>
                         </select>
                      </div>
+                  </div>
+
+                  {/* Estilos Temáticos y Animados de Burbujas */}
+                  <div className="space-y-2 mt-4 pt-4 border-t border-white/5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-amber-400" />
+                      Estilo Temático de Burbuja (Futuristas, Antiguos & Animaciones)
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                      {[
+                        { id: "futuristic_neon", name: "Cyberpunk Neón 2077", desc: "Pulso neón & glow", icon: "⚡" },
+                        { id: "hologram_scifi", name: "Holograma Sci-Fi", desc: "HUD cian con scanlines", icon: "🛸" },
+                        { id: "matrix_terminal", name: "Matrix Hacker", desc: "Terminal verde fósforo", icon: "💻" },
+                        { id: "vintage_parchment", name: "Pergamino Antiguo", desc: "Papiro retro medieval", icon: "📜" },
+                        { id: "steampunk_bronze", name: "Steampunk Mecánico", desc: "Bronce con remaches", icon: "⚙️" },
+                        { id: "kawaii_pastel", name: "Kawaii Bouncy", desc: "Algodón de azúcar pastel", icon: "✨" },
+                        { id: "glass_crystal", name: "Cristal Prisma", desc: "Hiper-refracción limpia", icon: "💎" },
+                        { id: "comic_popart", name: "Pop-Art Cómic", desc: "Borde de manga con pop", icon: "💥" },
+                        { id: "royal_gold", name: "Oro Real Barroco", desc: "Foil dorado con brillo 24k", icon: "👑" },
+                        { id: "bubble_soap", name: "Burbuja de Jabón", desc: "Tornasol irisado", icon: "🫧" },
+                        { id: "rounded", name: "Cápsula Ultra", desc: "Forma píldora moderna", icon: "💊" },
+                        { id: "default", name: "Moderno Suave", desc: "Limpio y minimalista", icon: "📱" }
+                      ].map((style) => (
+                        <button
+                          key={style.id}
+                          type="button"
+                          onClick={() => setBubbleStyle(style.id)}
+                          className={`p-2.5 rounded-xl border text-left transition-all ${
+                            bubbleStyle === style.id
+                              ? "border-cyan-400 bg-cyan-500/20 shadow-[0_0_12px_rgba(6,182,212,0.4)] ring-1 ring-cyan-400"
+                              : "border-white/10 bg-white/5 hover:bg-white/10"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="text-sm">{style.icon}</span>
+                            <span className="text-xs font-bold text-white truncate">{style.name}</span>
+                          </div>
+                          <span className="text-[10px] text-white/50 block truncate">{style.desc}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

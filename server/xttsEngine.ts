@@ -1401,7 +1401,7 @@ async function synthesizeWithMsEdgeTTS(
     const chunks: Buffer[] = [];
 
     const mp3Buf = await new Promise<Buffer>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("MsEdgeTTS timeout")), 12000);
+      const timer = setTimeout(() => reject(new Error("MsEdgeTTS timeout")), 2500);
       audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
       audioStream.on("end", () => {
         clearTimeout(timer);
@@ -1673,17 +1673,57 @@ export async function synthesizeWithCoquiXTTS(
     console.warn("[XTTS Synthesis Fallback]:", synthErr?.message || synthErr);
   }
 
-  // 4. Respaldo complementario Google TTS
+  // 4. Respaldo complementario Google TTS con diferenciación de género estricta
   try {
     const isSlow = options.rate && options.rate < 0.85 ? true : false;
+    const isMaleSpeaker = speaker.gender === "masculino" || (options.archetypeId && (
+      options.archetypeId.includes("male") ||
+      options.archetypeId.includes("hombre") ||
+      options.archetypeId.includes("mateo") ||
+      options.archetypeId.includes("lucas") ||
+      options.archetypeId.includes("diego") ||
+      options.archetypeId.includes("eugenio") ||
+      options.archetypeId.includes("javier") ||
+      options.archetypeId.includes("damian") ||
+      options.archetypeId.includes("craig") ||
+      options.archetypeId.includes("viktor") ||
+      options.archetypeId.includes("dionisio")
+    ));
+
     const parts = await googleTTS.getAllAudioBase64(cleanText, {
       lang: "es",
       slow: isSlow,
-      timeout: 10000
+      timeout: 8000
     });
 
     if (parts && parts.length > 0) {
       const combinedBuffer = Buffer.concat(parts.map(p => Buffer.from(p.base64, "base64")));
+      
+      // Aplicar modulación de formantes masculina si corresponde
+      if (isMaleSpeaker) {
+        try {
+          const afFilter = "-af asetrate=24000*0.80,aresample=24000,atempo=1.25,bass=g=7:f=140";
+          const cmd = `ffmpeg -y -f mp3 -i pipe:0 ${afFilter} -ar 24000 -ac 1 -f s16le pipe:1`;
+          const pcmBuf = execSync(cmd, {
+            input: combinedBuffer,
+            maxBuffer: 20 * 1024 * 1024,
+            stdio: ["pipe", "pipe", "ignore"]
+          });
+          if (pcmBuf && pcmBuf.length > 0) {
+            const wavWithHeader = addWavHeaderToPCM(pcmBuf, 24000, 1, 16);
+            return {
+              audioBase64: `data:audio/wav;base64,${wavWithHeader.toString("base64")}`,
+              mimeType: "audio/wav",
+              voiceUsed: speaker.name,
+              engine: "coqui_xtts_v2",
+              isNeural: true,
+              humanizationLevel: 95,
+              durationSeconds: wavWithHeader.length / (24000 * 2)
+            };
+          }
+        } catch (_) {}
+      }
+
       const base64Uri = `data:audio/mp3;base64,${combinedBuffer.toString("base64")}`;
       const durationSeconds = Math.max(1, combinedBuffer.length / (24000 * 2));
 

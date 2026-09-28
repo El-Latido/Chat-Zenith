@@ -811,8 +811,57 @@ function normalizeArchetypeId(id: string): string {
   return legacyMap[id] || id;
 }
 
+let activeServerVoiceConfig: ElizabethVoiceConfig | null = null;
+
+export function setServerAiVoiceConfig(config: Partial<ElizabethVoiceConfig>): void {
+  if (!config) return;
+  activeServerVoiceConfig = {
+    ...(activeServerVoiceConfig || DEFAULT_ELIZABETH_VOICE),
+    ...config,
+    archetypeId: config.archetypeId ? normalizeArchetypeId(config.archetypeId) : (activeServerVoiceConfig?.archetypeId || DEFAULT_ELIZABETH_VOICE.archetypeId)
+  };
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('chatliz_server_ai_voice', JSON.stringify(activeServerVoiceConfig));
+    } catch (_) {}
+  }
+}
+
+// Auto-consultar configuración global configurada por el administrador en el servidor
+if (typeof window !== 'undefined') {
+  try {
+    const cachedServer = localStorage.getItem('chatliz_server_ai_voice');
+    if (cachedServer) {
+      activeServerVoiceConfig = JSON.parse(cachedServer);
+    }
+  } catch (_) {}
+
+  fetch("/api/ai/voice-config")
+    .then(r => r.json())
+    .then(data => {
+      if (data?.success && data?.voiceConfig) {
+        setServerAiVoiceConfig(data.voiceConfig);
+      }
+    })
+    .catch(() => {});
+}
+
 export function getSavedElizabethVoiceConfig(): ElizabethVoiceConfig {
-  if (typeof window === 'undefined') return DEFAULT_ELIZABETH_VOICE;
+  if (typeof window === 'undefined') return activeServerVoiceConfig || DEFAULT_ELIZABETH_VOICE;
+
+  // 1. Si el servidor tiene la voz oficial configurada por el administrador, esa voz tiene prioridad máxima para todos los usuarios
+  if (activeServerVoiceConfig && activeServerVoiceConfig.archetypeId) {
+    return {
+      ...DEFAULT_ELIZABETH_VOICE,
+      ...activeServerVoiceConfig,
+      archetypeId: normalizeArchetypeId(activeServerVoiceConfig.archetypeId),
+      engine: 'xtts_v2',
+      useBarkExpressiveTags: activeServerVoiceConfig.useBarkExpressiveTags ?? true,
+      useXttsProsody: activeServerVoiceConfig.useXttsProsody ?? true
+    };
+  }
+
+  // 2. Respaldo por caché local
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('chatliz_elizabeth_voice_config_v2');
     if (raw) {
@@ -822,7 +871,7 @@ export function getSavedElizabethVoiceConfig(): ElizabethVoiceConfig {
         ...DEFAULT_ELIZABETH_VOICE,
         ...parsed,
         archetypeId,
-        engine: 'xtts_v2', // Exclusivo XTTS v2
+        engine: 'xtts_v2',
         useBarkExpressiveTags: parsed.useBarkExpressiveTags ?? true,
         useXttsProsody: parsed.useXttsProsody ?? true
       };
@@ -842,6 +891,7 @@ export function saveElizabethVoiceConfig(config: Partial<ElizabethVoiceConfig>):
     archetypeId,
     engine: 'xtts_v2' // Siempre XTTS v2
   };
+  setServerAiVoiceConfig(updated);
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));

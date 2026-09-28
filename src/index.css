@@ -134,3 +134,312 @@ body {
 .animate-eq-3 { animation: eqBar 0.9s ease-in-out 0.4s infinite; }
 .animate-eq-4 { animation: eqBar 0.7s ease-in-out 0.1s infinite; }
 
+/* Estilos de Burbujas de Chat con Animaciones */
+@keyframes neonBorderPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.4), inset 0 0 8px rgba(6, 182, 212, 0.2);
+    border-color: rgba(6, 182, 212, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(236, 72, 153, 0.6), inset 0 0 12px rgba(236, 72, 153, 0.3);
+    border-color: rgba(236, 72, 153, 0.8);
+  }
+}
+
+@keyframes holoScan {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 0% 100%;
+  }
+}
+
+@keyframes matrixGlow {
+  0%, 100% {
+    text-shadow: 0 0 4px #10b981;
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+  }
+  50% {
+    text-shadow: 0 0 8px #34d399, 0 0 12px #059669;
+    border-color: rgba(52, 211, 153, 0.7);
+    box-shadow: 0 0 18px rgba(16, 185, 129, 0.3);
+  }
+}
+
+@keyframes goldShimmer {
+  0% {
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.25), inset 0 0 6px rgba(251, 191, 36, 0.2);
+    border-color: rgba(245, 158, 11, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(251, 191, 36, 0.5), inset 0 0 14px rgba(245, 158, 11, 0.4);
+    border-color: rgba(251, 191, 36, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.25), inset 0 0 6px rgba(251, 191, 36, 0.2);
+    border-color: rgba(245, 158, 11, 0.6);
+  }
+}
+
+@keyframes kawaiiBounceIn {
+  0% { transform: scale(0.92) translateY(4px); }
+  60% { transform: scale(1.03) translateY(-2px); }
+  100% { transform: scale(1) translateY(0); }
+}
+
+@keyframes soapIridescent {
+  0% {
+    filter: hue-rotate(0deg) saturate(1.1);
+  }
+  50% {
+    filter: hue-rotate(90deg) saturate(1.3);
+  }
+  100% {
+    filter: hue-rotate(0deg) saturate(1.1);
+  }
+}
+
+@keyframes comicPop {
+  0% { transform: scale(0.97); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+.bubble-futuristic-neon {
+  animation: neonBorderPulse 3s infinite ease-in-out;
+  background: rgba(10, 15, 29, 0.85);
+  backdrop-filter: blur(12px);
+  border-width: 1.5px;
+  position: relative;
+}
+
+.bubble-hologram-scifi {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%);
+  border: 1.5px solid rgba(6, 182, 212, 0.45);
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.2), inset 0 0 10px rgba(6, 182, 212, 0.1);
+  backdrop-filter: blur(14px);
+  position: relative;
+}
+.bubble-hologram-scifi::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(6, 182, 212, 0.05) 3px, rgba(6, 182, 212, 0.05) 4px);
+  pointer-events: none;
+}
+
+.bubble-matrix-terminal {
+  animation: matrixGlow 2.5s infinite ease-in-out;
+  background: rgba(4, 18, 12, 0.92);
+  border: 1.5px solid rgba(16, 185, 129, 0.5);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.bubble-vintage-parchment {
+  background: linear-gradient(145deg, #f5ecd7 0%, #e2d2b4 100%);
+  color: #2b1f13 !important;
+  border: 2px solid #8c6f49;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), inset 0 0 12px rgba(140, 111, 73, 0.3);
+  font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+}
+.bubble-vintage-parchment * {
+  color: #2b1f13 !important;
+}
+
+.bubble-steampunk-bronze {
+  background: linear-gradient(135deg, #2b1810 0%, #170d08 100%);
+  border: 2px solid #b87333;
+  box-shadow: 0 0 14px rgba(184, 115, 51, 0.35), inset 0 0 8px rgba(212, 175, 55, 0.2);
+  position: relative;
+}
+
+.bubble-kawaii-pastel {
+  animation: kawaiiBounceIn 0.35s ease-out;
+  background: linear-gradient(135deg, rgba(254, 205, 211, 0.25) 0%, rgba(224, 231, 255, 0.25) 100%);
+  border: 2px solid rgba(244, 114, 182, 0.5);
+  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.bubble-glass-crystal {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37), inset 0 0 15px rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.bubble-comic-popart {
+  animation: comicPop 0.25s ease-out;
+  background: rgba(254, 240, 138, 0.95);
+  color: #111827 !important;
+  border: 3px solid #000;
+  box-shadow: 4px 4px 0px #000;
+  font-weight: 600;
+}
+.bubble-comic-popart * {
+  color: #111827 !important;
+}
+
+.bubble-royal-gold {
+  animation: goldShimmer 3s infinite ease-in-out;
+  background: linear-gradient(145deg, rgba(30, 24, 10, 0.92) 0%, rgba(15, 12, 5, 0.96) 100%);
+  border: 1.5px solid rgba(245, 158, 11, 0.7);
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.3);
+}
+
+.bubble-soap-iridescent,
+.bubble-soap-effect {
+  animation: soapIridescent 6s infinite alternate ease-in-out;
+  background: linear-gradient(135deg, rgba(255, 192, 203, 0.18) 0%, rgba(176, 224, 230, 0.2) 50%, rgba(221, 160, 221, 0.22) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.25), inset 0 0 15px rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(12px);
+}
+
+/* 1. Cyberpunk Neón 2077 Animado */
+@keyframes neonBorderPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.6)) drop-shadow(0 0 15px rgba(168, 85, 247, 0.3));
+    border-color: rgba(6, 182, 212, 0.85);
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.8)) drop-shadow(0 0 25px rgba(6, 182, 212, 0.5));
+    border-color: rgba(236, 72, 153, 0.95);
+  }
+}
+
+.bubble-futuristic-neon {
+  animation: neonBorderPulse 3.5s infinite ease-in-out;
+  position: relative;
+}
+
+.bubble-futuristic-neon::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+  animation: scanlinePass 4s infinite linear;
+}
+
+@keyframes scanlinePass {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 0.8; }
+  90% { opacity: 0.8; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* 2. Holograma Sci-Fi HUD */
+@keyframes hologramFlicker {
+  0%, 100% { opacity: 0.95; }
+  92% { opacity: 0.95; }
+  93% { opacity: 0.7; }
+  94% { opacity: 0.98; }
+  98% { opacity: 0.85; }
+}
+
+.bubble-hologram-hud {
+  animation: hologramFlicker 6s infinite ease-in-out;
+  position: relative;
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(6, 182, 212, 0.04) 0px,
+    rgba(6, 182, 212, 0.04) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+}
+
+.bubble-hologram-hud::before {
+  content: "[";
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-family: monospace;
+  font-size: 10px;
+  color: #22d3ee;
+  opacity: 0.75;
+}
+
+.bubble-hologram-hud::after {
+  content: "]";
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-family: monospace;
+  font-size: 10px;
+  color: #22d3ee;
+  opacity: 0.75;
+}
+
+/* 3. Matrix Terminal Hacker */
+@keyframes matrixCursorBlink {
+  0%, 49% { border-right-color: #10b981; }
+  50%, 100% { border-right-color: transparent; }
+}
+
+.bubble-matrix-terminal {
+  position: relative;
+  text-shadow: 0 0 5px rgba(16, 185, 129, 0.7);
+}
+
+/* 4. Pergamino Medieval / Antiguo */
+@keyframes parchmentCandleFlicker {
+  0%, 100% {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), inset 0 0 15px rgba(194, 155, 98, 0.2);
+  }
+  50% {
+    box-shadow: 0 4px 22px rgba(0, 0, 0, 0.75), inset 0 0 20px rgba(245, 158, 11, 0.28);
+  }
+}
+
+.bubble-vintage-parchment {
+  animation: parchmentCandleFlicker 4s infinite ease-in-out;
+  border-style: ridge;
+}
+
+/* 5. Aurora Boreal Cósmica */
+@keyframes auroraGradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.bubble-aurora-cosmic {
+  background-size: 200% 200%;
+  animation: auroraGradientShift 8s infinite ease-in-out;
+}
+
+/* 6. Kawaii Bouncy */
+@keyframes kawaiiBouncyFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.bubble-kawaii-bouncy {
+  animation: kawaiiBouncyFloat 3s infinite ease-in-out;
+}
+
+/* 7. Pixel Arcade */
+.bubble-pixel-arcade {
+  image-rendering: pixelated;
+  letter-spacing: 0.04em;
+}
+
+

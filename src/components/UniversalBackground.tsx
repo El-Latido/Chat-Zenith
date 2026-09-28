@@ -1,6 +1,13 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Volume2, VolumeX, Loader2, Sparkles } from 'lucide-react';
-import { preloadMedia, isMediaCached } from '../utils/mediaPreloader';
+import {
+  preloadMedia,
+  isMediaCached,
+  cacheBackgroundForOffline,
+  getOfflineCachedBackground,
+  getOfflineMediaUrl,
+  persistMediaToIndexedDB
+} from '../utils/mediaPreloader';
 
 export interface UniversalBackgroundProps {
   url: string | null | undefined;
@@ -32,17 +39,15 @@ export interface ParsedBackgroundMedia {
  * into a standardized media background representation.
  */
 export function parseBackgroundMedia(rawUrl: string | null | undefined): ParsedBackgroundMedia {
-  if (!rawUrl || typeof rawUrl !== 'string') {
-    return {
-      type: 'none',
-      src: '',
-      originalUrl: '',
-      label: 'Sin fondo',
-      icon: '🎨',
-    };
+  let url = rawUrl && typeof rawUrl === 'string' ? rawUrl.trim() : '';
+
+  if (!url) {
+    const offlineCached = getOfflineCachedBackground();
+    if (offlineCached && typeof offlineCached === 'string') {
+      url = offlineCached.trim();
+    }
   }
 
-  const url = rawUrl.trim();
   if (!url) {
     return {
       type: 'none',
@@ -130,6 +135,7 @@ export function parseBackgroundMedia(rawUrl: string | null | undefined): ParsedB
   if (
     url.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)(\?.*)?$/i) ||
     url.startsWith('data:image/') ||
+    url.startsWith('blob:') ||
     url.includes('images.unsplash.com') ||
     url.includes('api.dicebear.com') ||
     url.includes('i.imgur.com')
@@ -167,15 +173,15 @@ export function parseBackgroundMedia(rawUrl: string | null | undefined): ParsedB
 
 export function UniversalBackground({
   url,
-  opacity = 0.65,
+  opacity = 0.75,
   className = '',
   enableSound = false,
-  isContainer = false,
+  isContainer = true,
 }: UniversalBackgroundProps) {
   const targetMedia = useMemo(() => parseBackgroundMedia(url), [url]);
-  const [displayedMedia, setDisplayedMedia] = useState<ParsedBackgroundMedia>(targetMedia);
-  const [isBuffering, setIsBuffering] = useState<boolean>(() => !isMediaCached(targetMedia.src));
-  const [isMediaLoaded, setIsMediaLoaded] = useState<boolean>(() => isMediaCached(targetMedia.src));
+  const [activeMedia, setActiveMedia] = useState<ParsedBackgroundMedia>(targetMedia);
+  const [resolvedSrc, setResolvedSrc] = useState<string>(targetMedia.src);
+  const [isMediaLoaded, setIsMediaLoaded] = useState<boolean>(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Sound state: user preference stored in localStorage
@@ -185,39 +191,46 @@ export function UniversalBackground({
     return saved === null ? true : saved === 'true';
   });
 
-  // Preload and buffer new background seamlessly before swapping to eliminate delay and black screen
+  // Resolve offline local blob URL if needed
+  useEffect(() => {
+    let isCurrent = true;
+    if (targetMedia.src) {
+      getOfflineMediaUrl(targetMedia.src).then((localUrl) => {
+        if (isCurrent && localUrl && localUrl !== resolvedSrc) {
+          setResolvedSrc(localUrl);
+        }
+      });
+      persistMediaToIndexedDB(targetMedia.src).catch(() => {});
+    }
+    return () => {
+      isCurrent = false;
+    };
+  }, [targetMedia.src]);
+
+  // Smooth media swap without black/gray flashes
   useEffect(() => {
     if (!targetMedia.src || targetMedia.type === 'none') {
-      setDisplayedMedia(targetMedia);
-      setIsBuffering(false);
-      setIsMediaLoaded(true);
-      return;
-    }
-
-    if (targetMedia.src === displayedMedia.src && targetMedia.type === displayedMedia.type) {
+      const fallback = getOfflineCachedBackground();
+      if (fallback) {
+        setActiveMedia(parseBackgroundMedia(fallback));
+      }
       return;
     }
 
     let isCurrent = true;
-    setIsBuffering(true);
-    setIsMediaLoaded(false);
 
     preloadMedia(targetMedia.src)
       .then(() => {
         if (isCurrent) {
-          setDisplayedMedia(targetMedia);
-          // For images, if already cached, mark ready
-          if (targetMedia.type === 'image') {
-            setIsMediaLoaded(true);
-            setIsBuffering(false);
-          }
+          setActiveMedia(targetMedia);
+          setIsMediaLoaded(true);
+          cacheBackgroundForOffline(targetMedia.src);
         }
       })
       .catch(() => {
         if (isCurrent) {
-          setDisplayedMedia(targetMedia);
+          setActiveMedia(targetMedia);
           setIsMediaLoaded(true);
-          setIsBuffering(false);
         }
       });
 
@@ -226,7 +239,8 @@ export function UniversalBackground({
     };
   }, [targetMedia]);
 
-  const media = displayedMedia;
+  const media = activeMedia;
+  const currentSrc = resolvedSrc || media.src;
 
   // Keep video continuously playing without pausing
   useEffect(() => {
@@ -244,14 +258,12 @@ export function UniversalBackground({
         video.muted = true;
         try {
           await video.play();
-        } catch (e) {
-          // Graceful fallback
-        }
+        } catch (_) {}
       }
     };
 
     playVideo();
-  }, [media.src, media.type, isAudioMuted]);
+  }, [currentSrc, media.type, isAudioMuted]);
 
   const toggleSound = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -267,14 +279,15 @@ export function UniversalBackground({
     }
   };
 
-  if (media.type === 'none' || !media.src) {
+  if ((media.type === 'none' || !currentSrc) && !getOfflineCachedBackground()) {
     return null;
   }
 
   const isVideoWithSoundCandidate = media.type === 'video' || media.type === 'youtube';
+
   const containerClasses = isContainer
-    ? `absolute inset-0 w-full h-full pointer-events-none overflow-hidden select-none transition-opacity duration-500 ease-in-out ${className}`
-    : `fixed inset-0 w-screen h-screen min-w-full min-h-full pointer-events-none overflow-hidden select-none z-[-1] transition-opacity duration-700 ease-in-out ${className}`;
+    ? `absolute inset-0 w-full h-full pointer-events-none overflow-hidden select-none z-0 transition-opacity duration-500 ease-in-out ${className}`
+    : `fixed inset-0 w-screen h-screen min-w-full min-h-full pointer-events-none overflow-hidden select-none z-0 transition-opacity duration-700 ease-in-out ${className}`;
 
   return (
     <div
@@ -283,22 +296,19 @@ export function UniversalBackground({
     >
       {/* 1. YouTube Video Embed */}
       {media.type === 'youtube' && (
-        <div className={`absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}>
+        <div className={`absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden transition-opacity duration-300 ${isMediaLoaded ? 'opacity-100' : 'opacity-80'}`}>
           <iframe
             src={`${media.src}&mute=${isAudioMuted ? 1 : 0}`}
             title="Chat-Liz Background Video"
-            className={isContainer ? "w-full h-full border-0 pointer-events-none object-cover" : "w-[125vw] h-[125vh] min-w-[125vw] min-h-[125vh] -translate-x-[12.5vw] -translate-y-[12.5vh] border-0 pointer-events-none object-cover"}
+            className="w-full h-full border-0 pointer-events-none object-cover"
             allow="autoplay; encrypted-media; picture-in-picture"
             tabIndex={-1}
-            onLoad={() => {
-              setIsBuffering(false);
-              setIsMediaLoaded(true);
-            }}
+            onLoad={() => setIsMediaLoaded(true)}
           />
         </div>
       )}
 
-      {/* 2. Direct Video File - Infinite loop with smooth buffering */}
+      {/* 2. Direct Video File - Infinite loop with offline memory */}
       {media.type === 'video' && (
         <video
           ref={videoRef}
@@ -307,53 +317,53 @@ export function UniversalBackground({
           playsInline
           muted={isAudioMuted}
           preload="auto"
-          src={media.src}
-          className={`absolute inset-0 w-full h-full object-cover min-w-full min-h-full transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}
-          onWaiting={() => setIsBuffering(true)}
+          src={currentSrc}
+          className={`absolute inset-0 w-full h-full object-cover min-w-full min-h-full transition-opacity duration-300 ${isMediaLoaded ? 'opacity-100' : 'opacity-80'}`}
           onCanPlay={() => {
-            setIsBuffering(false);
             setIsMediaLoaded(true);
+            cacheBackgroundForOffline(currentSrc);
           }}
           onLoadedData={() => {
-            setIsBuffering(false);
             setIsMediaLoaded(true);
-          }}
-          onPlaying={() => {
-            setIsBuffering(false);
-            setIsMediaLoaded(true);
+            cacheBackgroundForOffline(currentSrc);
           }}
           onEnded={(e) => {
             try {
               e.currentTarget.currentTime = 0;
               e.currentTarget.play();
-            } catch {}
+            } catch (_) {}
           }}
-          onError={() => {
-            // Graceful fallback - never show broken banner
-            setIsBuffering(false);
+          onError={(e) => {
+            // If direct remote url fails, fallback to offline cached background
+            const cached = getOfflineCachedBackground();
+            if (cached && cached !== currentSrc) {
+              (e.currentTarget as HTMLVideoElement).src = cached;
+            }
             setIsMediaLoaded(true);
           }}
         />
       )}
 
-      {/* 3. Image, Animated GIF or WebP - Preserves animated frames & perfect aspect ratio with lazy loading */}
+      {/* 3. Image, Animated GIF or WebP - Preserves animated frames & continuous render */}
       {media.type === 'image' && (
-        <div className={`absolute inset-0 w-full h-full overflow-hidden transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="absolute inset-0 w-full h-full overflow-hidden transition-opacity duration-300 opacity-100">
           <img
-            src={media.src}
+            src={currentSrc}
             alt="Fondo Chat-Liz"
-            loading="lazy"
+            loading="eager"
             decoding="async"
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover min-w-full min-h-full pointer-events-none select-none"
             onLoad={() => {
-              setIsBuffering(false);
               setIsMediaLoaded(true);
+              cacheBackgroundForOffline(currentSrc);
             }}
             onError={(e) => {
-              setIsBuffering(false);
+              const cached = getOfflineCachedBackground();
+              if (cached && cached !== currentSrc) {
+                (e.currentTarget as HTMLImageElement).src = cached;
+              }
               setIsMediaLoaded(true);
-              (e.currentTarget as HTMLElement).style.display = 'none';
             }}
           />
         </div>
@@ -361,64 +371,36 @@ export function UniversalBackground({
 
       {/* 4. Pinterest or Generic Webpage */}
       {(media.type === 'pinterest' || media.type === 'webpage') && (
-        <div className={`absolute inset-0 w-full h-full overflow-hidden transition-opacity duration-500 ${isMediaLoaded ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="absolute inset-0 w-full h-full overflow-hidden transition-opacity duration-300 opacity-100">
           <iframe
             src={media.src}
             title="Chat-Liz Background Page"
             className="w-full h-full border-0 pointer-events-none object-cover"
-            allow="autoplay; encrypted-media"
             sandbox="allow-scripts allow-same-origin"
-            tabIndex={-1}
-            onLoad={() => {
-              setIsBuffering(false);
-              setIsMediaLoaded(true);
-            }}
+            loading="eager"
+            onLoad={() => setIsMediaLoaded(true)}
           />
         </div>
       )}
 
-      {/* SKELETON / SPINNER STATE: Appears smoothly during buffer/load to eliminate any flash or error display */}
-      {(!isMediaLoaded || isBuffering) && (
-        isContainer ? (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm pointer-events-none animate-in fade-in duration-150">
-            {/* Shimmer skeleton background */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/10 to-transparent -translate-x-full animate-[shimmer_1.8s_infinite] pointer-events-none" />
-            <div className="relative flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-black/85 border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-[0_0_20px_rgba(6,182,212,0.25)]">
-              <Loader2 size={15} className="animate-spin text-cyan-400" />
-              <span>Optimizando y cargando fondo...</span>
-            </div>
-            <div className="w-32 h-1 bg-white/10 rounded-full mt-2.5 overflow-hidden relative">
-              <div className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 rounded-full animate-pulse w-3/4" />
-            </div>
-          </div>
-        ) : (
-          <div className="absolute top-4 right-4 z-20 pointer-events-none flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-pulse">
-            <Loader2 size={13} className="animate-spin text-cyan-400" />
-            <span>Optimizando fondo...</span>
-          </div>
-        )
-      )}
-
-      {/* Dark gradient overlay to preserve chat readability */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/60 pointer-events-none" />
-
-      {/* Floating Sound Toggle for Video Backgrounds */}
-      {!isContainer && isVideoWithSoundCandidate && isMediaLoaded && (
-        <div className="absolute bottom-4 right-4 pointer-events-auto z-20">
+      {/* Audio Mute/Unmute Floating Button for Background Videos */}
+      {isVideoWithSoundCandidate && (
+        <div className="absolute bottom-4 right-4 pointer-events-auto z-30">
           <button
+            type="button"
             onClick={toggleSound}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg transition-all active:scale-95"
-            title={isAudioMuted ? "Activar sonido del fondo" : "Silenciar sonido del fondo"}
+            className="bg-black/70 hover:bg-black/90 text-white/90 hover:text-white p-2.5 rounded-full border border-white/20 backdrop-blur-md shadow-lg transition-transform active:scale-95 flex items-center gap-2 text-xs"
+            title={isAudioMuted ? "Activar sonido del fondo" : "Silenciar fondo"}
           >
             {isAudioMuted ? (
               <>
-                <VolumeX size={14} className="text-gray-400" />
-                <span className="hidden sm:inline text-gray-300">Sonido Fondo: Off</span>
+                <VolumeX size={16} className="text-red-400" />
+                <span className="hidden sm:inline font-mono font-medium">Fondo Mudo</span>
               </>
             ) : (
               <>
-                <Volume2 size={14} className="text-cyan-400 animate-pulse" />
-                <span className="text-cyan-300 font-bold">Sonido Fondo: On</span>
+                <Volume2 size={16} className="text-cyan-400 animate-pulse" />
+                <span className="hidden sm:inline font-mono font-medium">Sonido ON</span>
               </>
             )}
           </button>

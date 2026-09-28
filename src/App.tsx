@@ -80,6 +80,8 @@ import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModa
 import { WelcomeLanding } from "./components/WelcomeLanding";
 import { UniversalBackground, parseBackgroundMedia } from "./components/UniversalBackground";
 import { BackgroundSelectorModal } from "./components/BackgroundSelectorModal";
+import { CustomRoomConfigModal } from "./components/CustomRoomConfigModal";
+import { getBubbleStyleDef } from "./utils/bubbleStyles";
 
 const DECORATIONS = [
   // Ajedrez (Themes & Efectos)
@@ -805,8 +807,22 @@ function MainApp() {
     return () => clearInterval(interval);
   }, []);
   const [hallOfFame, setHallOfFame] = useState<any[]>([]);
+  const [currentRoomData, setCurrentRoomData] = useState<any>(null);
+  const [isRoomConfigOpen, setIsRoomConfigOpen] = useState(false);
 
-  const activeChatConfig = activeChat === "global" ? globalChatConfig : chatConfig;
+  const activeChatConfig = activeChat === "global"
+    ? globalChatConfig
+    : activeChat.startsWith("room_")
+      ? (currentRoomData ? {
+          backgroundUrl: currentRoomData.backgroundUrl,
+          backgroundBase64: currentRoomData.backgroundUrl,
+          icon: currentRoomData.logo || currentRoomData.emblem,
+          title: currentRoomData.name,
+          bubbleStyle: currentRoomData.bubbleStyle,
+          theme: currentRoomData.theme,
+          autoCleanMode: currentRoomData.autoCleanMode,
+        } : null)
+      : chatConfig;
   const activeCustomBg = activeChatConfig?.backgroundBase64 || activeChatConfig?.backgroundUrl;
 
   const [personalBgOverride, setPersonalBgOverride] = useState<string | null>(() => localStorage.getItem("chatliz_personal_bg"));
@@ -819,9 +835,9 @@ function MainApp() {
     return () => window.removeEventListener("chatliz_personal_bg_changed", handleBgChange);
   }, []);
 
-  // User personal background isolation: your background only changes for YOU
+  // El fondo de la sala y del chat se comparte con todos los usuarios
   const personalBg = personalBgOverride !== null ? personalBgOverride : (user?.preferred_background || localStorage.getItem("chatliz_personal_bg"));
-  let chatBg = personalBg || activeCustomBg || chatBgImage;
+  let chatBg = activeCustomBg || personalBg || chatBgImage;
 
   // Recovery States
   const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
@@ -1344,12 +1360,37 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       }
     };
 
+    const handleCustomRoomUpdated = (data: { roomId: string, room: any }) => {
+      if (data?.roomId === activeChat) {
+        setCurrentRoomData(data.room);
+      }
+    };
+
+    const handleCustomRoomCleaned = (data: { roomId: string }) => {
+      if (data?.roomId === activeChat) {
+        setMessages([]);
+      }
+    };
+
+    const handleReceiveCustomRoomMsg = (data: { roomId: string, msg: any }) => {
+      if (data?.roomId === activeChat) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.msg?.id)) return prev;
+          return [...prev, data.msg];
+        });
+        setTimeout(scrollToBottom, 100);
+      }
+    };
+
     socket.on("chat_config_updated", handleChatConfigUpdated);
     socket.on("global_bg_updated", handleGlobalBgUpdated);
     socket.on("user_profile_updated", handleUserProfileUpdated);
     socket.on("sync_appearance_to_axis", handleSyncToAxis);
     socket.on("global_chat_cleaned", handleGlobalChatCleaned);
     socket.on("ai_voice_config_updated", handleAiVoiceConfigUpdated);
+    socket.on("custom_room_updated", handleCustomRoomUpdated);
+    socket.on("custom_room_cleaned", handleCustomRoomCleaned);
+    socket.on("receive_custom_room", handleReceiveCustomRoomMsg);
 
     return () => {
       socket.off("chat_config_updated", handleChatConfigUpdated);
@@ -1358,6 +1399,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       socket.off("sync_appearance_to_axis", handleSyncToAxis);
       socket.off("global_chat_cleaned", handleGlobalChatCleaned);
       socket.off("ai_voice_config_updated", handleAiVoiceConfigUpdated);
+      socket.off("custom_room_updated", handleCustomRoomUpdated);
+      socket.off("custom_room_cleaned", handleCustomRoomCleaned);
+      socket.off("receive_custom_room", handleReceiveCustomRoomMsg);
     };
   }, [isLoggedIn, activeChat, user.username]);
 
@@ -2566,6 +2610,13 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         100,
       );
       socket.emit("send_global", payload);
+    } else if (activeChat.startsWith("room_")) {
+      setMessages((prev) => [...prev, msgData]);
+      setTimeout(
+        scrollToBottom,
+        100,
+      );
+      socket.emit("send_custom_room", { roomId: activeChat, msg: payload });
     } else {
       // Use the server to send private messages so moderation, bots, and socket events work properly.
       // Optimistic UI for private messages
@@ -3365,7 +3416,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                 <FriendsWebcam user={user} onClose={() => setActiveChat("global")} />
             ) : activeChat === "custom_rooms" ? (
                 <CustomRooms user={user} onJoinRoom={(roomId, roomData) => {
-                    setActiveChat("room_" + roomId);
+                    const cleanId = roomId.startsWith("room_") ? roomId : "room_" + roomId;
+                    setCurrentRoomData(roomData);
+                    setActiveChat(cleanId);
                 }} />
             ) : activeChat === "lizgram" ? (
 
@@ -3448,30 +3501,85 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                 ) : (
                   (() => {
                     if (activeChat.startsWith("room_")) {
+                        const isRoomOwner = currentRoomData?.owner === user.username || isUserAdmin;
+                        const roomLogo = currentRoomData?.logo || currentRoomData?.emblem || "⚔️";
+                        const isLogoImg = roomLogo.startsWith("http") || roomLogo.startsWith("data:");
+
                         return (
-                          <div className="bg-[#0a0a0c] border-r border-white/10 border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
-                            <div className="flex items-center gap-3">
+                          <div className="bg-[#0a0a0c]/90 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-lg">
+                            <div className="flex items-center gap-3 min-w-0">
                               <button 
                                 onClick={() => {
                                     socket.emit("leave_custom_room", activeChat);
                                     setActiveChat("custom_rooms");
                                 }} 
-                                className="text-white/80 hover:bg-white/10 p-2 rounded-full transition-colors mr-1"
-                                title="Volver a Salas"
+                                className="text-white/80 hover:bg-white/10 p-2 rounded-full transition-colors shrink-0"
+                                title="Volver a la lista de Salas"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
                               </button>
-                              <div className="w-10 h-10 rounded-full bg-[#1A2639] border border-white/10 flex items-center justify-center shadow-sm">
-                                <Hash className="text-white/80" size={20} />
+
+                              {/* Logo / Emblema de la Sala */}
+                              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-500/25 via-purple-500/25 to-blue-500/25 border border-cyan-500/40 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)] shrink-0 overflow-hidden text-2xl">
+                                {isLogoImg ? (
+                                  <img src={roomLogo} alt="Logo de Sala" className="w-full h-full object-cover" />
+                                ) : (
+                                  <span>{roomLogo}</span>
+                                )}
                               </div>
-                              <div className="flex flex-col">
-                                <span className="text-white font-bold text-lg leading-tight flex items-center gap-1.5">
-                                  Sala Personalizada
-                                  <span className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30 uppercase tracking-wider">
+
+                              {/* Nombre Grande y Detalles */}
+                              <div className="flex flex-col min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h2 className="text-lg sm:text-2xl font-black bg-gradient-to-r from-cyan-300 via-teal-200 to-indigo-300 bg-clip-text text-transparent tracking-tight truncate leading-tight drop-shadow-sm">
+                                    {currentRoomData?.name || "Sala de la Comunidad"}
+                                  </h2>
+                                  <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-500/30 uppercase tracking-wider font-bold">
                                     COMUNIDAD
                                   </span>
-                                </span>
+                                  {currentRoomData?.autoCleanMode && currentRoomData.autoCleanMode !== "disabled" && (
+                                    <span className="text-[10px] bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30 font-mono font-bold flex items-center gap-1">
+                                      <Trash2 size={10} /> Auto-Limpieza: {currentRoomData.autoCleanMode}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-white/50 mt-0.5">
+                                  <span className="flex items-center gap-1 text-amber-300/80">
+                                    <Shield size={11} /> Creador: @{currentRoomData?.owner || "Admin"}
+                                  </span>
+                                  {currentRoomData?.rules && (
+                                    <span className="truncate italic hidden md:inline text-white/40">
+                                      • "{currentRoomData.rules}"
+                                    </span>
+                                  )}
+                                </div>
                               </div>
+                            </div>
+
+                            {/* Botones de Acción de la Sala */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => {
+                                  setBgModalMode("room");
+                                  setIsBgModalOpen(true);
+                                }}
+                                className="bg-white/5 hover:bg-white/10 text-white/80 hover:text-white px-3 py-1.5 rounded-xl border border-white/10 text-xs font-bold flex items-center gap-1.5 transition-all"
+                                title="Cambiar Fondo de la Sala"
+                              >
+                                <ImageIcon size={14} className="text-cyan-400" />
+                                <span className="hidden sm:inline">Fondo</span>
+                              </button>
+
+                              {isRoomOwner && (
+                                <button
+                                  onClick={() => setIsRoomConfigOpen(true)}
+                                  className="bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 text-cyan-300 hover:text-white px-3.5 py-1.5 rounded-xl border border-cyan-500/40 text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+                                  title="Configurar Nombre, Logo, Fondo y Limpieza de tu Sala"
+                                >
+                                  <Settings size={14} className="animate-spin-slow" />
+                                  <span>Configurar Sala</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
@@ -3716,36 +3824,41 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                             </div>
                             
                             {(() => {
+                                const activeBubbleStyleId =
+                                  senderInfo?.bubbleStyle ||
+                                  activeChatConfig?.bubbleStyle ||
+                                  (user as any)?.preferredBubbleStyle ||
+                                  "default";
+
+                                const bubbleDef = getBubbleStyleDef(activeBubbleStyleId);
+                                const bubbleVariantClass = isMe ? bubbleDef.myBubbleClass : bubbleDef.otherBubbleClass;
+
                                 const defaultBubbleColor = isMe ? "rgba(6, 182, 212, 0.15)" : "rgba(255, 255, 255, 0.05)";
-                                const defaultTextColor = "#E0E2E5";
                                 const defaultBorder = isMe ? "rgba(6, 182, 212, 0.3)" : "rgba(255, 255, 255, 0.1)";
                                 const defaultShape = isMe ? "rounded-[20px] rounded-tr-[4px]" : "rounded-[20px] rounded-tl-[4px]";
                                 
-                                const bColor = senderInfo?.bubbleColor || (m.sender === "Elizabeth" ? "transparent" : defaultBubbleColor);
-                                const bBorder = senderInfo?.bubbleBorder || (m.sender === "Elizabeth" ? "rgba(255,255,255,0.1)" : defaultBorder);
-                                const bShape = senderInfo?.bubbleShape || (m.sender === "Elizabeth" ? "rounded-[20px]" : defaultShape);
+                                const bColor = senderInfo?.bubbleColor || (m.sender === "Elizabeth" ? "transparent" : (activeBubbleStyleId !== "default" ? undefined : defaultBubbleColor));
+                                const bBorder = senderInfo?.bubbleBorder || (m.sender === "Elizabeth" ? "rgba(255,255,255,0.1)" : (activeBubbleStyleId !== "default" ? undefined : defaultBorder));
+                                const bShape = senderInfo?.bubbleShape || defaultShape;
                                 const bTexture = senderInfo?.bubbleTexture || (m.sender === "Elizabeth" ? "none" : "none");
                                 const isElizabeth = m.sender === "Elizabeth";
 
-                                let shapeClasses = bShape;
+                                let shapeClasses = activeBubbleStyleId !== "default" ? "" : bShape;
                                 let textureClasses = "";
                                 if (bTexture === "glass") textureClasses = "backdrop-blur-md bg-opacity-30 border-white/20";
                                 if (bTexture === "glow") textureClasses = "shadow-[0_0_15px_rgba(255,255,255,0.2)]";
                                 if (bTexture === "soap") textureClasses = "backdrop-blur-sm shadow-[0_0_15px_rgba(255,255,255,0.4),inset_0_0_20px_rgba(255,255,255,0.5)] border border-white/40 overflow-visible";
                                 if (bTexture === "animals") textureClasses = "overflow-visible";
                                 
-                                const nameColor = isElizabeth ? "text-pink-400" : "text-cyan-300";
-                                const textColor = "text-white/90";
-                                const timeColor = "text-white/40";
+                                const nameColor = isElizabeth ? "text-pink-400" : (activeBubbleStyleId === "comic_popart" ? "text-black" : "text-cyan-300");
 
                                 return (
                                   <div 
-                                    className={`${shapeClasses} ${textureClasses} px-4 py-2.5 shadow-sm flex flex-col relative min-w-[120px] transition-all`}
+                                    className={`${bubbleDef.bubbleClass} ${bubbleVariantClass} ${shapeClasses} ${textureClasses} px-4 py-2.5 shadow-sm flex flex-col relative min-w-[120px] transition-all`}
                                     style={{ 
-                                        backgroundColor: bColor !== "transparent" ? bColor : undefined,
-                                        borderWidth: '1px',
-                                        borderColor: bBorder !== "transparent" ? bBorder : defaultBorder,
-                                        boxShadow: bTexture === "glow" ? `0 0 15px rgba(255,255,255,0.1)` : (isMe ? "0 4px 20px rgba(6,182,212,0.15)" : "0 4px 20px rgba(0,0,0,0.2)"),backdropFilter: "blur(10px)",
+                                        backgroundColor: bColor !== "transparent" && bColor ? bColor : undefined,
+                                        borderColor: bBorder !== "transparent" && bBorder ? bBorder : undefined,
+                                        backdropFilter: "blur(10px)",
                                     }}
                                   >
                                     {bTexture === "soap" && (
@@ -4427,6 +4540,24 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         currentGlobalConfig={globalChatConfig}
         onToast={addSystemToast}
       />
+
+      {isRoomConfigOpen && (
+        <CustomRoomConfigModal
+          isOpen={isRoomConfigOpen}
+          onClose={() => setIsRoomConfigOpen(false)}
+          roomData={currentRoomData}
+          currentUser={user.username}
+          isMasterAdmin={isUserAdmin}
+          onRoomUpdated={(updated) => {
+            setCurrentRoomData(updated);
+            addSystemToast("✨ Configuración de sala actualizada");
+          }}
+          onCleanRoomNow={() => {
+            setMessages([]);
+            addSystemToast("🧹 Sala limpiada");
+          }}
+        />
+      )}
 
       <BackgroundSelectorModal
         isOpen={isBgModalOpen}

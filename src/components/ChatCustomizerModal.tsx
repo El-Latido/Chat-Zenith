@@ -29,6 +29,8 @@ import {
   AlertCircle
 } from "lucide-react";
 
+import { CHAT_BUBBLE_STYLES, BubbleStyleDef } from "../utils/bubbleStyles";
+
 export interface ChatConfig {
   backgroundBase64?: string;
   backgroundUrl?: string;
@@ -37,9 +39,12 @@ export interface ChatConfig {
   title?: string;
   statusMessage?: string;
   bubbleStyle?: string;
+  autoCleanMode?: string;
   updatedBy?: string;
   updatedAt?: any;
 }
+
+export const PRESET_BUBBLE_STYLES = CHAT_BUBBLE_STYLES;
 
 interface ChatCustomizerModalProps {
   isOpen: boolean;
@@ -135,6 +140,7 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
   const [customTitle, setCustomTitle] = useState<string>(currentConfig?.title || "");
   const [statusMessage, setStatusMessage] = useState<string>(currentConfig?.statusMessage || "");
   const [bubbleStyle, setBubbleStyle] = useState<string>(currentConfig?.bubbleStyle || "default");
+  const [autoCleanMode, setAutoCleanMode] = useState<string>(currentConfig?.autoCleanMode || "disabled");
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [isBgLoading, setIsBgLoading] = useState<boolean>(false);
@@ -195,6 +201,7 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
         title: customTitle.trim() || (isGlobal ? "Chat Global" : chatTitle),
         statusMessage: statusMessage.trim(),
         bubbleStyle: bubbleStyle,
+        autoCleanMode: autoCleanMode,
         updatedAt: new Date().toISOString()
       };
       await onSaveConfig(updated);
@@ -593,27 +600,25 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
               {/* Bubble Style */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-cyan-300 mb-2">
-                  Estilo de Burbuja de Mensajes
+                  Estilo de Burbuja de Mensajes (Animaciones & Diseños)
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: "default", name: "Moderno Suave", desc: "Bordes redondeados con sombra sutil" },
-                    { id: "glass", name: "Cristal Neón", desc: "Fondo translúcido con brillo de color" },
-                    { id: "minimal", name: "Minimalista", desc: "Sin bordes pesados, enfoque en texto" },
-                    { id: "rounded", name: "Ultra Redondeado", desc: "Estilo píldora cápsula" }
-                  ].map((style) => (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
+                  {PRESET_BUBBLE_STYLES.map((style) => (
                     <button
                       key={style.id}
                       type="button"
                       onClick={() => setBubbleStyle(style.id)}
-                      className={`p-3 rounded-2xl border text-left transition-all ${
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
                         bubbleStyle === style.id
-                          ? "border-cyan-400 bg-cyan-500/10 shadow-[0_0_12px_rgba(6,182,212,0.25)]"
+                          ? "border-cyan-400 bg-cyan-500/15 shadow-[0_0_12px_rgba(6,182,212,0.3)] ring-1 ring-cyan-400"
                           : "border-white/10 bg-white/5 hover:bg-white/10"
                       }`}
                     >
-                      <span className="text-xs font-bold text-white block">{style.name}</span>
-                      <span className="text-[10px] text-white/50">{style.desc}</span>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-sm">{style.icon}</span>
+                        <span className="text-xs font-bold text-white truncate">{style.name}</span>
+                      </div>
+                      <span className="text-[10px] text-white/50 line-clamp-2 leading-tight block">{style.desc}</span>
                     </button>
                   ))}
                 </div>
@@ -626,7 +631,7 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
             <div className="space-y-4 animate-in fade-in duration-150">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-cyan-300 mb-1.5">
-                  Título Personalizado del Chat
+                  Título Personalizado del Chat (Se verá en grande)
                 </label>
                 <input
                   id="input-custom-chat-title"
@@ -636,6 +641,29 @@ export const ChatCustomizerModal: React.FC<ChatCustomizerModalProps> = ({
                   onChange={(e) => setCustomTitle(e.target.value)}
                   className="w-full bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-cyan-400"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-cyan-300 mb-1.5 flex items-center gap-1.5">
+                  <Trash2 size={13} className="text-amber-400" />
+                  Limpieza Automática de Mensajes
+                </label>
+                <select
+                  value={autoCleanMode}
+                  onChange={(e) => setAutoCleanMode(e.target.value)}
+                  className="w-full bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"
+                >
+                  <option value="disabled">Desactivada (Conservar historial)</option>
+                  <option value="1h">Cada 1 Hora (Auto-limpieza)</option>
+                  <option value="6h">Cada 6 Horas</option>
+                  <option value="24h">Cada 24 Horas</option>
+                  <option value="20msgs">Al alcanzar 20 mensajes (Mantener los últimos 20)</option>
+                  <option value="50msgs">Al alcanzar 50 mensajes (Mantener los últimos 50)</option>
+                  <option value="100msgs">Al alcanzar 100 mensajes (Mantener los últimos 100)</option>
+                </select>
+                <p className="text-[10px] text-white/50 mt-1">
+                  Permite a los dueños de salas programar purgas automáticas para un chat fluido y sin lag.
+                </p>
               </div>
 
               <div>

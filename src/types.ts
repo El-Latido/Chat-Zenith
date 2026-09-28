@@ -44,6 +44,25 @@ export interface UserObj {
   audioVisualizerStyle?: string;
   audioVisualizerColor1?: string;
   audioVisualizerColor2?: string;
+  bubbleStyle?: string;
+}
+
+export interface CustomRoom {
+  id: string;
+  name: string;
+  owner: string;
+  rules?: string;
+  logo?: string;
+  emblem?: string;
+  backgroundUrl?: string;
+  theme?: string;
+  bubbleStyle?: string;
+  autoCleanMode?: string;
+  lastCleanedAt?: number;
+  usersCount?: number;
+  users?: string[];
+  banned?: string[];
+  createdAt?: number;
 }
 
 export interface TutiFruttiState {
@@ -79,6 +98,7 @@ export interface MessageObj {
   image?: string;
   type?: string;
   isAi?: boolean;
+  bubbleStyle?: string;
   reactions?: Record<string, string[]>;
   inviteData?: {
     gameId: string;

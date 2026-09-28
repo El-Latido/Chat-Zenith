@@ -8,8 +8,10 @@ export interface BackgroundSelectorModalProps {
   onClose: () => void;
   currentBg?: string | null;
   isAdmin: boolean;
-  defaultMode?: 'global' | 'personal';
+  defaultMode?: 'global' | 'personal' | 'room';
+  activeRoomId?: string | null;
   onApplyPersonalBg: (url: string) => void;
+  onApplyRoomBg?: (url: string) => void;
   onToast?: (msg: string) => void;
 }
 
@@ -65,11 +67,15 @@ export function BackgroundSelectorModal({
   currentBg,
   isAdmin,
   defaultMode = 'global',
+  activeRoomId,
   onApplyPersonalBg,
+  onApplyRoomBg,
   onToast,
 }: BackgroundSelectorModalProps) {
-  const [targetScope, setTargetScope] = useState<'global' | 'personal'>(
-    isAdmin ? defaultMode : 'personal'
+  const [targetScope, setTargetScope] = useState<'global' | 'personal' | 'room'>(
+    defaultMode === 'room' && activeRoomId
+      ? 'room'
+      : isAdmin ? defaultMode : 'personal'
   );
   const [customUrl, setCustomUrl] = useState('');
   const [selectedBg, setSelectedBg] = useState<string>(currentBg || '');
@@ -80,6 +86,12 @@ export function BackgroundSelectorModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (defaultMode === 'room' && activeRoomId) {
+      setTargetScope('room');
+    }
+  }, [defaultMode, activeRoomId]);
 
   // Pre-cache all preset backgrounds in memory as soon as modal opens
   useEffect(() => {
@@ -157,6 +169,17 @@ export function BackgroundSelectorModal({
         }
       });
       if (onToast) onToast('🌐 ¡Fondo global aplicado a toda la sala!');
+    } else if (targetScope === 'room' && activeRoomId) {
+      socket.emit('update_custom_room', {
+        roomId: activeRoomId,
+        config: { backgroundUrl: finalBg }
+      }, (res: any) => {
+        if (res && res.error) {
+          console.warn("Room background sync warning:", res.error);
+        }
+      });
+      if (onApplyRoomBg) onApplyRoomBg(finalBg);
+      if (onToast) onToast('🛋️ ¡Fondo de sala aplicado para todos los miembros!');
     } else {
       // Personal background only
       onApplyPersonalBg(finalBg);
@@ -175,6 +198,13 @@ export function BackgroundSelectorModal({
     if (targetScope === 'global' && isAdmin) {
       socket.emit('set_global_bg', '');
       if (onToast) onToast('🔄 Fondo global restablecido al predeterminado');
+    } else if (targetScope === 'room' && activeRoomId) {
+      socket.emit('update_custom_room', {
+        roomId: activeRoomId,
+        config: { backgroundUrl: '' }
+      });
+      if (onApplyRoomBg) onApplyRoomBg('');
+      if (onToast) onToast('🔄 Fondo de sala restablecido');
     } else {
       onApplyPersonalBg('');
       localStorage.removeItem('chatliz_personal_bg');
@@ -223,36 +253,52 @@ export function BackgroundSelectorModal({
 
         {/* Content Body */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-5 scrollbar-thin">
-          {/* Scope Selector: Global vs Personal */}
-          {isAdmin && (
+          {/* Scope Selector: Global vs Sala vs Personal */}
+          {(isAdmin || activeRoomId) && (
             <div className="space-y-1.5">
               <label className="text-xs font-bold uppercase tracking-wider text-gray-400">
                 ¿Dónde deseas aplicar este fondo?
               </label>
-              <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-2xl border border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setTargetScope('global')}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                    targetScope === 'global'
-                      ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <Globe size={14} />
-                  Fondo de Toda la Sala (Global)
-                </button>
+              <div className={`grid ${isAdmin && activeRoomId ? 'grid-cols-3' : 'grid-cols-2'} gap-2 p-1 bg-black/40 rounded-2xl border border-white/10`}>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetScope('global')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                      targetScope === 'global'
+                        ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <Globe size={13} />
+                    <span>Global</span>
+                  </button>
+                )}
+                {activeRoomId && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetScope('room')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                      targetScope === 'room'
+                        ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <Sparkles size={13} />
+                    <span>Esta Sala</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setTargetScope('personal')}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                     targetScope === 'personal'
                       ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  <User size={14} />
-                  Solo Mi Pantalla (Personal)
+                  <User size={13} />
+                  <span>Personal</span>
                 </button>
               </div>
             </div>

@@ -226,11 +226,56 @@ async function callGeminiAi(aiInstance: any, params: any, timeoutMs = 12000): Pr
   }
 }
 
+let globalAiVoiceConfig: any = null;
+let customRooms: Record<string, any> = {};
+
 async function initAiRuntimeConfig() {
   try {
     let saved: any = null;
     if (fdb) {
       saved = await getAiApiConfigFromFirebase();
+      try {
+        const vSnap = await getDoc(doc(fdb, "system_settings", "elizabeth_voice_config"));
+        if (vSnap.exists()) {
+          globalAiVoiceConfig = vSnap.data();
+          console.log("[Voice Config] Configuración de voz AI global cargada desde Firestore:", globalAiVoiceConfig?.archetypeId);
+        } else {
+          const uSnap = await getDoc(doc(fdb, "users", "Elizabeth"));
+          if (uSnap.exists() && uSnap.data().voiceConfig) {
+            globalAiVoiceConfig = uSnap.data().voiceConfig;
+            console.log("[Voice Config] Configuración de voz cargada desde perfil de Elizabeth:", globalAiVoiceConfig?.archetypeId);
+          }
+        }
+      } catch (err) {
+        console.warn("[Voice Config] Advertencia cargando configuración de voz:", err);
+      }
+
+      // Cargar salas comunitarias persistentes
+      try {
+        const roomsSnap = await getDocs(collection(fdb, "custom_rooms"));
+        roomsSnap.forEach((d) => {
+          const rData = d.data();
+          customRooms[d.id] = {
+            id: d.id,
+            name: rData.name || "Sala",
+            owner: rData.owner || "Admin",
+            rules: rData.rules || "",
+            logo: rData.logo || rData.emblem || "⚔️",
+            emblem: rData.emblem || rData.logo || "⚔️",
+            autoCleanMode: rData.autoCleanMode || "disabled",
+            backgroundUrl: rData.backgroundUrl || "",
+            theme: rData.theme || "cyan",
+            bubbleStyle: rData.bubbleStyle || "default",
+            lastCleanedAt: rData.lastCleanedAt || Date.now(),
+            createdAt: rData.createdAt || Date.now(),
+            banned: rData.banned || [],
+            users: []
+          };
+        });
+        console.log(`[Custom Rooms] ${Object.keys(customRooms).length} salas comunitarias cargadas desde Firestore.`);
+      } catch (rErr) {
+        console.warn("[Custom Rooms] Advertencia cargando salas desde Firestore:", rErr);
+      }
     }
     if (!saved && fallbackState?.system_settings?.ai_api_config) {
       saved = fallbackState.system_settings.ai_api_config;
@@ -580,16 +625,26 @@ const transporter = nodemailer.createTransport({
         return res.status(400).json({ success: false, error: "El texto es requerido para la síntesis de voz." });
       }
 
-      const effectiveArchetype = (archetypeId || speakerId || voice || avatar || "elizabeth_suprema").trim();
+      const configuredArchetype = globalAiVoiceConfig?.archetypeId;
+      const requestedArchetype = (archetypeId || speakerId || voice || avatar || "").trim();
+      const effectiveArchetype = (
+        (requestedArchetype && requestedArchetype !== "elizabeth" && requestedArchetype !== "elizabeth_suprema")
+          ? requestedArchetype
+          : (configuredArchetype || requestedArchetype || "elizabeth_suprema")
+      );
+      const effectivePitch = pitch ? Number(pitch) : (globalAiVoiceConfig?.pitch ? Number(globalAiVoiceConfig.pitch) : undefined);
+      const effectiveRate = rate ? Number(rate) : (speed ? Number(speed) : (globalAiVoiceConfig?.rate ? Number(globalAiVoiceConfig.rate) : undefined));
+      const effectiveTone = voiceTone || globalAiVoiceConfig?.voiceTone;
+
       const vault = getAcousticVault();
       const result = await synthesizeWithCoquiXTTS(text, {
         archetypeId: effectiveArchetype,
         mimicUsername,
         speakerAudioBase64,
         language: language || "es",
-        pitch: pitch ? Number(pitch) : undefined,
-        rate: rate ? Number(rate) : (speed ? Number(speed) : undefined),
-        voiceTone,
+        pitch: effectivePitch,
+        rate: effectiveRate,
+        voiceTone: effectiveTone,
         useBarkExpressiveTags,
         useXttsProsody
       }, null, vault);
@@ -601,9 +656,24 @@ const transporter = nodemailer.createTransport({
         success: false,
         fallbackToBrowser: true,
         error: "Fallback a voz humana nativa del navegador activado",
-        archetypeId: req.body?.archetypeId || req.body?.speakerId || "elizabeth_suprema"
+        archetypeId: req.body?.archetypeId || req.body?.speakerId || globalAiVoiceConfig?.archetypeId || "elizabeth_suprema"
       });
     }
+  });
+
+  // Endpoint para que todos los usuarios obtengan la voz configurada por el administrador
+  app.get("/api/ai/voice-config", (req, res) => {
+    return res.json({
+      success: true,
+      voiceConfig: globalAiVoiceConfig || {
+        archetypeId: "elizabeth_suprema",
+        engine: "xtts_v2",
+        pitch: 1.0,
+        rate: 1.0,
+        volume: 1.0,
+        autoPlay: false
+      }
+    });
   });
 
   // Endpoint dedicado Coqui XTTS v2
@@ -630,16 +700,26 @@ const transporter = nodemailer.createTransport({
         return res.status(400).json({ success: false, error: "El texto es requerido para procesar audio con XTTS v2." });
       }
 
-      const effectiveArchetype = (archetypeId || speakerId || voice || avatar || "elizabeth_suprema").trim();
+      const configuredArchetype = globalAiVoiceConfig?.archetypeId;
+      const requestedArchetype = (archetypeId || speakerId || voice || avatar || "").trim();
+      const effectiveArchetype = (
+        (requestedArchetype && requestedArchetype !== "elizabeth" && requestedArchetype !== "elizabeth_suprema")
+          ? requestedArchetype
+          : (configuredArchetype || requestedArchetype || "elizabeth_suprema")
+      );
+      const effectivePitch = pitch ? Number(pitch) : (globalAiVoiceConfig?.pitch ? Number(globalAiVoiceConfig.pitch) : undefined);
+      const effectiveRate = rate ? Number(rate) : (speed ? Number(speed) : (globalAiVoiceConfig?.rate ? Number(globalAiVoiceConfig.rate) : undefined));
+      const effectiveTone = voiceTone || globalAiVoiceConfig?.voiceTone;
+
       const vault = getAcousticVault();
       const result = await synthesizeWithCoquiXTTS(text, {
         archetypeId: effectiveArchetype,
         mimicUsername,
         speakerAudioBase64,
         language: language || "es",
-        pitch: pitch ? Number(pitch) : undefined,
-        rate: rate ? Number(rate) : (speed ? Number(speed) : undefined),
-        voiceTone,
+        pitch: effectivePitch,
+        rate: effectiveRate,
+        voiceTone: effectiveTone,
         useBarkExpressiveTags,
         useXttsProsody
       }, null, vault);
@@ -734,7 +814,36 @@ const transporter = nodemailer.createTransport({
   });
   let activeUsers: Record<string, any> = {};
   const chessGames = {};
-  let customRooms = {};
+  // customRooms declared globally to persist across sessions
+  
+  // Timer de Limpieza Automática de Salas Comunitarias (cada 60 segundos verifica intervalos 1h, 6h, 24h)
+  setInterval(async () => {
+    if (!fdb) return;
+    const now = Date.now();
+    for (const roomId of Object.keys(customRooms)) {
+      const room = customRooms[roomId];
+      if (!room || !room.autoCleanMode || room.autoCleanMode === "disabled") continue;
+
+      let intervalMs = 0;
+      if (room.autoCleanMode === "1h") intervalMs = 60 * 60 * 1000;
+      else if (room.autoCleanMode === "6h") intervalMs = 6 * 60 * 60 * 1000;
+      else if (room.autoCleanMode === "24h") intervalMs = 24 * 60 * 60 * 1000;
+
+      if (intervalMs > 0 && now - (room.lastCleanedAt || 0) >= intervalMs) {
+        room.lastCleanedAt = now;
+        try {
+          await setDoc(doc(fdb, "custom_rooms", roomId), { lastCleanedAt: now }, { merge: true });
+          const msgsSnap = await getDocs(collection(fdb, "custom_rooms_msgs", roomId, "messages"));
+          const batchDeletes = msgsSnap.docs.map(d => deleteDoc(d.ref));
+          await Promise.all(batchDeletes);
+          io.to(roomId).emit("custom_room_cleaned", { roomId });
+          console.log(`[AutoClean] Sala ${roomId} (${room.name}) purgada automáticamente por intervalo ${room.autoCleanMode}.`);
+        } catch (e) {
+          console.warn(`[AutoClean] Error en auto-limpieza de sala ${roomId}:`, e);
+        }
+      }
+    }
+  }, 60000);
   let webcamQueue = [];
   const pendingCalls = {};
   let songQueue = [];
@@ -1635,6 +1744,11 @@ __name(ensureAutoRadio, "ensureAutoRadio");
 
   io.on("connection", (socket) => {
     let currentUsername = "";
+
+    // Sincronizar voz de Elizabeth configurada por el administrador con el nuevo cliente
+    if (globalAiVoiceConfig) {
+      socket.emit("ai_voice_config_updated", { aiUsername: "Elizabeth", voiceConfig: globalAiVoiceConfig });
+    }
     socket.on("forgot_password_request", async (data, callback) => {
       let username = data;
       let emailFromClient = "";
@@ -1724,6 +1838,11 @@ __name(ensureAutoRadio, "ensureAutoRadio");
           current: currentRequestedSong,
           history: songHistory
         });
+
+        // Sincronizar voz de Elizabeth configurada por el administrador
+        if (globalAiVoiceConfig) {
+          socket.emit("ai_voice_config_updated", { aiUsername: "Elizabeth", voiceConfig: globalAiVoiceConfig });
+        }
       }
     });
 
@@ -3046,6 +3165,17 @@ socket.on("buy_decoration", async (data, callback) => {
         ...(safeVoiceConfig ? { voiceConfig: safeVoiceConfig } : {}),
       };
       if (safeVoiceConfig) {
+        globalAiVoiceConfig = safeVoiceConfig;
+        if (fdb) {
+          try {
+            await setDoc(doc(fdb, "system_settings", "elizabeth_voice_config"), safeVoiceConfig, { merge: true });
+          } catch (e) {
+            console.warn("Error guardando voiceConfig en system_settings:", e);
+          }
+        } else {
+          fallbackState.globalAiVoiceConfig = safeVoiceConfig;
+          saveFallbackDB();
+        }
         io.emit("ai_voice_config_updated", { aiUsername, voiceConfig: safeVoiceConfig });
       }
 
@@ -3689,30 +3819,117 @@ socket.on("buy_decoration", async (data, callback) => {
             name: customRooms[id].name,
             owner: customRooms[id].owner,
             rules: customRooms[id].rules,
-            usersCount: customRooms[id].users.length
+            logo: customRooms[id].logo || customRooms[id].emblem || "⚔️",
+            emblem: customRooms[id].emblem || customRooms[id].logo || "⚔️",
+            autoCleanMode: customRooms[id].autoCleanMode || "disabled",
+            backgroundUrl: customRooms[id].backgroundUrl || "",
+            theme: customRooms[id].theme || "cyan",
+            bubbleStyle: customRooms[id].bubbleStyle || "default",
+            usersCount: customRooms[id].users?.length || 0
         })));
     });
 
-    socket.on("create_custom_room", (data, callback) => {
+    socket.on("get_custom_room_info", async (roomId, callback) => {
+        if (!roomId || !callback) return;
+        if (customRooms[roomId]) {
+            return callback({ success: true, room: customRooms[roomId] });
+        }
+        if (fdb) {
+            try {
+                const snap = await getDoc(doc(fdb, "custom_rooms", roomId));
+                if (snap.exists()) {
+                    customRooms[roomId] = { id: snap.id, ...snap.data(), users: [] };
+                    return callback({ success: true, room: customRooms[roomId] });
+                }
+            } catch (e) {}
+        }
+        callback({ success: false, error: "Sala no encontrada" });
+    });
+
+    socket.on("create_custom_room", async (data, callback) => {
         if (!currentUsername) return callback({success: false, error: "No logueado"});
         const roomId = "room_" + Date.now();
-        customRooms[roomId] = {
+        const roomObj = {
             id: roomId,
-            name: data.name,
+            name: data.name || "Nueva Sala",
             owner: currentUsername,
-            rules: data.rules,
+            rules: data.rules || "",
+            logo: data.logo || data.emblem || "⚔️",
+            emblem: data.emblem || data.logo || "⚔️",
+            autoCleanMode: data.autoCleanMode || "disabled",
+            backgroundUrl: data.backgroundUrl || "",
+            theme: data.theme || "cyan",
+            bubbleStyle: data.bubbleStyle || "default",
             banned: [],
-            users: []
+            users: [currentUsername],
+            lastCleanedAt: Date.now(),
+            createdAt: Date.now()
         };
+        customRooms[roomId] = roomObj;
+        if (fdb) {
+            try {
+                await setDoc(doc(fdb, "custom_rooms", roomId), roomObj);
+            } catch (e) {
+                console.warn("Error guardando sala en Firestore:", e);
+            }
+        }
+        socket.join(roomId);
         io.emit("custom_rooms_updated");
-        callback({success: true, roomId});
+        callback({success: true, roomId, room: roomObj});
+    });
+
+    socket.on("update_custom_room", async (data, callback) => {
+        if (!currentUsername) return callback && callback({ success: false, error: "No logueado" });
+        const { roomId, config } = data || {};
+        if (!roomId || !customRooms[roomId]) return callback && callback({ success: false, error: "Sala no encontrada" });
+        const room = customRooms[roomId];
+        if (room.owner !== currentUsername && !isUserAdminOrMaster(currentUsername)) {
+            return callback && callback({ success: false, error: "Solo el dueño puede modificar la configuración de la sala" });
+        }
+        const updatedRoom = {
+            ...room,
+            ...config,
+            id: roomId,
+            updatedAt: Date.now()
+        };
+        customRooms[roomId] = updatedRoom;
+        if (fdb) {
+            try {
+                await setDoc(doc(fdb, "custom_rooms", roomId), updatedRoom, { merge: true });
+            } catch (e) {
+                console.warn("Error actualizando sala en Firestore:", e);
+            }
+        }
+        io.to(roomId).emit("custom_room_updated", { roomId, room: updatedRoom });
+        io.emit("custom_rooms_updated");
+        if (callback) callback({ success: true, room: updatedRoom });
+    });
+
+    socket.on("clean_custom_room", async (roomId, callback) => {
+        if (!currentUsername || !customRooms[roomId]) return callback && callback({ success: false });
+        const room = customRooms[roomId];
+        if (room.owner !== currentUsername && !isUserAdminOrMaster(currentUsername)) {
+            return callback && callback({ success: false, error: "Solo el dueño o administrador puede limpiar la sala" });
+        }
+        if (fdb) {
+            try {
+                const msgsSnap = await getDocs(collection(fdb, "custom_rooms_msgs", roomId, "messages"));
+                const batchDeletes = msgsSnap.docs.map(d => deleteDoc(d.ref));
+                await Promise.all(batchDeletes);
+            } catch (e) {
+                console.warn("Error limpiando mensajes de sala:", e);
+            }
+        }
+        io.to(roomId).emit("custom_room_cleaned", { roomId });
+        if (callback) callback({ success: true });
     });
 
     socket.on("join_custom_room", (roomId, callback) => {
         if (!currentUsername || !customRooms[roomId]) return callback({success: false});
-        if (customRooms[roomId].banned.includes(currentUsername)) return callback({success: false, error: "Estás baneado de esta sala"});
+        if (customRooms[roomId].banned?.includes(currentUsername)) return callback({success: false, error: "Estás baneado de esta sala"});
         
         socket.join(roomId);
+        if (!customRooms[roomId].users) customRooms[roomId].users = [];
         if (!customRooms[roomId].users.includes(currentUsername)) {
             customRooms[roomId].users.push(currentUsername);
         }
@@ -3722,27 +3939,39 @@ socket.on("buy_decoration", async (data, callback) => {
     socket.on("leave_custom_room", (roomId) => {
         if (!currentUsername || !customRooms[roomId]) return;
         socket.leave(roomId);
-        customRooms[roomId].users = customRooms[roomId].users.filter(u => u !== currentUsername);
-        if (customRooms[roomId].users.length === 0 && customRooms[roomId].owner !== currentUsername) {
-            // we could auto-delete, but let's keep it until owner deletes or server restart
+        if (customRooms[roomId].users) {
+            customRooms[roomId].users = customRooms[roomId].users.filter(u => u !== currentUsername);
         }
     });
 
     socket.on("send_custom_room", async (data) => {
         if (!currentUsername || !customRooms[data.roomId]) return;
-        if (customRooms[data.roomId].banned.includes(currentUsername)) return;
+        if (customRooms[data.roomId].banned?.includes(currentUsername)) return;
         
         const msgObj = {
             ...data.msg,
             id: Date.now().toString(),
             sender: currentUsername,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            createdAt: Date.now()
         };
         io.to(data.roomId).emit("receive_custom_room", { roomId: data.roomId, msg: msgObj });
         
         if (fdb) {
             try {
                 await setDoc(doc(fdb, "custom_rooms_msgs", data.roomId, "messages", msgObj.id), msgObj);
+
+                // Auto-Limpieza por umbral de mensajes si está configurado
+                const room = customRooms[data.roomId];
+                if (room && room.autoCleanMode && (room.autoCleanMode === "20msgs" || room.autoCleanMode === "50msgs" || room.autoCleanMode === "100msgs")) {
+                    const limitNum = room.autoCleanMode === "20msgs" ? 20 : (room.autoCleanMode === "50msgs" ? 50 : 100);
+                    const msgsSnap = await getDocs(query(collection(fdb, "custom_rooms_msgs", data.roomId, "messages"), orderBy("createdAt", "asc")));
+                    if (msgsSnap.size > limitNum) {
+                        const toDelete = msgsSnap.docs.slice(0, msgsSnap.size - limitNum);
+                        await Promise.all(toDelete.map(d => deleteDoc(d.ref)));
+                        io.to(data.roomId).emit("custom_room_cleaned", { roomId: data.roomId });
+                    }
+                }
             } catch (e) {
                 console.error("Error saving room msg:", e);
             }
@@ -3753,21 +3982,29 @@ socket.on("buy_decoration", async (data, callback) => {
         if (!currentUsername || !customRooms[data.roomId]) return;
         if (customRooms[data.roomId].owner !== currentUsername) return callback({success: false, error: "No eres el dueño"});
         
+        if (!customRooms[data.roomId].banned) customRooms[data.roomId].banned = [];
         customRooms[data.roomId].banned.push(data.targetUser);
         if (activeUsers[data.targetUser]) {
              io.to(activeUsers[data.targetUser].socketId).emit("kicked_from_room", data.roomId);
              const targetSocket = io.sockets.sockets.get(activeUsers[data.targetUser].socketId);
              if (targetSocket) targetSocket.leave(data.roomId);
         }
-        customRooms[data.roomId].users = customRooms[data.roomId].users.filter(u => u !== data.targetUser);
+        if (customRooms[data.roomId].users) {
+            customRooms[data.roomId].users = customRooms[data.roomId].users.filter(u => u !== data.targetUser);
+        }
         callback({success: true});
     });
 
-    socket.on("delete_custom_room", (roomId, callback) => {
+    socket.on("delete_custom_room", async (roomId, callback) => {
         if (!currentUsername || !customRooms[roomId]) return;
-        if (customRooms[roomId].owner !== currentUsername) return callback({success: false});
+        if (customRooms[roomId].owner !== currentUsername && !isUserAdminOrMaster(currentUsername)) return callback({success: false});
         io.to(roomId).emit("room_deleted", roomId);
         delete customRooms[roomId];
+        if (fdb) {
+            try {
+                await deleteDoc(doc(fdb, "custom_rooms", roomId));
+            } catch (e) {}
+        }
         io.emit("custom_rooms_updated");
         callback({success: true});
     });
