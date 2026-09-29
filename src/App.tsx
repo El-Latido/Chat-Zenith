@@ -403,7 +403,7 @@ function MainApp() {
   >({ username: "", password: "", countryLanguage: "es", securityEmail: "" });
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
-  const [bgModalMode, setBgModalMode] = useState<'global' | 'personal'>('global');
+  const [bgModalMode, setBgModalMode] = useState<'global' | 'personal' | 'room'>('global');
   const [isAiSelectorOpen, setIsAiSelectorOpen] = useState(false);
   const [selectedUserModal, setSelectedUserModal] = useState<UserObj | null>(
     null,
@@ -3851,6 +3851,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                 if (bTexture === "animals") textureClasses = "overflow-visible";
                                 
                                 const nameColor = isElizabeth ? "text-pink-400" : (activeBubbleStyleId === "comic_popart" ? "text-black" : "text-cyan-300");
+                                const textColor = activeBubbleStyleId === "comic_popart" ? "text-black" : "text-white/90";
+                                const timeColor = activeBubbleStyleId === "comic_popart" ? "text-black/60" : "text-white/40";
 
                                 return (
                                   <div 
@@ -4565,6 +4567,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         currentBg={chatBg}
         isAdmin={isUserAdmin}
         defaultMode={bgModalMode}
+        activeRoomId={activeChat.startsWith("room_") ? activeChat : null}
         onApplyPersonalBg={(url) => {
           if (url) {
             localStorage.setItem("chatliz_personal_bg", url);
@@ -4574,6 +4577,11 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             window.dispatchEvent(new CustomEvent("chatliz_personal_bg_changed", { detail: null }));
           }
           setUser((prev) => ({ ...prev, preferred_background: url }));
+        }}
+        onApplyRoomBg={(url) => {
+          if (currentRoomData) {
+            setCurrentRoomData((prev: any) => ({ ...prev, backgroundUrl: url }));
+          }
         }}
         onToast={addSystemToast}
       />

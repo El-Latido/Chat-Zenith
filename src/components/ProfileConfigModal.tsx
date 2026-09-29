@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar, Copy, Check, Shield } from 'lucide-react';
+import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar, Copy, Check, Shield, Sparkles } from 'lucide-react';
 import { socket } from '../socket';
 import { UserObj } from '../types';
 import { doc, setDoc } from 'firebase/firestore';

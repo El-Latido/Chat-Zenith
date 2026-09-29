@@ -376,7 +376,7 @@ export function CustomRoomConfigModal({
                       type="file"
                       accept="image/*,video/mp4,video/webm"
                       disabled={!isOwner}
-                      onChange={(e) => handleFileUpload(e, 'fondo')}
+                      onChange={(e) => handleFileUpload(e, 'bg')}
                       className="hidden"
                     />
                   </label>

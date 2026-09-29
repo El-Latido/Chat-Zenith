@@ -26,7 +26,8 @@ import {
   Headphones,
   Bot,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from "lucide-react";
 
 import { CHAT_BUBBLE_STYLES, BubbleStyleDef } from "../utils/bubbleStyles";
