@@ -28,6 +28,12 @@ export interface MonetizationStats {
   todayRevenue?: number;
   ctr?: number;
   aiBreakdown?: Record<string, number>;
+  userEarnings?: Record<string, {
+    username: string;
+    rechargesCount: number;
+    totalEarned: number;
+    lastRecharge: string;
+  }>;
   rechargeLogs?: Array<{
     id: string;
     username: string;
@@ -53,7 +59,7 @@ export function MonetizationReportModal({
   onRefresh,
   onWithdraw
 }: MonetizationReportModalProps) {
-  const [activeTab, setActiveTab] = useState<'kpis' | 'metro' | 'logs'>('kpis');
+  const [activeTab, setActiveTab] = useState<'kpis' | 'users' | 'metro' | 'logs'>('kpis');
   const [simUsers, setSimUsers] = useState(150);
   const [simVideosPerUser, setSimVideosPerUser] = useState(3);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -157,6 +163,17 @@ export function MonetizationReportModal({
           >
             <BarChart3 size={16} />
             Métricas & Ganancias
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all border-b-2 ${
+              activeTab === 'users'
+                ? 'border-amber-400 text-amber-300 bg-amber-500/10'
+                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-white/5'
+            }`}
+          >
+            <Users size={16} />
+            Ganancias por Usuario ({Object.keys(stats.userEarnings || {}).length})
           </button>
           <button
             onClick={() => setActiveTab('metro')}
@@ -347,6 +364,74 @@ export function MonetizationReportModal({
                   })}
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div className="space-y-6">
+              {/* Header Card with totals */}
+              <div className="bg-gradient-to-r from-amber-950/40 via-[#131a26] to-[#0e121d] border border-amber-500/30 rounded-2xl p-5">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-white text-base sm:text-lg font-extrabold flex items-center gap-2">
+                      <Users size={20} className="text-amber-400" />
+                      Contador de Ganancias por Usuario
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1 max-w-xl">
+                      Aquí ves exactamente cuánto dinero vas ganando con cada usuario cuando mira un anuncio para recargar sus tokens de IA (+50 tokens).
+                    </p>
+                  </div>
+                  <div className="bg-amber-500/15 border border-amber-500/40 px-4 py-2.5 rounded-2xl text-right">
+                    <span className="text-[11px] text-amber-300 font-bold block uppercase tracking-wider">Tarifa por Recarga</span>
+                    <span className="text-2xl font-black text-amber-400">+$0.05 USD</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* User Earnings Table / Cards */}
+              {Object.keys(stats.userEarnings || {}).length === 0 ? (
+                <div className="text-center py-12 bg-white/[0.02] rounded-2xl border border-white/10 text-gray-400">
+                  <Users size={40} className="mx-auto mb-2 text-gray-600" />
+                  <p className="font-bold text-sm text-gray-300">Aún no hay usuarios registrados que hayan recargado tokens.</p>
+                  <p className="text-xs text-gray-500 mt-1">Apenas un usuario presione "Ver anuncio para recargar tokens", su contador se sumará aquí en tiempo real.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {Object.values(stats.userEarnings || {}).map((item) => (
+                    <div 
+                      key={item.username}
+                      className="bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 hover:border-amber-500/40 rounded-2xl p-4 transition-all flex items-center justify-between gap-3 shadow-md"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 font-black text-base shrink-0 shadow-sm">
+                          {item.username.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-white font-extrabold text-sm truncate flex items-center gap-2">
+                            {item.username}
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                              Activo
+                            </span>
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {item.rechargesCount} {item.rechargesCount === 1 ? 'recarga (+50 tokens)' : 'recargas (+50 tokens c/u)'}
+                          </p>
+                          <p className="text-[10px] text-gray-500 mt-1">
+                            Última recarga: {new Date(item.lastRecharge).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0 bg-black/40 border border-white/10 px-3.5 py-2 rounded-xl">
+                        <span className="text-[10px] text-gray-400 font-bold block uppercase">Has ganado</span>
+                        <span className="text-lg font-black text-emerald-300 block">
+                          +${item.totalEarned.toFixed(2)} USD
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

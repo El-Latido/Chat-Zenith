@@ -27,6 +27,7 @@ export interface UserObj {
   replyTo?: { id: string, sender: string, text: string };
   reactions?: Record<string, string[]>;
   lizCoins?: number;
+  aiTokens?: number;
   activeDecoration?: string | null;
     ownedDecorations?: string[];
   elo?: number;
