@@ -24,6 +24,14 @@ export interface ElizabethVoiceConfig {
   engine: 'xtts_v2';
   pitch: number;
   rate: number;
+  speed?: number;
+  temperature?: number;
+  repetitionPenalty?: number;
+  repetition_penalty?: number;
+  gptCondLen?: number;
+  gpt_cond_len?: number;
+  speakerAudioBase64?: string;
+  language?: string;
   volume: number;
   voiceURI: string;
   autoPlay: boolean;
@@ -775,7 +783,12 @@ export const DEFAULT_ELIZABETH_VOICE: ElizabethVoiceConfig = {
   mimicUsername: '',
   engine: 'xtts_v2',
   pitch: 1.05,
-  rate: 1.0,
+  rate: 0.98,
+  speed: 0.98,
+  temperature: 0.78,
+  repetitionPenalty: 2.0,
+  gptCondLen: 6,
+  language: 'es',
   volume: 1.0,
   voiceURI: '',
   autoPlay: false,
@@ -1558,6 +1571,13 @@ export async function speakElizabethMessage(
         mimicUsername: config.mimicUsername,
         pitch: config.pitch,
         rate: config.rate,
+        speed: config.speed ?? 0.98,
+        temperature: config.temperature ?? 0.78,
+        repetition_penalty: config.repetition_penalty ?? config.repetitionPenalty ?? 2.0,
+        repetitionPenalty: config.repetition_penalty ?? config.repetitionPenalty ?? 2.0,
+        gpt_cond_len: config.gpt_cond_len ?? config.gptCondLen ?? 6,
+        gptCondLen: config.gpt_cond_len ?? config.gptCondLen ?? 6,
+        language: config.language || "es",
         voiceTone: config.voiceTone,
         volume: config.volume,
         useBarkExpressiveTags: config.useBarkExpressiveTags ?? true,
@@ -1693,6 +1713,11 @@ export async function synthesizeVoiceWithXTTS(
     pitch?: number;
     rate?: number;
     speed?: number;
+    temperature?: number;
+    repetitionPenalty?: number;
+    repetition_penalty?: number;
+    gptCondLen?: number;
+    gpt_cond_len?: number;
     voiceTone?: string;
     useBarkExpressiveTags?: boolean;
     useXttsProsody?: boolean;
@@ -1710,7 +1735,12 @@ export async function synthesizeVoiceWithXTTS(
         language: options?.language || "es",
         pitch: options?.pitch,
         rate: options?.rate,
-        speed: options?.speed,
+        speed: options?.speed ?? 0.98,
+        temperature: options?.temperature ?? 0.78,
+        repetition_penalty: options?.repetition_penalty ?? options?.repetitionPenalty ?? 2.0,
+        repetitionPenalty: options?.repetition_penalty ?? options?.repetitionPenalty ?? 2.0,
+        gpt_cond_len: options?.gpt_cond_len ?? options?.gptCondLen ?? 6,
+        gptCondLen: options?.gpt_cond_len ?? options?.gptCondLen ?? 6,
         voiceTone: options?.voiceTone,
         useBarkExpressiveTags: options?.useBarkExpressiveTags ?? true,
         useXttsProsody: options?.useXttsProsody ?? true

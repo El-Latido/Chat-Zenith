@@ -777,6 +777,11 @@ export interface SynthesisOptions {
   pitch?: number; // 0.5 a 2.0
   rate?: number; // 0.5 a 2.0
   speed?: number;
+  temperature?: number;
+  repetitionPenalty?: number;
+  repetition_penalty?: number;
+  gptCondLen?: number;
+  gpt_cond_len?: number;
   voiceTone?: string;
   volume?: number;
   useBarkExpressiveTags?: boolean;
@@ -797,7 +802,15 @@ export async function synthesizeHumanSpeech(
   durationSeconds?: number;
 }> {
   try {
-    const result = await synthesizeWithCoquiXTTS(text, options, null, acousticVaultCache);
+    const effectiveOptions = {
+      ...options,
+      temperature: options.temperature ?? 0.78,
+      speed: options.speed ?? options.rate ?? 0.98,
+      repetition_penalty: options.repetition_penalty ?? options.repetitionPenalty ?? 2.0,
+      gpt_cond_len: options.gpt_cond_len ?? options.gptCondLen ?? 6,
+      language: options.language || "es"
+    };
+    const result = await synthesizeWithCoquiXTTS(text, effectiveOptions, null, acousticVaultCache);
     return {
       audioBase64: result.audioBase64,
       mimeType: result.mimeType,

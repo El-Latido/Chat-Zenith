@@ -1568,7 +1568,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         if ((msg.sender === "Elizabeth" || msg.isAi) && msg.text) {
           const vConfig = getSavedElizabethVoiceConfig();
           if (vConfig.autoPlay) {
-            handleToggleElizabethSpeech(msg.id || Date.now().toString(), msg.text);
+            handleToggleElizabethSpeech(msg.id || Date.now().toString(), msg.text, msg.audio || msg.audioBase64);
           }
         }
       }
@@ -1700,7 +1700,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
         if ((msg.sender === "Elizabeth" || msg.isAi) && msg.text) {
           const vConfig = getSavedElizabethVoiceConfig();
           if (vConfig.autoPlay) {
-            handleToggleElizabethSpeech(msg.id || Date.now().toString(), msg.text);
+            handleToggleElizabethSpeech(msg.id || Date.now().toString(), msg.text, msg.audio || msg.audioBase64);
           }
         }
       }
@@ -2547,13 +2547,37 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const reactionTimerRef = useRef<any>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
 
-  const handleToggleElizabethSpeech = (msgId: string, text: string) => {
+  const handleToggleElizabethSpeech = (msgId: string, text: string, preloadedAudio?: string) => {
     if (speakingMessageId === msgId) {
       stopSpeaking();
       setSpeakingMessageId(null);
       return;
     }
     setSpeakingMessageId(msgId);
+
+    if (preloadedAudio && preloadedAudio.length > 50) {
+      try {
+        const audio = new Audio(preloadedAudio);
+        audio.onplay = () => setSpeakingMessageId(msgId);
+        audio.onended = () => setSpeakingMessageId(null);
+        audio.onerror = () => {
+          speakElizabethMessage(text, undefined, {
+            onStart: () => setSpeakingMessageId(msgId),
+            onEnd: () => setSpeakingMessageId(null),
+            onError: () => setSpeakingMessageId(null),
+          });
+        };
+        audio.play().catch(() => {
+          speakElizabethMessage(text, undefined, {
+            onStart: () => setSpeakingMessageId(msgId),
+            onEnd: () => setSpeakingMessageId(null),
+            onError: () => setSpeakingMessageId(null),
+          });
+        });
+        return;
+      } catch (_) {}
+    }
+
     speakElizabethMessage(text, undefined, {
       onStart: () => setSpeakingMessageId(msgId),
       onEnd: () => setSpeakingMessageId(null),
@@ -4033,7 +4057,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            handleToggleElizabethSpeech(m.id || idx.toString(), safeText);
+                                            handleToggleElizabethSpeech(m.id || idx.toString(), safeText, m.audio || m.audioBase64);
                                           }}
                                           className={`px-1.5 py-0.5 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
                                             speakingMessageId === (m.id || idx.toString())

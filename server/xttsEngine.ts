@@ -11,7 +11,12 @@ export interface XttsSynthesisOptions {
   language?: string; // Default: 'es'
   pitch?: number; // 0.5 to 2.0
   rate?: number; // 0.5 to 2.0
-  speed?: number; // 0.5 to 2.0
+  speed?: number; // 0.95 to 1.0 (Default: 0.98)
+  temperature?: number; // 0.75 to 0.82 (Default: 0.78)
+  repetitionPenalty?: number; // Default: 2.0
+  repetition_penalty?: number; // Default: 2.0
+  gptCondLen?: number; // Default: 6
+  gpt_cond_len?: number; // Default: 6
   voiceTone?: string;
   volume?: number;
   useBarkExpressiveTags?: boolean;
@@ -1100,10 +1105,16 @@ export function getXttsEngineStatus(acousticVault?: Record<string, any>) {
 
 /**
  * Optimización de texto y prosodia para Coqui XTTS v2 en español
+ * Preserva estrictamente la puntuación (¡! ? . , ...) y mayúsculas para entonación e inflexión vocal
  */
 export function formatTextForXttsV2(text: string, useProsody = true): string {
   let clean = (text || "")
-    .replace(/[*_#`~[\]()]/g, "")
+    .replace(/```[\s\S]*?```/g, " bloque de código ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/[*_#~]/g, "")
+    .replace(/\[BAN:[^\]]+\]/gi, "")
+    .replace(/\[UNBAN:[^\]]+\]/gi, "")
+    .replace(/\[.*?\]/g, "")
     .replace(/https?:\/\/\S+/gi, "enlace")
     .replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "")
     .trim();
@@ -1121,14 +1132,23 @@ export function formatTextForXttsV2(text: string, useProsody = true): string {
 }
 
 /**
- * Intenta llamar a un servicio remoto de Coqui XTTS v2 si está configurado
+ * Intenta llamar a un servicio remoto de Coqui XTTS v2 con parámetros de inferencia acústica expresiva:
+ * - temperature: 0.78 (entre 0.75 y 0.82)
+ * - speed: 0.98 (entre 0.95 y 1.0)
+ * - repetition_penalty: 2.0
+ * - gpt_cond_len: 6
+ * - language: 'es'
+ * - speaker_wav: referencia obligatoria de voz
  */
 async function callRemoteXttsServer(
   text: string,
   speakerAudioBase64: string | undefined,
   language = "es",
-  speed = 1.0,
-  speakerTag = "Claribel Dervla"
+  speed = 0.98,
+  speakerTag = "Elizabeth-Official-XTTS",
+  temperature = 0.78,
+  repetitionPenalty = 2.0,
+  gptCondLen = 6
 ): Promise<{ wavBuffer: Buffer; duration: number } | null> {
   const apiUrl = xttsEngineConfig.apiUrl || process.env.XTTS_API_URL || process.env.COQUI_XTTS_URL;
   const hfSpace = xttsEngineConfig.hfSpace || process.env.XTTS_HF_SPACE;
@@ -1151,8 +1171,12 @@ async function callRemoteXttsServer(
           text,
           language: language || "es",
           speaker_wav: speakerAudioBase64 || undefined,
+          reference_audio: speakerAudioBase64 || undefined,
           speaker_name: speakerTag,
-          speed: speed || 1.0
+          speed: speed || 0.98,
+          temperature: temperature || 0.78,
+          repetition_penalty: repetitionPenalty || 2.0,
+          gpt_cond_len: gptCondLen || 6
         })
       });
       clearTimeout(timeout);
@@ -1197,7 +1221,9 @@ async function callRemoteXttsServer(
         language || "es",
         speakerAudioBase64 || null,
         null,
-        speed || 1.0
+        speed || 0.98,
+        temperature || 0.78,
+        repetitionPenalty || 2.0
       ]);
       const fileUrl = typeof result?.data?.[0] === "string" ? result.data[0] : result?.data?.[0]?.url;
       if (fileUrl) {
@@ -1257,8 +1283,9 @@ export const speakerFiles: Record<string, string> = {
   'male_elder': './voices/male_es_1.wav',
 
   // Voces Femeninas
-  'elizabeth_suprema': './voices/elizabeth.wav',
-  'elizabeth': './voices/elizabeth.wav',
+  'elizabeth_suprema': './voices/elizabeth_reference.wav',
+  'elizabeth': './voices/elizabeth_reference.wav',
+  'elizabeth_reference': './voices/elizabeth_reference.wav',
   'sofia_latina': './voices/female_es_1.wav',
   'valentina_dulce': './voices/female_es_1.wav',
   'camila_serena': './voices/female_es_1.wav',
@@ -1623,14 +1650,42 @@ export async function synthesizeWithCoquiXTTS(
     } catch (_) {}
   }
 
+  // SIEMPRE garantizar la muestra de audio de referencia oficial de Elizabeth (elizabeth_reference.wav)
+  if (!referenceSpeakerAudio) {
+    const candidatePaths = [
+      "./voices/elizabeth_reference.wav",
+      "./voices/elizabeth.wav",
+      path.join(process.cwd(), "voices", "elizabeth_reference.wav"),
+      path.join(process.cwd(), "voices", "elizabeth.wav")
+    ];
+    for (const cp of candidatePaths) {
+      if (fs.existsSync(cp)) {
+        try {
+          referenceSpeakerAudio = fs.readFileSync(cp).toString("base64");
+          break;
+        } catch (_) {}
+      }
+    }
+  }
+
+  // Parámetros de inferencia de ultra-alta fidelidad en XTTS v2
+  const effectiveTemp = options.temperature !== undefined ? Math.min(0.82, Math.max(0.75, Number(options.temperature))) : 0.78;
+  const effectiveSpeed = options.speed !== undefined ? Math.min(1.0, Math.max(0.95, Number(options.speed))) : (options.rate !== undefined ? Math.min(1.0, Math.max(0.95, Number(options.rate))) : 0.98);
+  const effectiveRepetitionPenalty = options.repetition_penalty || options.repetitionPenalty || 2.0;
+  const effectiveGptCondLen = options.gpt_cond_len || options.gptCondLen || 6;
+  const effectiveLang = options.language || "es";
+
   // 2. Intentar llamar a servidor remoto XTTS v2 dedicado (Docker / HF Space / REST) si está configurado
   try {
     const remoteResult = await callRemoteXttsServer(
       cleanText,
       referenceSpeakerAudio,
-      options.language || "es",
-      options.rate || options.speed || 1.0,
-      speaker.speakerTag
+      effectiveLang,
+      effectiveSpeed,
+      speaker.speakerTag,
+      effectiveTemp,
+      effectiveRepetitionPenalty,
+      effectiveGptCondLen
     );
 
     if (remoteResult && remoteResult.wavBuffer.length > 100) {
@@ -1648,6 +1703,32 @@ export async function synthesizeWithCoquiXTTS(
     }
   } catch (remoteErr) {
     // Continúa directamente al sintetizador local
+  }
+
+  // 2b. Intentar inferencia local con script Python XTTS v2 si el entorno dispone de TTS
+  try {
+    const pythonScript = path.join(process.cwd(), "scripts", "xtts_inference.py");
+    const refWavPath = path.join(process.cwd(), "voices", "elizabeth_reference.wav");
+    if (fs.existsSync(pythonScript) && fs.existsSync(refWavPath)) {
+      const tempOutPath = path.join(process.cwd(), "static", "uploads", `xtts_${Date.now()}.wav`);
+      const cmd = `python3 "${pythonScript}" --text ${JSON.stringify(cleanText)} --speaker_wav "${refWavPath}" --out_path "${tempOutPath}" --language "${effectiveLang}" --temperature ${effectiveTemp} --speed ${effectiveSpeed} --repetition_penalty ${effectiveRepetitionPenalty} --gpt_cond_len ${effectiveGptCondLen}`;
+      const output = execSync(cmd, { timeout: 15000, stdio: ["pipe", "pipe", "ignore"] }).toString();
+      const parsed = JSON.parse(output);
+      if (parsed?.success && parsed?.audioBase64) {
+        try { if (fs.existsSync(tempOutPath)) fs.unlinkSync(tempOutPath); } catch (_) {}
+        return {
+          audioBase64: parsed.audioBase64,
+          mimeType: "audio/wav",
+          voiceUsed: speaker.name,
+          engine: "coqui_xtts_v2",
+          isNeural: true,
+          humanizationLevel: 99,
+          durationSeconds: 4
+        };
+      }
+    }
+  } catch (_) {
+    // Continúa al sintetizador neuronal local
   }
 
   // 3. Generación autónoma de voz con Coqui XTTS v2 local (WAV 24kHz Int16)
