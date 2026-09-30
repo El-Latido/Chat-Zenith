@@ -917,6 +917,16 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     }
   }, [isMusicPlaying]);
 
+  useEffect(() => {
+    if (!isWatchingAd) return;
+    if (adCountdown > 0) {
+      const timer = setTimeout(() => {
+        setAdCountdown((prev) => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [isWatchingAd, adCountdown]);
+
 
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -1648,7 +1658,13 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     });
 
     socket.on("out_of_tokens", (data: { aiName: string }) => {
-      setOutOfTokensAi(data?.aiName || activeChatRef.current || "Elizabeth");
+      const targetAi = data?.aiName || activeChatRef.current || "Elizabeth";
+      setOutOfTokensAi(targetAi);
+      setUser((prev) => ({
+        ...prev,
+        aiTokens: 0,
+        lizCoins: 0,
+      }));
     });
 
     socket.on("receive_private", (msg: any, fromUser: string) => {
@@ -2625,15 +2641,24 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     }
   };
 
-  const handleClaimRewardTokens = (targetAiName?: string) => {
+  const handleStartWatchVideoAd = (targetAiName?: string) => {
     const aiTarget = targetAiName || activeChat || "Elizabeth";
+    setVideoAdTargetAi(aiTarget);
+    setIsWatchingAd(true);
+    setAdCountdown(5);
+  };
+
+  const handleClaimRewardTokens = (targetAiName?: string) => {
+    const aiTarget = targetAiName || videoAdTargetAi || activeChat || "Elizabeth";
     
-    // a) Abre el enlace del anuncio en una nueva pestaña según la especificación
+    // a) Intento de apertura segura de enlace en nueva ventana
     try {
-      window.open(
-        "https://motionless-bus.com/bL3TVK0.Pu3HpZvOb_mRVEJkZODt0K3kNODJc/zIMUT/QH1uLaTqcW0cNMz/MFxgN/DKkm",
-        "_blank"
-      );
+      if (typeof window !== "undefined") {
+        window.open(
+          "https://motionless-bus.com/bL3TVK0.Pu3HpZvOb_mRVEJkZODt0K3kNODJc/zIMUT/QH1uLaTqcW0cNMz/MFxgN/DKkm",
+          "_blank"
+        );
+      }
     } catch (e) {
       console.warn("Popup error:", e);
     }
@@ -2649,6 +2674,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     }));
     setOutOfTokensAi(null);
     setVideoAdTargetAi(null);
+    setIsWatchingAd(false);
 
     setToasts((t) => [
       ...t,
@@ -2662,10 +2688,10 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   };
 
   const handleSendMessage = () => {
-    const isAiChatTarget = Boolean(activeChat && (AI_CHARACTERS as any)[activeChat]);
+    const isAiChatTarget = Boolean(activeChat && ((AI_CHARACTERS as any)[activeChat] || activeChat === "Elizabeth"));
     const currentTokens = user.aiTokens ?? user.lizCoins ?? 50;
     if (isAiChatTarget && currentTokens < 1) {
-      handleClaimRewardTokens(activeChat);
+      handleStartWatchVideoAd(activeChat);
       return;
     }
 
@@ -3793,12 +3819,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                 </div>
                                 {tokensCount <= 0 && (
                                   <button
-                                    onClick={() => handleClaimRewardTokens(activeChat)}
-                                    className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5 shrink-0 uppercase tracking-wide border border-amber-400/40 animate-pulse"
-                                    title="Ver anuncio para recargar tokens (+50 tokens)"
+                                    onClick={() => handleStartWatchVideoAd(activeChat)}
+                                    className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5 shrink-0 uppercase tracking-wide border border-amber-400/40 animate-pulse cursor-pointer"
+                                    title="Reproducir video para recargar tokens (+50 tokens)"
                                   >
                                     <PlaySquare size={14} />
-                                    <span className="hidden sm:inline">Ver anuncio para recargar tokens (+50 tokens)</span>
+                                    <span className="hidden sm:inline">Reproducir video para recargar tokens (+50 tokens)</span>
                                     <span className="sm:hidden">+50 tokens</span>
                                   </button>
                                 )}
@@ -4049,7 +4075,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                         className={`${textColor} text-[14px] leading-snug flex-1 cursor-pointer hover:bg-black/5 rounded px-1 transition-colors`}
                                         onClick={() => m.image ? setExpandedImage(m.image) : setReplyingTo(m)}
                                       >
-                                        <TranslatedText originalText={safeText} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
+                                         <TranslatedText originalText={safeText} senderLanguage={m.senderLanguage} userLanguage={user.pais_idioma || 'es'} />
                                       </span>
                                       {/* Botón de Síntesis de Voz Humana para Elizabeth / IA */}
                                       {isLiz && (
@@ -4057,24 +4083,24 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            handleToggleElizabethSpeech(m.id || idx.toString(), safeText, m.audio || m.audioBase64);
+                                            handleToggleElizabethSpeech(m.id || idx.toString(), safeText, m.audio || m.audioBase64 || m.voiceAudio);
                                           }}
-                                          className={`px-1.5 py-0.5 rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                                          className={`px-2 py-1 rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
                                             speakingMessageId === (m.id || idx.toString())
                                               ? "bg-pink-500/30 text-pink-300 border border-pink-500/50 animate-pulse shadow-[0_0_10px_rgba(236,72,153,0.3)]"
-                                              : "text-pink-400/80 hover:text-pink-200 hover:bg-white/10"
+                                              : "text-pink-400 hover:text-pink-200 hover:bg-white/10 bg-black/20 border border-pink-500/20"
                                           }`}
-                                          title={speakingMessageId === (m.id || idx.toString()) ? "Detener voz de Elizabeth" : "Escuchar voz de Elizabeth"}
+                                          title={speakingMessageId === (m.id || idx.toString()) ? "Detener voz de Elizabeth" : "Tocar para escuchar la voz de Elizabeth"}
                                         >
                                           {speakingMessageId === (m.id || idx.toString()) ? (
                                             <>
-                                              <VolumeX size={13} className="text-pink-300" />
+                                              <VolumeX size={14} className="text-pink-300 animate-pulse" />
                                               <span className="text-[10px] font-bold text-pink-200">Detener</span>
                                             </>
                                           ) : (
                                             <>
-                                              <Volume2 size={13} />
-                                              <span className="text-[10px] font-semibold hidden sm:inline">Voz</span>
+                                              <Volume2 size={14} className="text-pink-400" />
+                                              <span className="text-[10px] font-bold text-pink-300">Voz</span>
                                             </>
                                           )}
                                         </button>
@@ -4118,7 +4144,32 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                         </div>
                                       )}
 
-                                    {(m.type === "audio" || m.audio) && (
+                                    {/* Cartelito y Botón para reproducir video y recargar tokens en el mensaje de la IA */}
+                                    {(m.isOutOfTokensNotice || (isLiz && (m.text?.includes("sin energía") || m.text?.includes("sin tokens") || m.text?.includes("Tokens Agotados") || m.text?.includes("recargar +50 tokens") || m.text?.includes("reproducir video")))) && (
+                                      <div className="mt-3 p-3 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 border-2 border-amber-400/60 rounded-2xl flex flex-col gap-2 shadow-lg shadow-amber-500/10">
+                                        <div className="flex items-center gap-2 text-amber-300 text-xs font-bold">
+                                          <Sparkles size={16} className="text-amber-400 animate-bounce" />
+                                          <span>¡Tokens agotados! Recarga disponible</span>
+                                        </div>
+                                        <p className="text-white/90 text-xs leading-relaxed">
+                                          Toca el botón de abajo para reproducir el video patrocinado y recargar <strong>+50 tokens al instante</strong> para seguir hablando.
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleStartWatchVideoAd(m.sender || activeChat || "Elizabeth");
+                                          }}
+                                          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white font-black py-2.5 px-3 rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.5)] transition-all active:scale-95 text-xs sm:text-sm uppercase tracking-wide border border-white/30 animate-pulse cursor-pointer"
+                                        >
+                                          <PlaySquare size={17} />
+                                          <span>Reproducir video para recargar tokens (+50)</span>
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {/* Reproductor de audio SÓLO para notas de voz humanas (NUNCA para mensajes de Elizabeth o IA) */}
+                                    {!isLiz && !m.isAi && m.sender !== "Elizabeth" && m.sender?.toLowerCase() !== "elizabeth" && !["Sensei", "Shadow", "Neko"].includes(m.sender) && !(AI_CHARACTERS as any)[m.sender] && (m.type === "audio" || m.audio) && (
                                       <div className="w-full mt-1.5">
                                         <PremiumAudioPlayer src={m.audio} styleType={user?.audioVisualizerStyle} color1={user?.audioVisualizerColor1} color2={user?.audioVisualizerColor2} />
                                       </div>
@@ -4218,12 +4269,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     </div>
                   )}
 
-                  {/* Banner de Recarga de Tokens IA: ÚNICAMENTE cuando tokens <= 0 */}
-                  {Boolean(activeChat && (AI_CHARACTERS as any)[activeChat]) && (user.aiTokens ?? user.lizCoins ?? 50) <= 0 && (
-                    <div className="mb-3 p-3.5 sm:p-4 bg-gradient-to-r from-amber-950/85 via-[#1a1824] to-amber-950/85 border-2 border-amber-400/60 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_25px_rgba(245,158,11,0.25)] backdrop-blur-md animate-fadeIn">
+                  {/* Banner de Recarga de Tokens IA: Cuando tokens <= 0 o cuando outOfTokensAi está activo */}
+                  {Boolean(activeChat && ((AI_CHARACTERS as any)[activeChat] || activeChat === "Elizabeth")) && (Boolean(outOfTokensAi) || (user.aiTokens !== undefined && user.aiTokens <= 0) || (user.lizCoins !== undefined && user.lizCoins <= 0 && user.aiTokens === 0)) && (
+                    <div className="mb-3 p-3.5 sm:p-4 bg-gradient-to-r from-amber-950/90 via-[#1a1824] to-amber-950/90 border-2 border-amber-400/70 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_25px_rgba(245,158,11,0.3)] backdrop-blur-md animate-fadeIn">
                       <div className="flex items-center gap-3 text-left w-full sm:w-auto">
                         <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-300 shrink-0 shadow-md">
-                          <Sparkles size={22} className="animate-bounce" />
+                          <PlaySquare size={22} className="animate-pulse text-amber-400" />
                         </div>
                         <div>
                           <p className="text-white text-xs sm:text-sm font-extrabold flex items-center gap-1.5 flex-wrap">
@@ -4231,17 +4282,17 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                             <span className="text-amber-400 font-black">{activeChat}</span>
                           </p>
                           <p className="text-gray-300 text-[11px] mt-0.5">
-                            Haz clic abajo para abrir el anuncio y recargar <strong>+50 tokens al instante</strong> para seguir hablando con la IA.
+                            Toca el botón a continuación para reproducir el video patrocinado y recargar <strong>+50 tokens al instante</strong> para seguir hablando con la IA.
                           </p>
                         </div>
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleClaimRewardTokens(activeChat)}
-                        className="w-full sm:w-auto bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white font-black text-xs sm:text-sm px-5 py-3 rounded-xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all shrink-0 uppercase tracking-wide border border-white/20"
+                        onClick={() => handleStartWatchVideoAd(activeChat)}
+                        className="w-full sm:w-auto bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white font-black text-xs sm:text-sm px-5 py-3 rounded-xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.5)] active:scale-95 transition-all shrink-0 uppercase tracking-wide border border-white/20 animate-pulse cursor-pointer"
                       >
                         <PlaySquare size={18} />
-                        Ver anuncio para recargar tokens (+50 tokens)
+                        Reproducir video para recargar tokens (+50 tokens)
                       </button>
                     </div>
                   )}
@@ -4859,15 +4910,109 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white mb-2">¡Tokens Agotados!</h2>
             <p className="text-gray-300 text-xs sm:text-sm mb-6 leading-relaxed">
-              Para seguir chateando con <span className="font-extrabold text-amber-400">{outOfTokensAi}</span>, pulsa el botón para ver el anuncio patrocinado y recargar tus tokens.
+              Para seguir chateando con <span className="font-extrabold text-amber-400">{outOfTokensAi}</span>, pulsa el botón para reproducir el video y recargar tus tokens.
             </p>
             <button
-              onClick={() => handleClaimRewardTokens(outOfTokensAi)}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white font-black py-3.5 px-4 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.4)] transition-transform active:scale-95 text-xs sm:text-sm uppercase tracking-wide border border-white/20"
+              onClick={() => {
+                const target = outOfTokensAi;
+                setOutOfTokensAi(null);
+                handleStartWatchVideoAd(target);
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white font-black py-3.5 px-4 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.4)] transition-transform active:scale-95 text-xs sm:text-sm uppercase tracking-wide border border-white/20 cursor-pointer"
             >
               <PlaySquare size={18} />
-              Ver anuncio para recargar tokens (+50 tokens)
+              Reproducir video para recargar tokens (+50 tokens)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Reproducción de Video Patrocinado para Recargar Tokens */}
+      {isWatchingAd && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-[140] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#12141c] border-2 border-amber-400/60 p-5 sm:p-7 rounded-3xl w-full max-w-md shadow-[0_0_60px_rgba(245,158,11,0.35)] relative text-center flex flex-col gap-4">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="flex items-center gap-2 text-amber-400 font-extrabold text-sm sm:text-base">
+                <PlaySquare size={20} className="animate-pulse" />
+                <span>Video Patrocinado - Recarga de Tokens</span>
+              </div>
+              <button
+                onClick={() => {
+                  setIsWatchingAd(false);
+                  setVideoAdTargetAi(null);
+                }}
+                className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-1.5 rounded-full transition-colors"
+                title="Cerrar reproductor"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Pantalla del Reproductor de Video */}
+            <div className="relative w-full aspect-video bg-black/90 rounded-2xl overflow-hidden border border-amber-500/30 flex flex-col items-center justify-center group shadow-inner">
+              <div className="absolute inset-0 bg-gradient-to-tr from-amber-950/40 via-purple-950/30 to-blue-950/40 animate-pulse" />
+              
+              <div className="relative z-10 flex flex-col items-center gap-3 p-4">
+                <div className="w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-400/70 flex items-center justify-center text-amber-300 shadow-[0_0_25px_rgba(245,158,11,0.5)]">
+                  <PlaySquare size={32} className="animate-bounce text-amber-400" />
+                </div>
+                <div className="text-center">
+                  <p className="text-white font-black text-sm sm:text-base tracking-wide">
+                    Patrocinador Oficial de ChatLiz
+                  </p>
+                  <p className="text-amber-300/80 text-xs mt-1">
+                    Recargando energía para hablar con <span className="font-bold text-amber-400">{videoAdTargetAi || "Elizabeth"}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Barra de progreso inferior y cuenta regresiva */}
+              <div className="absolute bottom-0 inset-x-0 bg-black/70 backdrop-blur-sm p-2.5 flex items-center justify-between text-xs text-white z-20">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+                  <span className="font-semibold text-gray-300">
+                    {adCountdown > 0 ? `Recompensa en ${adCountdown}s` : "¡Video completado!"}
+                  </span>
+                </div>
+                <div className="w-28 sm:w-36 bg-white/20 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-amber-400 to-orange-500 h-full transition-all duration-1000 ease-linear"
+                    style={{ width: `${((5 - adCountdown) / 5) * 100}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Botón de acción */}
+            {adCountdown > 0 ? (
+              <div className="py-2">
+                <p className="text-xs text-gray-400 mb-2">
+                  Reproduciendo video publicitario... Espera {adCountdown}s para recibir tus tokens.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClaimRewardTokens(videoAdTargetAi || "Elizabeth");
+                    setIsWatchingAd(false);
+                  }}
+                  className="text-xs text-amber-400 hover:text-amber-300 underline font-medium cursor-pointer"
+                >
+                  Omitir espera y recargar +50 tokens ahora
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  handleClaimRewardTokens(videoAdTargetAi || "Elizabeth");
+                  setIsWatchingAd(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white font-black py-3.5 px-4 rounded-2xl shadow-[0_0_25px_rgba(245,158,11,0.5)] transition-transform active:scale-95 text-xs sm:text-sm uppercase tracking-wide border border-white/30 animate-bounce cursor-pointer"
+              >
+                <Sparkles size={18} />
+                <span>¡Reclamar +50 Tokens y Seguir Hablando!</span>
+              </button>
+            )}
           </div>
         </div>
       )}

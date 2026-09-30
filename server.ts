@@ -2191,6 +2191,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       let profileLikes = 0;
       let incognito = false;
       let frameId: number | undefined = undefined;
+      let aiTokens = 50;
 
       if (fdb) {
         try {
@@ -2206,6 +2207,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             blockedList = user?.blocked_list || [];
             awards = user?.awards || [];
             lizCoins = user?.lizCoins || 0;
+            aiTokens = user?.aiTokens !== undefined ? user.aiTokens : (user?.lizCoins !== undefined ? user.lizCoins : 50);
             activeDecoration = user?.activeDecoration || null;
             ownedDecorations = user?.ownedDecorations || [];
             elo = user?.elo || 0;
@@ -2215,14 +2217,17 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             frameId = user?.frameId || undefined;
           }
         } catch(e) {}
+      } else if (fallbackState.users[username]) {
+        aiTokens = fallbackState.users[username].aiTokens !== undefined ? fallbackState.users[username].aiTokens : (fallbackState.users[username].lizCoins !== undefined ? fallbackState.users[username].lizCoins : 50);
       }
 
       currentUsername = username;
       if (activeUsers[username]) {
          activeUsers[username].socketId = socket.id;
+         activeUsers[username].aiTokens = aiTokens;
       } else {
          activeUsers[username] = {
-                  incognito: incognito,
+            incognito: incognito,
             socketId: socket.id,
             status: "online",
             username,
@@ -2234,6 +2239,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             blocked_list: blockedList,
             awards,
             lizCoins,
+            aiTokens,
             activeDecoration,
             ownedDecorations,
             elo,
@@ -2243,6 +2249,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
          };
       }
       emitActiveUsers();
+      socket.emit("tokens_updated", { tokens: aiTokens });
       socket.emit("queue_update", {
         queue: songQueue,
         current: currentRequestedSong,
@@ -2298,6 +2305,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       let blockedList = [];
       let awards = [];
       let lizCoins = 0;
+      let aiTokens = 50;
       let activeDecoration = null;
       let ownedDecorations = [];
       let elo = 0;
@@ -2345,6 +2353,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
             blockedList = user?.blocked_list || [];
             awards = user?.awards || [];
             lizCoins = user?.lizCoins || 0;
+            aiTokens = user?.aiTokens !== undefined ? user.aiTokens : (user?.lizCoins !== undefined ? user.lizCoins : 50);
             activeDecoration = user?.activeDecoration || null;
             ownedDecorations = user?.ownedDecorations || [];
             elo = user?.elo || 0;
@@ -2449,6 +2458,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
           blockedList = fallbackState.users[username].blocked_list || [];
           awards = fallbackState.users[username].awards || [];
           lizCoins = fallbackState.users[username].lizCoins || 0;
+          aiTokens = fallbackState.users[username].aiTokens !== undefined ? fallbackState.users[username].aiTokens : (fallbackState.users[username].lizCoins !== undefined ? fallbackState.users[username].lizCoins : 50);
           activeDecoration =
             fallbackState.users[username].activeDecoration || null;
           ownedDecorations =
@@ -2518,6 +2528,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         blocked_list: blockedList,
         awards,
         lizCoins,
+        aiTokens,
         activeDecoration,
         ownedDecorations,
         elo,
@@ -2538,6 +2549,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         frameId: fallbackState.users[username]?.frameId || undefined
       };
       emitActiveUsers();
+      socket.emit("tokens_updated", { tokens: aiTokens });
       if (bannedUsers[username] && bannedUsers[username] > Date.now()) {
           socket.emit("banned_status", { isBanned: true });
       }
@@ -2554,6 +2566,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         blocked_list: blockedList,
         awards,
         lizCoins,
+        aiTokens,
         activeDecoration,
         ownedDecorations,
         gender: userGender || gender,
@@ -2779,6 +2792,16 @@ __name(ensureAutoRadio, "ensureAutoRadio");
       // Notifica al cliente el nuevo balance actualizado tal como pidió la consigna
       socket.emit("tokens_updated", { tokens: userTokens });
       socket.emit("update_user_info", activeUsers[currentUsername]);
+
+      // Enviar confirmación directa en el chat privado con la IA
+      const rechargedMsg: any = {
+        text: `⚡ ¡Energía recargada con éxito! He recibido +50 tokens gracias a que viste el video patrocinado. ¡Ya podemos seguir hablando!`,
+        sender: aiName,
+        isAi: true,
+        id: Date.now().toString(),
+        createdAt: Date.now(),
+      };
+      socket.emit("receive_private", rechargedMsg, aiName);
 
       // Emitir al admin las estadísticas actualizadas en tiempo real
       io.emit("monetization_stats_updated", {
@@ -4964,7 +4987,7 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
             sender: "Elizabeth",
             id: Date.now().toString(),
             createdAt: Date.now(),
-            ...(voiceAudioBase64 ? { audio: voiceAudioBase64, audioBase64: voiceAudioBase64 } : {})
+            ...(voiceAudioBase64 ? { voiceAudio: voiceAudioBase64, audioBase64: voiceAudioBase64 } : {})
           };
           
           await new Promise(r => setTimeout(r, Math.min(4000, wordCount * 120)));
@@ -5509,12 +5532,23 @@ ${msg.text}`,
       }
       if (triggerPrivateAi) {
         // Tokens validation
-        let userTokens = activeUsers[currentUsername]?.aiTokens ?? activeUsers[currentUsername]?.lizCoins ?? 10;
+        let userTokens = activeUsers[currentUsername]?.aiTokens ?? activeUsers[currentUsername]?.lizCoins ?? 50;
         if (userTokens < 1) {
             io.to(activeUsers[currentUsername].socketId).emit("out_of_tokens", {
                 aiName: aiCharacter.name,
                 tokens: 0
             });
+            io.to(activeUsers[currentUsername].socketId).emit("tokens_updated", { tokens: 0 });
+            
+            const outOfTokensMsg: any = {
+              text: `⚠️ ¡Me he quedado sin energía / tokens para responderte! Toca el botón de reproducir video para recargar +50 tokens al instante y seguir hablando conmigo.`,
+              sender: aiCharacter.id,
+              isAi: true,
+              isOutOfTokensNotice: true,
+              id: Date.now().toString(),
+              createdAt: Date.now(),
+            };
+            socket.emit("receive_private", outOfTokensMsg, aiCharacter.id);
             return;
         }
         
@@ -5732,7 +5766,7 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
             isAi: true,
             id: Date.now().toString(),
             createdAt: Date.now(),
-            ...(voiceAudioBase64 ? { audio: voiceAudioBase64, audioBase64: voiceAudioBase64 } : {})
+            ...(voiceAudioBase64 ? { voiceAudio: voiceAudioBase64, audioBase64: voiceAudioBase64 } : {})
           };
 
           await new Promise(r => setTimeout(r, Math.min(4000, wordCount * 120)));
