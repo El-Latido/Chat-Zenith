@@ -83,7 +83,6 @@ import { BackgroundSelectorModal } from "./components/BackgroundSelectorModal";
 import { CustomRoomConfigModal } from "./components/CustomRoomConfigModal";
 import { getBubbleStyleDef } from "./utils/bubbleStyles";
 import { MonetizationReportModal, MonetizationStats } from "./components/MonetizationReportModal";
-import { VideoAdRewardModal } from "./components/VideoAdRewardModal";
 import { AI_CHARACTERS } from "./aiCharacters";
 
 const DECORATIONS = [
@@ -3761,22 +3760,24 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                             return (
                               <div className="flex items-center gap-1.5 mr-1">
                                 <div className={`px-2.5 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 shadow-sm ${
-                                  tokensCount > 5 
+                                  tokensCount > 0 
                                     ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/30" 
                                     : "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
                                 }`}>
                                   <Sparkles size={13} className="text-cyan-400" />
                                   <span>{tokensCount} {tokensCount === 1 ? 'token' : 'tokens'}</span>
                                 </div>
-                                <button
-                                  onClick={() => handleClaimRewardTokens(activeChat)}
-                                  className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5 shrink-0 uppercase tracking-wide border border-amber-400/40"
-                                  title="Ver anuncio para recargar tokens (+50 tokens)"
-                                >
-                                  <PlaySquare size={14} />
-                                  <span className="hidden sm:inline">Ver anuncio para recargar tokens (+50 tokens)</span>
-                                  <span className="sm:hidden">+50 tokens</span>
-                                </button>
+                                {tokensCount <= 0 && (
+                                  <button
+                                    onClick={() => handleClaimRewardTokens(activeChat)}
+                                    className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5 shrink-0 uppercase tracking-wide border border-amber-400/40 animate-pulse"
+                                    title="Ver anuncio para recargar tokens (+50 tokens)"
+                                  >
+                                    <PlaySquare size={14} />
+                                    <span className="hidden sm:inline">Ver anuncio para recargar tokens (+50 tokens)</span>
+                                    <span className="sm:hidden">+50 tokens</span>
+                                  </button>
+                                )}
                               </div>
                             );
                           })()}
@@ -4193,8 +4194,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                     </div>
                   )}
 
-                  {/* Banner de Recarga de Tokens IA cuando se agotan o están bajos */}
-                  {Boolean(activeChat && (AI_CHARACTERS as any)[activeChat]) && (user.aiTokens ?? user.lizCoins ?? 50) <= 5 && (
+                  {/* Banner de Recarga de Tokens IA: ÚNICAMENTE cuando tokens <= 0 */}
+                  {Boolean(activeChat && (AI_CHARACTERS as any)[activeChat]) && (user.aiTokens ?? user.lizCoins ?? 50) <= 0 && (
                     <div className="mb-3 p-3.5 sm:p-4 bg-gradient-to-r from-amber-950/85 via-[#1a1824] to-amber-950/85 border-2 border-amber-400/60 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_25px_rgba(245,158,11,0.25)] backdrop-blur-md animate-fadeIn">
                       <div className="flex items-center gap-3 text-left w-full sm:w-auto">
                         <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-300 shrink-0 shadow-md">
@@ -4202,14 +4203,11 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         </div>
                         <div>
                           <p className="text-white text-xs sm:text-sm font-extrabold flex items-center gap-1.5 flex-wrap">
-                            <span>Tokens con</span>
-                            <span className="text-amber-400 font-black">{activeChat}:</span>
-                            <span className="text-amber-300 font-mono font-bold bg-black/40 px-2 py-0.5 rounded-full border border-amber-500/30">
-                              {(user.aiTokens ?? user.lizCoins ?? 50)} restantes
-                            </span>
+                            <span>Tokens agotados con</span>
+                            <span className="text-amber-400 font-black">{activeChat}</span>
                           </p>
                           <p className="text-gray-300 text-[11px] mt-0.5">
-                            Haz clic abajo para ver el anuncio y recargar <strong>+50 tokens al instante</strong> para seguir chateando con la IA.
+                            Haz clic abajo para abrir el anuncio y recargar <strong>+50 tokens al instante</strong> para seguir hablando con la IA.
                           </p>
                         </div>
                       </div>
@@ -4849,27 +4847,6 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           </div>
         </div>
       )}
-
-      {/* Rewarded Video Ad Modal for AI Token Recharge (HilltopAds) */}
-      <VideoAdRewardModal
-        isOpen={Boolean(videoAdTargetAi)}
-        aiName={videoAdTargetAi || activeChat || "Elizabeth"}
-        socket={socket}
-        onClose={() => setVideoAdTargetAi(null)}
-        onRewardClaimed={(newCoins) => {
-          setUser((prev) => ({ ...prev, aiTokens: newCoins, lizCoins: newCoins }));
-          setToasts((t) => [
-            ...t,
-            {
-              id: Date.now() + Math.random(),
-              type: "Tokens",
-              sender: "HilltopAds",
-              text: `⚡ ¡Recargados 50 tokens con éxito para chatear con ${videoAdTargetAi || "la IA"}!`,
-            },
-          ]);
-        }}
-      />
-
 
       {/* Friend Requests Modal */}
       {isFriendReqOpen && (
