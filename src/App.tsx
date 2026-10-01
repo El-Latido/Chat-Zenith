@@ -78,6 +78,8 @@ import { MailboxModal, MailboxItem } from "./components/MailboxModal";
 import { AdminPanelModal } from "./components/AdminPanelModal";
 import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModal";
 import { WelcomeLanding } from "./components/WelcomeLanding";
+import { TavilyConfigModal } from "./components/TavilyConfigModal";
+import { getSavedTavilyKey, requiresWebSearch } from "./utils/tavilySearch";
 import { UniversalBackground, parseBackgroundMedia } from "./components/UniversalBackground";
 import { BackgroundSelectorModal } from "./components/BackgroundSelectorModal";
 import { CustomRoomConfigModal } from "./components/CustomRoomConfigModal";
@@ -866,6 +868,11 @@ function MainApp() {
   const [showRoomCleanerModal, setShowRoomCleanerModal] = useState(false);
   const isCleaningGlobalRef = useRef(false);
 const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isTavilyModalOpen, setIsTavilyModalOpen] = useState(false);
+  const [isWebSearchActive, setIsWebSearchActive] = useState(() => {
+    return localStorage.getItem("chatliz_auto_web_search") !== "false";
+  });
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStream, setRecordingStream] = useState<MediaStream | null>(
     null,
@@ -1995,6 +2002,12 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       },
     );
 
+    socket.on("elizabeth_searching_web", () => {
+      setIsSearchingWeb(true);
+    });
+    socket.on("stop_typing", () => {
+      setIsSearchingWeb(false);
+    });
     socket.on("typing", (data: { username: string; chat: string }) => {
       const targetChat =
         data.chat === user.username ? data.username : data.chat;
@@ -2701,7 +2714,17 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     const msgId =
       Date.now().toString() + Math.random().toString(36).substr(2, 5);
-    const payload: any = { text: inputValue, id: msgId };
+    const userTavilyKey = getSavedTavilyKey();
+    const shouldSearchWeb = isWebSearchActive || Boolean(userTavilyKey && requiresWebSearch(inputValue));
+    const payload: any = { 
+      text: inputValue, 
+      id: msgId,
+      tavilyKey: userTavilyKey,
+      webSearch: shouldSearchWeb
+    };
+    if (shouldSearchWeb && userTavilyKey && (activeChat === "global" || activeChat === "Elizabeth")) {
+      setIsSearchingWeb(true);
+    }
     if (selectedImage) payload.image = selectedImage;
         if (selectedGif) payload.image = selectedGif;
     if (selectedFile) {
@@ -4208,7 +4231,13 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
                 {/* Input Area */}
                 <div className="px-4 py-3 shrink-0 bg-[#18181b] relative z-10 w-full flex flex-col gap-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
-                  {typingUsers[activeChat] && typingUsers[activeChat].length > 0 && (
+                  {isSearchingWeb && (
+                    <div className="flex items-center gap-2 text-cyan-300 text-xs px-3 py-1.5 bg-cyan-950/50 border border-cyan-500/30 rounded-2xl w-fit animate-pulse shadow-sm">
+                      <div className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                      <span>Elizabeth está buscando en la web en tiempo real...</span>
+                    </div>
+                  )}
+                  {typingUsers[activeChat] && typingUsers[activeChat].length > 0 && !isSearchingWeb && (
                      <div className="text-gray-400 text-xs italic px-2">Alguien está escribiendo...</div>
                   )}
                   {replyingTo && (
@@ -4301,7 +4330,64 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                   <div className="flex items-center gap-2 sm:gap-3">
                     <button className="text-gray-400 hover:text-white transition-colors hidden sm:block"><Plus size={24} /></button>
                     <button onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-white transition-colors"><Paperclip size={22} /></button>
-                    <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="text-gray-400 hover:text-white transition-colors"><Smile size={24} /></button>
+                    {showEmojiPicker && (
+                      <EmojiGifPicker
+                        onSelect={(type, val) => {
+                          if (type === "emoji") {
+                            if (inputRef.current) {
+                              const start = inputRef.current.selectionStart ?? inputRef.current.value.length;
+                              const end = inputRef.current.selectionEnd ?? inputRef.current.value.length;
+                              const text = inputRef.current.value;
+                              inputRef.current.value = text.slice(0, start) + val + text.slice(end);
+                              const newPos = start + val.length;
+                              inputRef.current.focus();
+                              inputRef.current.setSelectionRange(newPos, newPos);
+                              inputRef.current.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                          } else if (type === "gif") {
+                            setSelectedGif(val);
+                            setShowEmojiPicker(false);
+                          }
+                        }}
+                        onClose={() => setShowEmojiPicker(false)}
+                      />
+                    )}
+                    <button 
+                      type="button"
+                      id="emoji-picker-toggle-btn"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)} 
+                      className={`transition-colors p-1 rounded-full ${showEmojiPicker ? "text-cyan-400 bg-cyan-500/10" : "text-gray-400 hover:text-white"}`}
+                      title="Catálogo de Emojis y GIFs"
+                    >
+                      <Smile size={24} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const key = getSavedTavilyKey();
+                        if (!key) {
+                          setIsTavilyModalOpen(true);
+                        } else {
+                          setIsWebSearchActive(prev => !prev);
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setIsTavilyModalOpen(true);
+                      }}
+                      className={`transition-all p-1 rounded-full ${
+                        isWebSearchActive
+                          ? "text-cyan-300 bg-cyan-500/25 border border-cyan-400/50 shadow-[0_0_12px_rgba(6,182,212,0.5)] scale-105"
+                          : "text-gray-400 hover:text-white hover:bg-white/5"
+                      }`}
+                      title={
+                        isWebSearchActive
+                          ? "Búsqueda Web en Tiempo Real ACTIVA (clic derecho para configurar API Key)"
+                          : "Activar Búsqueda Web en Tiempo Real con Tavily AI"
+                      }
+                    >
+                      <Globe size={22} />
+                    </button>
                     <button className="text-gray-400 hover:text-white transition-colors hidden sm:block"><Volume2 size={24} /></button>
                     
                     <div className="flex-1 flex items-center bg-[#27272a] rounded-full px-4 py-2 relative">
@@ -4896,6 +4982,14 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       )}
 
       {/* Modal de Tokens Agotados para la IA */}
+      <TavilyConfigModal
+        isOpen={isTavilyModalOpen}
+        onClose={() => setIsTavilyModalOpen(false)}
+        onKeySaved={(newKey) => {
+          if (newKey) setIsWebSearchActive(true);
+        }}
+      />
+
       {outOfTokensAi && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[130] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-[#12141c] border-2 border-amber-400/50 p-6 sm:p-8 rounded-3xl w-full max-w-sm shadow-[0_0_50px_rgba(245,158,11,0.25)] relative text-center">

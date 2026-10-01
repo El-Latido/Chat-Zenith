@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar, Copy, Check, Shield, Sparkles } from 'lucide-react';
+import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar, Copy, Check, Shield, Sparkles, Key, ExternalLink, RefreshCw, AlertCircle } from 'lucide-react';
 import { socket } from '../socket';
 import { UserObj } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { preloadMedia } from '../utils/mediaPreloader';
+import { getSavedTavilyKey, saveTavilyKey, searchWeb } from '../utils/tavilySearch';
 
 interface ProfileConfigModalProps {
   user: UserObj & { password?: string };
@@ -19,7 +20,7 @@ interface ProfileConfigModalProps {
 export function ProfileConfigModal({
   user, setUser, setIsConfigOpen, setAdminConfigAiOpen, usersOnline, setAiProfileForm, customFrames
 }: ProfileConfigModalProps) {
-  const [activeTab, setActiveTab] = useState<'perfil' | 'apariencia' | 'idioma' | 'cuenta'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'apariencia' | 'idioma' | 'cuenta' | 'apikeys'>('perfil');
   const [incognito, setIncognito] = useState((user as any).incognito || false);
   const [comentario, setComentario] = useState(user.statusMessage || '');
   const [pais, setPais] = useState(user.pais_idioma || 'es');
@@ -30,6 +31,12 @@ export function ProfileConfigModal({
   const [backgroundBase64, setBackgroundBase64] = useState(user.preferred_background || '');
   const [preferredTheme, setPreferredTheme] = useState(user.preferred_theme || localStorage.getItem("chatliz_theme") || "default");
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  // Tavily AI Web Search state
+  const [tavilyKey, setTavilyKey] = useState(() => getSavedTavilyKey());
+  const [showTavilyKey, setShowTavilyKey] = useState(false);
+  const [testingTavily, setTestingTavily] = useState(false);
+  const [tavilyTestResult, setTavilyTestResult] = useState<{ text: string; error: boolean } | null>(null);
 
   const [newUsernameInput, setNewUsernameInput] = useState(user.username || '');
   const [usernameMsg, setUsernameMsg] = useState<{ text: string, error: boolean } | null>(null);
@@ -169,10 +176,13 @@ export function ProfileConfigModal({
         bubbleStyle: bubbleStyle
       });
 
+      saveTavilyKey(tavilyKey);
+
       setSaveStatus("¡Guardado correctamente!");
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (e) {
       console.error(e);
+      saveTavilyKey(tavilyKey);
       setSaveStatus("¡Guardado correctamente!");
       setTimeout(() => setSaveStatus(null), 3000);
     }
@@ -236,10 +246,10 @@ export function ProfileConfigModal({
       />
       
       {/* Modal Container */}
-      <div className="relative w-full max-w-2xl bg-gradient-to-br from-[#12141c] to-[#0a0a0f] rounded-3xl shadow-2xl border border-white/10 flex flex-col md:flex-row overflow-hidden animate-in fade-in zoom-in-95 duration-300 mt-10 sm:mt-0 mb-10 sm:mb-0">
+      <div className="relative w-full max-w-4xl bg-gradient-to-br from-[#12141c] to-[#0a0a0f] rounded-3xl shadow-2xl border border-white/10 flex flex-col md:flex-row overflow-hidden animate-in fade-in zoom-in-95 duration-300 mt-6 sm:mt-0 mb-6 sm:mb-0">
         
         {/* Sidebar Tabs */}
-        <div className="w-full md:w-64 bg-black/40 border-b md:border-b-0 md:border-r border-white/5 p-4 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-visible">
+        <div className="w-full md:w-64 bg-black/40 border-b md:border-b-0 md:border-r border-white/5 p-4 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-visible shrink-0">
           <div className="hidden md:flex items-center gap-3 px-3 py-4 mb-2">
              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.3)]">
                <Settings className="text-white" size={20} />
@@ -254,14 +264,28 @@ export function ProfileConfigModal({
           <TabButton active={activeTab === 'idioma'} onClick={() => setActiveTab('idioma')} icon={<Globe size={18} />} label="Idioma y Sala" />
           <TabButton active={activeTab === 'apariencia'} onClick={() => setActiveTab('apariencia')} icon={<Palette size={18} />} label="Apariencia" />
           <TabButton active={activeTab === 'cuenta'} onClick={() => setActiveTab('cuenta')} icon={<Lock size={18} />} label="Privacidad y Cuenta" />
+          <TabButton active={activeTab === 'apikeys'} onClick={() => setActiveTab('apikeys')} icon={<Key size={18} />} label="Ajustes / API Keys" />
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 flex flex-col h-[70vh] md:h-[600px]">
-          <div className="p-4 flex justify-end md:hidden border-b border-white/5">
-             <button onClick={() => setIsConfigOpen(false)} className="text-gray-400 hover:text-white bg-white/5 p-2 rounded-full">
-               <X size={20} />
-             </button>
+        <div className="flex-1 flex flex-col h-[75vh] md:h-[650px] max-h-[85vh] overflow-hidden">
+          {/* Integrated Header with Title & Close Button */}
+          <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-black/30 shrink-0">
+            <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
+              {activeTab === 'perfil' && <span className="flex items-center gap-2"><User size={18} className="text-cyan-400" /> Mi Perfil</span>}
+              {activeTab === 'idioma' && <span className="flex items-center gap-2"><Globe size={18} className="text-cyan-400" /> Idioma y Sala</span>}
+              {activeTab === 'apariencia' && <span className="flex items-center gap-2"><Palette size={18} className="text-cyan-400" /> Apariencia y Visualizador</span>}
+              {activeTab === 'cuenta' && <span className="flex items-center gap-2"><Lock size={18} className="text-cyan-400" /> Privacidad y Cuenta</span>}
+              {activeTab === 'apikeys' && <span className="flex items-center gap-2"><Key size={18} className="text-cyan-400" /> Ajustes / API Keys (Tavily)</span>}
+            </div>
+            <button 
+              type="button"
+              onClick={() => setIsConfigOpen(false)} 
+              className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors"
+              title="Cerrar Ajustes"
+            >
+              <X size={18} />
+            </button>
           </div>
           
           <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
@@ -624,6 +648,66 @@ export function ProfileConfigModal({
                       ))}
                     </div>
                   </div>
+
+                  {/* Audio Visualizer Settings inside Apariencia Tab */}
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span className="text-cyan-400">♫</span> Audio Visualizer en Mensajes de Voz
+                    </h4>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-white/60 text-xs block mb-1.5 font-medium">Estilo del Visualizador</label>
+                        <select 
+                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-cyan-500/50 outline-none cursor-pointer"
+                          value={audioVisStyle}
+                          onChange={e => setAudioVisStyle(e.target.value)}
+                        >
+                          <option value="neon_waves">Neon Waves</option>
+                          <option value="cyber_bars">Cyberpunk Bars</option>
+                          <option value="stardust">Stardust Particles</option>
+                          <option value="holographic">Holographic Line</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <label className="text-white/60 text-xs block mb-1.5 font-medium">Color Primario</label>
+                          <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
+                            <input 
+                              type="color" 
+                              className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+                              value={audioVisColor1}
+                              onChange={e => setAudioVisColor1(e.target.value)}
+                            />
+                            <span className="text-xs font-mono text-gray-300">{audioVisColor1}</span>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-white/60 text-xs block mb-1.5 font-medium">Color Secundario</label>
+                          <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
+                            <input 
+                              type="color" 
+                              className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+                              value={audioVisColor2}
+                              onChange={e => setAudioVisColor2(e.target.value)}
+                            />
+                            <span className="text-xs font-mono text-gray-300">{audioVisColor2}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Preview */}
+                      <div className="p-3 bg-black/40 rounded-xl border border-white/5 flex items-center justify-center h-14 overflow-hidden relative">
+                        <div className="absolute inset-0 opacity-40" style={{ background: `linear-gradient(90deg, ${audioVisColor1}, ${audioVisColor2})`, filter: 'blur(15px)' }}></div>
+                        <div className="text-white/80 z-10 font-mono text-xs tracking-widest uppercase flex items-center gap-2">
+                          <span className="animate-pulse" style={{color: audioVisColor1}}>ılılı</span>
+                          Vista Previa Audio
+                          <span className="animate-pulse" style={{color: audioVisColor2}}>ılılı</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -694,8 +778,8 @@ export function ProfileConfigModal({
                            placeholder="https://ejemplo.com/fondo.jpg" 
                            defaultValue={localStorage.getItem("chatliz_chat_bg") || ""}
                            onChange={(e) => {
-                               localStorage.setItem("chatliz_chat_bg", e.target.value);
-                               window.dispatchEvent(new Event("chatliz_ui_update"));
+                                localStorage.setItem("chatliz_chat_bg", e.target.value);
+                                window.dispatchEvent(new Event("chatliz_ui_update"));
                            }}
                            className="w-full bg-black/30 p-3 mt-1 rounded-xl border border-white/10 focus:border-cyan-400 outline-none text-white transition-colors text-sm"
                        />
@@ -780,83 +864,140 @@ export function ProfileConfigModal({
                 </div>
               </div>
             )}
+
+            {/* Ajustes / API Keys Tab */}
+            {activeTab === 'apikeys' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="bg-gradient-to-r from-cyan-950/40 to-blue-950/30 border border-cyan-500/30 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 text-cyan-300 font-bold mb-1">
+                    <Globe size={18} className="text-cyan-400" />
+                    Búsqueda Web en Tiempo Real (Tavily AI)
+                  </div>
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    Permite que Elizabeth acceda a Internet en tiempo real para responder con datos frescos y precisos sobre noticias, deportes, economía, clima, código o búsquedas generales de la web.
+                  </p>
+                </div>
+
+                <div className="space-y-3 bg-black/30 p-5 rounded-2xl border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Key size={16} className="text-cyan-400" />
+                      Tavily API Key (Búsqueda Web)
+                    </label>
+                    <a
+                      href="https://tavily.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 hover:underline"
+                    >
+                      Obtener clave gratis <ExternalLink size={12} />
+                    </a>
+                  </div>
+
+                  <div className="relative flex items-center">
+                    <input
+                      type={showTavilyKey ? "text" : "password"}
+                      value={tavilyKey}
+                      onChange={(e) => {
+                        setTavilyKey(e.target.value);
+                        setTavilyTestResult(null);
+                      }}
+                      placeholder="tvly-xxxxxxxxxxxxxxxxxxxx"
+                      className="w-full bg-black/50 border border-white/10 focus:border-cyan-400 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none pr-24 font-mono transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowTavilyKey(!showTavilyKey)}
+                      className="absolute right-3 text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors"
+                    >
+                      {showTavilyKey ? "Ocultar" : "Mostrar"}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      disabled={testingTavily || !tavilyKey.trim()}
+                      onClick={async () => {
+                        setTestingTavily(true);
+                        setTavilyTestResult(null);
+                        try {
+                          const res = await searchWeb("noticias de hoy", tavilyKey.trim());
+                          if (res?.results?.length) {
+                            setTavilyTestResult({ text: `✅ ¡Conexión con Tavily confirmada! (${res.results.length} fuentes encontradas)`, error: false });
+                          } else {
+                            setTavilyTestResult({ text: "✅ Clave verificada con éxito.", error: false });
+                          }
+                        } catch (err: any) {
+                          setTavilyTestResult({ text: `❌ ${err.message || "Error al conectar"}`, error: true });
+                        } finally {
+                          setTestingTavily(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs font-semibold text-gray-300 hover:text-white rounded-xl border border-white/10 transition-colors flex items-center gap-1.5"
+                    >
+                      {testingTavily ? (
+                        <>
+                          <RefreshCw size={12} className="animate-spin text-cyan-400" />
+                          Probando...
+                        </>
+                      ) : (
+                        <>
+                          <Globe size={12} className="text-cyan-400" />
+                          Probar Conexión
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        saveTavilyKey(tavilyKey.trim());
+                        setSaveStatus("¡Tavily API Key guardada!");
+                        setTimeout(() => setSaveStatus(null), 3000);
+                      }}
+                      className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-[0_0_12px_rgba(6,182,212,0.4)] flex items-center gap-1.5"
+                    >
+                      <Check size={14} />
+                      Guardar Clave
+                    </button>
+                  </div>
+
+                  {tavilyTestResult && (
+                    <div className={`p-3 rounded-xl text-xs font-medium border mt-2 ${tavilyTestResult.error ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
+                      {tavilyTestResult.text}
+                    </div>
+                  )}
+
+                  <p className="text-[11px] text-gray-500 leading-normal pt-1">
+                    🔒 La clave se almacena de forma segura en tu navegador local (localStorage) y se envía dinámicamente con cada consulta web para responder preguntas en tiempo real.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Footer Save Button */}
-          <div className="p-4 md:p-6 border-t border-white/5 bg-black/20 flex flex-col items-center">
-             
-        {/* Audio Visualizer Settings */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <span className="text-cyan-400">♫</span> Audio Visualizer
-          </h3>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="text-white/60 text-sm block mb-2">Style</label>
-              <select 
-                className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-cyan-500/50 outline-none"
-                value={audioVisStyle}
-                onChange={e => setAudioVisStyle(e.target.value)}
-              >
-                <option value="neon_waves">Neon Waves</option>
-                <option value="cyber_bars">Cyberpunk Bars</option>
-                <option value="stardust">Stardust Particles</option>
-                <option value="holographic">Holographic Line</option>
-              </select>
-            </div>
-            
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <label className="text-white/60 text-sm block mb-2">Primary Color</label>
-                <input 
-                  type="color" 
-                  className="w-full h-10 rounded cursor-pointer bg-transparent border-0"
-                  value={audioVisColor1}
-                  onChange={e => setAudioVisColor1(e.target.value)}
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-white/60 text-sm block mb-2">Secondary Color</label>
-                <input 
-                  type="color" 
-                  className="w-full h-10 rounded cursor-pointer bg-transparent border-0"
-                  value={audioVisColor2}
-                  onChange={e => setAudioVisColor2(e.target.value)}
-                />
-              </div>
-            </div>
-            
-            {/* Preview */}
-            <div className="mt-4 p-4 bg-black/40 rounded-xl border border-white/5 flex items-center justify-center h-20 overflow-hidden relative">
-              <div className="absolute inset-0 opacity-50" style={{ background: `linear-gradient(90deg, ${audioVisColor1}, ${audioVisColor2})`, filter: 'blur(20px)' }}></div>
-              <div className="text-white/80 z-10 font-mono text-sm tracking-widest uppercase flex items-center gap-2">
-                <span className="animate-pulse" style={{color: audioVisColor1}}>ılılı</span>
-                Preview Style
-                <span className="animate-pulse" style={{color: audioVisColor2}}>ılılı</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <button 
+          {/* Footer Save Button - Clean and non-overlapping */}
+          <div className="p-4 md:p-5 border-t border-white/10 bg-black/40 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+             <div className="text-xs text-gray-400 text-center sm:text-left">
+               {saveStatus ? (
+                 <span className="text-cyan-400 font-bold flex items-center gap-1.5 animate-in fade-in">
+                   <Check size={14} /> {saveStatus}
+                 </span>
+               ) : (
+                 <span>Configuración lista para guardar.</span>
+               )}
+             </div>
+             <button 
                onClick={handleSaveProfile}
-               className="w-full md:w-auto md:px-12 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-2xl font-bold text-lg transition-all shadow-[0_0_20px_rgba(8,145,178,0.4)] hover:shadow-[0_0_30px_rgba(8,145,178,0.6)] hover:scale-[1.02]"
+               className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-2xl font-bold text-sm transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:scale-[1.02] flex items-center justify-center gap-2"
              >
+               <Check size={16} />
                Guardar Cambios
              </button>
-             {saveStatus && (
-                <div className="mt-3 text-sm font-bold text-cyan-400 animate-in fade-in slide-in-from-bottom-2">
-                  {saveStatus}
-                </div>
-             )}
           </div>
         </div>
         
-        {/* Absolute close button for desktop */}
-        <button onClick={() => setIsConfigOpen(false)} className="hidden md:flex absolute top-4 right-4 text-gray-400 hover:text-white bg-black/20 hover:bg-white/10 p-2 rounded-full backdrop-blur-md transition-colors z-10">
-          <X size={20} />
-        </button>
       </div>
     </div>
   );

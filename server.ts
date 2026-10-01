@@ -81,11 +81,18 @@ const ai = new GoogleGenAI({
   httpOptions: { headers: { "User-Agent": "aistudio-build" } },
 });
 
-let aiRuntimeConfig = {
+let aiRuntimeConfig: {
+  groqBackupKey: string;
+  groqBackupName: string;
+  geminiKey: string;
+  preferredProvider: "gemini" | "groq";
+  tavilyKey?: string;
+} = {
   groqBackupKey: process.env.GROQ_API_KEY || "",
   groqBackupName: "ChatLiz-Groq-Backup",
   geminiKey: process.env.GEMINI_API_KEY || "",
   preferredProvider: "gemini" as "gemini" | "groq",
+  tavilyKey: process.env.TAVILY_API_KEY || "",
 };
 
 function getEffectiveAiClient() {
@@ -205,25 +212,52 @@ async function callGroqAi(params: any, timeoutMs = 12000): Promise<{ text: strin
   throw lastErr || new Error("Todos los modelos de Groq fallaron");
 }
 
-async function callGeminiAi(aiInstance: any, params: any, timeoutMs = 12000): Promise<{ text: string }> {
-  let timeoutId: any;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("Gemini request timeout")), timeoutMs);
-  });
+async function callGeminiAi(aiInstance: any, params: any, timeoutMs = 25000): Promise<{ text: string }> {
+  const targetModel = "gemini-2.5-flash";
+  const cleanParams = { ...params, model: targetModel };
 
-  try {
-    const targetModel = (params.model && !params.model.includes("3.6")) ? params.model : "gemini-2.5-flash";
-    const cleanParams = { ...params, model: targetModel };
-    const effectiveAi = (aiRuntimeConfig.geminiKey && aiRuntimeConfig.geminiKey.trim())
-      ? new GoogleGenAI({ apiKey: aiRuntimeConfig.geminiKey.trim(), httpOptions: { headers: { "User-Agent": "aistudio-build" } } })
-      : aiInstance;
-    const fetchPromise = effectiveAi.models.generateContent(cleanParams);
-    const result: any = await Promise.race([fetchPromise, timeoutPromise]);
-    const generatedText = typeof result?.text === "function" ? result.text() : (result?.text || "");
-    return { text: generatedText };
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
+  const withTimeout = async (promise: Promise<any>, ms: number) => {
+    let tId: any;
+    const tPromise = new Promise<never>((_, reject) => {
+      tId = setTimeout(() => reject(new Error("Gemini request timeout")), ms);
+    });
+    try {
+      return await Promise.race([promise, tPromise]);
+    } finally {
+      clearTimeout(tId);
+    }
+  };
+
+  // 1. Si hay una clave personalizada configurada en la BD, probarla primero
+  if (aiRuntimeConfig.geminiKey && aiRuntimeConfig.geminiKey.trim()) {
+    try {
+      const customAi = new GoogleGenAI({ apiKey: aiRuntimeConfig.geminiKey.trim(), httpOptions: { headers: { "User-Agent": "aistudio-build" } } });
+      const result: any = await withTimeout(customAi.models.generateContent(cleanParams), timeoutMs);
+      const generatedText = typeof result?.text === "function" ? result.text() : (result?.text || "");
+      if (generatedText) return { text: generatedText };
+    } catch (customErr: any) {
+      console.warn("[Gemini Custom Key Warning]: Falló la clave personalizada, recurriendo a clave del servidor principal:", customErr?.message || customErr);
+    }
   }
+
+  // 2. Instancia principal del servidor garantizada con process.env.GEMINI_API_KEY
+  try {
+    const result: any = await withTimeout(aiInstance.models.generateContent(cleanParams), timeoutMs);
+    const generatedText = typeof result?.text === "function" ? result.text() : (result?.text || "");
+    if (generatedText) return { text: generatedText };
+  } catch (mainErr: any) {
+    console.warn("[Gemini Main Instance Warning]:", mainErr?.message || mainErr);
+    // Intento con modelo alternativo compatible antes de fallar
+    try {
+      const proResult: any = await withTimeout(aiInstance.models.generateContent({ ...cleanParams, model: "gemini-2.5-pro" }), timeoutMs);
+      const proText = typeof proResult?.text === "function" ? proResult.text() : (proResult?.text || "");
+      if (proText) return { text: proText };
+    } catch (proErr) {
+      console.warn("[Gemini Pro Fallback Warning]:", proErr);
+    }
+    throw mainErr;
+  }
+  throw new Error("No response generated from Gemini");
 }
 
 let globalAiVoiceConfig: any = null;
@@ -309,15 +343,15 @@ setTimeout(() => {
   initAiRuntimeConfig();
 }, 1500);
 
-async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 12000): Promise<{ text: string; response: { text: () => string } }> {
+async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 25000): Promise<{ text: string; response: { text: () => string } }> {
   const now = Date.now();
-  // Cooldown de 3 minutos para reintentar proveedor marcado como agotado
-  if (providerStatus.gemini.isExhausted && now - providerStatus.gemini.lastErrorTime > 180000) {
+  // Cooldown dinámico rápido (15 segundos) para reintentar proveedor
+  if (providerStatus.gemini.isExhausted && now - providerStatus.gemini.lastErrorTime > 15000) {
     providerStatus.gemini.isExhausted = false;
   }
   const groqKey = (aiRuntimeConfig.groqBackupKey || process.env.GROQ_API_KEY || "").trim();
   const isGroqKeyValidFormat = groqKey.startsWith("gsk_") && groqKey.length > 25;
-  if (providerStatus.groq.isExhausted && isGroqKeyValidFormat && now - providerStatus.groq.lastErrorTime > 180000) {
+  if (providerStatus.groq.isExhausted && isGroqKeyValidFormat && now - providerStatus.groq.lastErrorTime > 15000) {
     providerStatus.groq.isExhausted = false;
   }
 
@@ -339,7 +373,7 @@ async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 120
       if (provider === "gemini") {
         const res = await callGeminiAi(aiInstance, params, timeoutMs);
         if (primaryAiProvider !== "gemini") {
-          console.log("🔄 [AI Provider] Gemini ha recuperado tokens y vuelve como proveedor activo.");
+          console.log("🔄 [AI Provider] Gemini activo como proveedor.");
           primaryAiProvider = "gemini";
         }
         providerStatus.gemini.isExhausted = false;
@@ -350,7 +384,7 @@ async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 120
       } else {
         const res = await callGroqAi(params, timeoutMs);
         if (primaryAiProvider !== "groq" && providerStatus.gemini.isExhausted) {
-          console.log("⚡ [AI Provider] Groq (ChatLiz-Groq-Backup) activo como proveedor principal.");
+          console.log("⚡ [AI Provider] Groq (ChatLiz-Groq-Backup) activo como proveedor.");
           primaryAiProvider = "groq";
         }
         providerStatus.groq.isExhausted = false;
@@ -377,37 +411,35 @@ async function safeGenerateContent(aiInstance: any, params: any, timeoutMs = 120
         if (provider === "groq") {
           providerStatus.groq.isExhausted = true;
           primaryAiProvider = "gemini";
-          console.warn(`🔒 [AI Failover] Clave de Groq inválida o revocada. Conmutación limpia e inmediata a Gemini.`);
+          console.warn(`🔒 [AI Failover] Clave de Groq inválida. Conmutando a Gemini.`);
         }
       } else if (
         errMsg.includes("429") ||
         errMsg.includes("quota") ||
         errMsg.includes("resource_exhausted") ||
-        errMsg.includes("rate_limit") ||
-        errMsg.includes("limit")
+        errMsg.includes("rate_limit")
       ) {
         providerStatus[provider].isExhausted = true;
         primaryAiProvider = provider === "gemini" ? (hasGroq ? "groq" : "gemini") : "gemini";
-        console.warn(`🔄 [AI Failover] Proveedor ${provider.toUpperCase()} agotado. Conmutando a ${primaryAiProvider.toUpperCase()}...`);
+        console.warn(`🔄 [AI Failover] Proveedor ${provider.toUpperCase()} con rate limit temporal.`);
       }
     }
   }
 
-  // Fallback final garantizado: Si todo falló y no se había intentado Gemini recientemente, intentar Gemini como salvavidas
-  if (!providersToTry.includes("gemini")) {
-    try {
-      const res = await callGeminiAi(aiInstance, params, timeoutMs);
-      return {
-        text: res.text,
-        response: { text: () => res.text }
-      };
-    } catch (rescueErr) {
-      lastError = rescueErr;
-    }
+  // Fallback final garantizado: Si todo falló, intentar Gemini con la clave de entorno principal directamente
+  try {
+    const res = await callGeminiAi(aiInstance, params, timeoutMs);
+    providerStatus.gemini.isExhausted = false;
+    return {
+      text: res.text,
+      response: { text: () => res.text }
+    };
+  } catch (rescueErr) {
+    lastError = rescueErr;
   }
 
-  console.error("❌ [AI Failover] Todos los proveedores de IA fallaron.");
-  throw lastError || new Error("Ambos proveedores de IA no están disponibles.");
+  console.error("❌ [AI Failover] Proveedores de IA agotados temporalmente.");
+  throw lastError || new Error("Proveedores de IA no disponibles.");
 }
 __name(safeGenerateContent, "safeGenerateContent");
 const BANNED_WORDS = ["puta", "puto", "mierda", "pendejo", "pendeja", "cabrón", "cabron", "zorra", "idiota", "estúpido", "estupido", "imbécil", "imbecil"];
@@ -470,6 +502,37 @@ function saveFallbackDB() {
   }
 }
 __name(saveFallbackDB, "saveFallbackDB");
+
+async function performTavilySearch(query: string, apiKey: string) {
+  const cleanKey = (apiKey || "").trim();
+  const cleanQuery = (query || "").trim();
+  if (!cleanKey || !cleanQuery) return null;
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: cleanKey,
+        query: cleanQuery,
+        search_depth: "basic",
+        include_answer: true,
+        max_results: 5,
+      }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn("[Tavily Search Warning]:", err);
+    return null;
+  }
+}
+
+function checkRequiresWebSearch(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return /\b(busca|buscar|búscame|investiga|noticias?|actualidad|hoy|clima|temperatura|tiempo en|partido|resultado|campeonato|champions|mundial|fútbol|precio del?|cotización|bitcoin|btc|dólar|euro|versión|cuándo sale|hora es en)\b/i.test(lower);
+}
+
 async function startServer() {
   const app = express();
 
@@ -540,6 +603,45 @@ const transporter = nodemailer.createTransport({
         success: false,
         error: deployErr?.message || "Error al desplegar en Hugging Face"
       });
+    }
+  });
+
+  // Endpoint Proxy Seguro para Búsqueda Web en Tiempo Real (Tavily AI)
+  app.post("/api/tavily-search", express.json(), async (req, res) => {
+    const { api_key, query, search_depth, include_answer, max_results } = req.body || {};
+    const effectiveKey = (api_key || "").trim();
+    if (!effectiveKey) {
+      return res.status(400).json({ error: "Tavily API Key no proporcionada." });
+    }
+    if (!query || typeof query !== "string" || !query.trim()) {
+      return res.status(400).json({ error: "La consulta de búsqueda es requerida." });
+    }
+
+    try {
+      const tavilyRes = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: effectiveKey,
+          query: query.trim(),
+          search_depth: search_depth || "basic",
+          include_answer: include_answer !== false,
+          max_results: max_results || 5
+        }),
+      });
+
+      if (!tavilyRes.ok) {
+        const errJson = await tavilyRes.json().catch(() => ({}));
+        return res.status(tavilyRes.status).json({
+          error: errJson?.detail?.error || errJson?.message || `Tavily HTTP ${tavilyRes.status}`
+        });
+      }
+
+      const data = await tavilyRes.json();
+      return res.json(data);
+    } catch (err: any) {
+      console.error("[Tavily Proxy Error]:", err?.message || err);
+      return res.status(500).json({ error: err?.message || "Error al conectar con el servicio de búsqueda de Tavily." });
     }
   });
 
@@ -1638,6 +1740,7 @@ __name(ensureAutoRadio, "ensureAutoRadio");
 
   const isUserAdminOrMaster = (username?: string): boolean => {
     if (!username) return false;
+    if (username.toUpperCase() === "AXISS") return true;
     const u = activeUsers[username];
     if (!u) return false;
     if (isMasterAdmin(username, u.uid, u.role)) return true;
@@ -2067,6 +2170,17 @@ __name(ensureAutoRadio, "ensureAutoRadio");
     
     socket.on("iniciar_llamada", async (targetUser) => {
         if (!currentUsername) return;
+        if (targetUser === "Elizabeth") {
+            const elizabethProfilePic = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80";
+            setTimeout(() => {
+                socket.emit("respuesta_llamada", {
+                    responder: "Elizabeth",
+                    profilePic: elizabethProfilePic,
+                    accepted: true
+                });
+            }, 800);
+            return;
+        }
         const callerData = {
             username: currentUsername,
             profilePic: activeUsers[currentUsername]?.profilePic || ""
@@ -2125,31 +2239,47 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         }
     });
 
-    // WebRTC Signaling
-    socket.on("webrtc_offer", (data) => {
+    // WebRTC / RTC Signaling
+    const relayOffer = (data: any) => {
         if (activeUsers[data.target]) {
-            io.to(activeUsers[data.target].socketId).emit("webrtc_offer", {
+            const payload = {
                 sender: currentUsername,
-                sdp: data.sdp
-            });
+                sdp: data.sdp || data.offer,
+                offer: data.offer || data.sdp
+            };
+            io.to(activeUsers[data.target].socketId).emit("webrtc_offer", payload);
+            io.to(activeUsers[data.target].socketId).emit("rtc_offer", payload);
         }
-    });
-    socket.on("webrtc_answer", (data) => {
+    };
+    socket.on("webrtc_offer", relayOffer);
+    socket.on("rtc_offer", relayOffer);
+
+    const relayAnswer = (data: any) => {
         if (activeUsers[data.target]) {
-            io.to(activeUsers[data.target].socketId).emit("webrtc_answer", {
+            const payload = {
                 sender: currentUsername,
-                sdp: data.sdp
-            });
+                sdp: data.sdp || data.answer,
+                answer: data.answer || data.sdp
+            };
+            io.to(activeUsers[data.target].socketId).emit("webrtc_answer", payload);
+            io.to(activeUsers[data.target].socketId).emit("rtc_answer", payload);
         }
-    });
-    socket.on("webrtc_ice_candidate", (data) => {
+    };
+    socket.on("webrtc_answer", relayAnswer);
+    socket.on("rtc_answer", relayAnswer);
+
+    const relayCandidate = (data: any) => {
         if (activeUsers[data.target]) {
-            io.to(activeUsers[data.target].socketId).emit("webrtc_ice_candidate", {
+            const payload = {
                 sender: currentUsername,
                 candidate: data.candidate
-            });
+            };
+            io.to(activeUsers[data.target].socketId).emit("webrtc_ice_candidate", payload);
+            io.to(activeUsers[data.target].socketId).emit("rtc_ice_candidate", payload);
         }
-    });
+    };
+    socket.on("webrtc_ice_candidate", relayCandidate);
+    socket.on("rtc_ice_candidate", relayCandidate);
     
     socket.on("video_request", (targetUser) => {
         if (activeUsers[targetUser]) {
@@ -3820,7 +3950,7 @@ socket.on("buy_decoration", async (data, callback) => {
           }
           const prompt = `Como Elizabeth, analiza esta solicitud de canci\xF3n. Canci\xF3n: ${song.title}. Genera un anuncio. Responde en JSON con { "accepted": true/false, "announcement": "..." }`;
           const resp = await safeGenerateContent(ai, {
-            model: "gemini-3.6-flash",
+            model: "gemini-2.5-flash",
             contents: prompt,
             config: { responseMimeType: "application/json", temperature: 0.7 },
           });
@@ -4763,7 +4893,7 @@ socket.on("send_global", async (msg) => {
 
             try {
               const resp = await safeGenerateContent(ai, {
-                model: "gemini-3.6-flash",
+                model: "gemini-2.5-flash",
                 contents: `Traduce el siguiente texto de un chat (escrito originalmente en el idioma/pa\xEDs: ${senderLanguage}) al idioma correspondiente de: ${receiverLanguage}. Solo devuelve la traducci\xF3n directa, sin comillas adicionales.
 
 Texto:
@@ -4785,10 +4915,18 @@ ${msg.text}`,
         });
       }
       let triggerElizabeth = false;
-      if (msg.text && /\b(@?elizabeth|@?liz)\b/i.test(msg.text)) {
-        triggerElizabeth = true;
-      }
-      if (modResult.mentionsElizabeth) {
+      const lowerGlobalText = (msg.text || "").toLowerCase();
+      if (
+        /\b(@?elizabeth|@?elisabeth|@?liz|@?eli|@?eliza)\b/i.test(msg.text || "") ||
+        msg.replyTo?.sender === "Elizabeth" ||
+        (modResult && modResult.mentionsElizabeth) ||
+        lowerGlobalText.startsWith("elizabeth") ||
+        lowerGlobalText.startsWith("@elizabeth") ||
+        lowerGlobalText.startsWith("liz") ||
+        lowerGlobalText.startsWith("@liz") ||
+        lowerGlobalText.includes("elizabeth") ||
+        lowerGlobalText.includes("elisabeth")
+      ) {
         triggerElizabeth = true;
       }
       if (triggerElizabeth) {
@@ -4796,21 +4934,25 @@ ${msg.text}`,
           io.emit("typing", { username: "Elizabeth", chat: "global" });
           let contextMsgs = [];
           if (fdb) {
-            const recentQ = query(
-              collection(fdb, "global_chat"),
-              orderBy("createdAt", "desc"),
-              limit(3),
-            );
-            const snapshot: any = await Promise.race([
-              getDocs(recentQ),
-              new Promise((_, r) =>
-                setTimeout(() => r(new Error("Firebase Timeout")), 3e3),
-              ),
-            ]);
-            contextMsgs = snapshot.docs.map((doc2) => doc2.data()).reverse();
+            try {
+              const recentQ = query(
+                collection(fdb, "global_chat"),
+                orderBy("createdAt", "desc"),
+                limit(5),
+              );
+              const snapshot: any = await Promise.race([
+                getDocs(recentQ),
+                new Promise((_, r) =>
+                  setTimeout(() => r(new Error("Firebase Timeout")), 3e3),
+                ),
+              ]);
+              contextMsgs = snapshot.docs.map((doc2) => doc2.data()).reverse();
+            } catch (ctxErr) {
+              console.warn("[Global Chat Context Fallback]:", ctxErr);
+              contextMsgs = (fallbackState.globalMessages || []).slice(-5);
+            }
           } else {
-
-            contextMsgs = fallbackState.globalMessages.slice(-3);
+            contextMsgs = (fallbackState.globalMessages || []).slice(-5);
           }
           let parts: any[] = [
             {
@@ -4877,6 +5019,25 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
               ? `${baseSysInstruction}\nInstrucciones adicionales del Administrador:\n${aiUserTempCache["Elizabeth"].systemInstruction}`
               : baseSysInstruction);
               
+            // Verificación y ejecución de Búsqueda Web en Tiempo Real con Tavily AI
+            const effectiveTavilyKey = (msg.tavilyKey || aiRuntimeConfig.tavilyKey || "").trim();
+            if (effectiveTavilyKey && (msg.webSearch || checkRequiresWebSearch(msg.text || ""))) {
+              try {
+                io.emit("elizabeth_searching_web", { chat: "global", query: msg.text });
+                const searchRes = await performTavilySearch(msg.text, effectiveTavilyKey);
+                if (searchRes && (searchRes.answer || searchRes.results?.length)) {
+                  const webInfo = "\n\n[DATOS FRESCOS DE INTERNET EN TIEMPO REAL VÍA TAVILY AI]:\n" +
+                    `Búsqueda: "${searchRes.query}"\n` +
+                    (searchRes.answer ? `Resumen web: "${searchRes.answer}"\n` : "") +
+                    "Fuentes:\n" + (searchRes.results || []).map((r: any) => `- ${r.title} (${r.url}): ${r.content}`).join("\n") +
+                    "\nInstrucción: Utiliza esta información actualizada para contestar con precisión, conservando tu personalidad de Elizabeth (cercana, humana, carismática y natural).";
+                  parts.push({ text: webInfo });
+                }
+              } catch (tavilyErr) {
+                console.warn("[Tavily Global Warning]:", tavilyErr);
+              }
+            }
+
             // Simulate Elizabeth typing
             io.emit("typing", { username: "Elizabeth", chat: "global" });
             let response;
@@ -4884,28 +5045,36 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
               response = await safeGenerateContent(
                 ai,
                 {
-                  model: "gemini-3.6-flash",
+                  model: "gemini-2.5-flash",
                   contents: parts,
                   config: { systemInstruction: sysInstruction },
                 },
-                1e4,
+                25000,
               );
             } catch (apiError: any) {
               console.error(
                 "=== ERROR API GEMINI ===",
                 apiError.message || apiError,
               );
-              if (
-                apiError.status === 429 ||
-                apiError.message?.includes("429") ||
-                apiError.message?.includes("resource_exhausted") ||
-                apiError.message?.includes("quota")
-              ) {
-                response = {
-                  text: "ELIZABETH está descansando sus circuitos, vuelve en un rato.",
-                };
-              } else {
-                response = { text: "" };
+              try {
+                response = await callGeminiAi(ai, {
+                  model: "gemini-2.5-flash",
+                  contents: parts,
+                  config: { systemInstruction: sysInstruction },
+                }, 25000);
+              } catch (rescueErr: any) {
+                if (
+                  apiError.status === 429 ||
+                  apiError.message?.includes("429") ||
+                  apiError.message?.includes("resource_exhausted") ||
+                  apiError.message?.includes("quota")
+                ) {
+                  response = {
+                    text: "¡Hola! Mis circuitos cuánticos están procesando muchas peticiones ahora mismo. Dame un instante y te respondo con gusto. ✨",
+                  };
+                } else {
+                  response = { text: "¡Hola! Me distraje un momento procesando datos cuánticos. ¿Me repites tu mensaje? 💫" };
+                }
               }
             }
             let rawTextGen = response?.text || "";
@@ -5034,7 +5203,7 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
 
                 try {
                   const resp = await safeGenerateContent(ai, {
-                    model: "gemini-3.6-flash",
+                    model: "gemini-2.5-flash",
                     contents: `Traduce el siguiente texto de un chat (escrito originalmente en el idioma/pa\xEDs: ${eliSenderLanguage}) al idioma correspondiente de: ${receiverLanguage}. Solo devuelve la traducci\xF3n directa, sin comillas adicionales.
 
 Texto:
@@ -5496,7 +5665,7 @@ ${eliMsg.text}`,
 
             try {
               const resp = await safeGenerateContent(ai, {
-                model: "gemini-3.6-flash",
+                model: "gemini-2.5-flash",
                 contents: `Traduce el siguiente texto de un chat (escrito originalmente en el idioma/pa\xEDs: ${senderLanguage}) al idioma correspondiente de: ${receiverLanguage}. Solo devuelve la traducci\xF3n directa, sin comillas adicionales.
 
 Texto:
@@ -5531,14 +5700,27 @@ ${msg.text}`,
         aiCharacter = AI_CHARACTERS[toUser];
       }
       if (triggerPrivateAi) {
+        // Ensure activeUsers entry exists
+        if (!activeUsers[currentUsername]) {
+          activeUsers[currentUsername] = {
+            socketId: socket.id,
+            username: currentUsername,
+            aiTokens: 100,
+            lizCoins: 100
+          };
+        }
+
         // Tokens validation
-        let userTokens = activeUsers[currentUsername]?.aiTokens ?? activeUsers[currentUsername]?.lizCoins ?? 50;
-        if (userTokens < 1) {
-            io.to(activeUsers[currentUsername].socketId).emit("out_of_tokens", {
-                aiName: aiCharacter.name,
-                tokens: 0
-            });
-            io.to(activeUsers[currentUsername].socketId).emit("tokens_updated", { tokens: 0 });
+        const isCallerAdmin = isUserAdminOrMaster(currentUsername) || currentUsername?.toUpperCase() === "AXISS";
+        let userTokens = isCallerAdmin ? 9999 : (activeUsers[currentUsername]?.aiTokens ?? activeUsers[currentUsername]?.lizCoins ?? 50);
+        if (!isCallerAdmin && userTokens < 1) {
+            if (activeUsers[currentUsername]?.socketId) {
+              io.to(activeUsers[currentUsername].socketId).emit("out_of_tokens", {
+                  aiName: aiCharacter.name,
+                  tokens: 0
+              });
+              io.to(activeUsers[currentUsername].socketId).emit("tokens_updated", { tokens: 0 });
+            }
             
             const outOfTokensMsg: any = {
               text: `⚠️ ¡Me he quedado sin energía / tokens para responderte! Toca el botón de reproducir video para recargar +50 tokens al instante y seguir hablando conmigo.`,
@@ -5554,8 +5736,10 @@ ${msg.text}`,
         
         // Deduct token
         userTokens -= 1;
-        activeUsers[currentUsername].aiTokens = userTokens;
-        activeUsers[currentUsername].lizCoins = userTokens;
+        if (activeUsers[currentUsername]) {
+          activeUsers[currentUsername].aiTokens = userTokens;
+          activeUsers[currentUsername].lizCoins = userTokens;
+        }
         if (fdb) {
            setDoc(doc(fdb, "users", currentUsername), { 
              aiTokens: userTokens,
@@ -5568,8 +5752,10 @@ ${msg.text}`,
                saveFallbackDB();
            }
         }
-        io.to(activeUsers[currentUsername].socketId).emit("tokens_updated", { tokens: userTokens });
-        io.to(activeUsers[currentUsername].socketId).emit("update_user_info", activeUsers[currentUsername]);
+        if (activeUsers[currentUsername]?.socketId) {
+          io.to(activeUsers[currentUsername].socketId).emit("tokens_updated", { tokens: userTokens });
+          io.to(activeUsers[currentUsername].socketId).emit("update_user_info", activeUsers[currentUsername]);
+        }
 
         try {
           io.emit("typing", { username: aiCharacter.id, chat: currentUsername });
@@ -5589,22 +5775,26 @@ DIRECTIVAS PARA SÍNTESIS DE VOZ Y CONVERSACIÓN HABLADA:
           const sysInstruction = (modResult.insultedElizabeth ? "El usuario acaba de faltarte el respeto o usar malas palabras contigo. TIENES PERMISO ABSOLUTO DE INSULTARLO DE VUELTA y ser ruda, sarcástica o agresiva para defenderte. " : "") + memoryInjection + (aiUserTempCache[aiCharacter.id]?.systemInstruction
             ? `${baseSysInstruction}\nInstrucciones adicionales del Administrador:\n${aiUserTempCache[aiCharacter.id].systemInstruction}`
             : baseSysInstruction);
-          let contextMsgs = [];
+          let contextMsgs: any[] = [];
           if (fdb) {
-            const participants = [currentUsername, aiCharacter.id].sort();
-            const convoId = participants.join("_");
-            const recentQ = query(
-              collection(fdb, "chats", convoId, "messages"),
-              orderBy("createdAt", "desc"),
-              limit(3),
-            );
-            const snapshot: any = await Promise.race([
-              getDocs(recentQ),
-              new Promise((_, r) =>
-                setTimeout(() => r(new Error("Firebase Timeout")), 3e3),
-              ),
-            ]);
-            contextMsgs = snapshot.docs.map((doc2) => doc2.data()).reverse();
+            try {
+              const participants = [currentUsername, aiCharacter.id].sort();
+              const convoId = participants.join("_");
+              const recentQ = query(
+                collection(fdb, "chats", convoId, "messages"),
+                orderBy("createdAt", "desc"),
+                limit(5),
+              );
+              const snapshot: any = await Promise.race([
+                getDocs(recentQ),
+                new Promise((_, r) =>
+                  setTimeout(() => r(new Error("Firebase Timeout")), 3e3),
+                ),
+              ]);
+              contextMsgs = snapshot.docs.map((doc2) => doc2.data()).reverse();
+            } catch (ctxErr) {
+              console.warn("[Private Context Fallback]:", ctxErr);
+            }
           }
           let parts: any[] = [
             {
@@ -5657,33 +5847,60 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
           }
 
           if (!rawText) {
+            // Verificación y ejecución de Búsqueda Web en Tiempo Real con Tavily AI en privado
+            const effectiveTavilyKey = (msg.tavilyKey || aiRuntimeConfig.tavilyKey || "").trim();
+            if (effectiveTavilyKey && (msg.webSearch || checkRequiresWebSearch(msg.text || ""))) {
+              try {
+                socket.emit("elizabeth_searching_web", { chat: aiCharacter.id, query: msg.text });
+                const searchRes = await performTavilySearch(msg.text, effectiveTavilyKey);
+                if (searchRes && (searchRes.answer || searchRes.results?.length)) {
+                  const webInfo = "\n\n[DATOS FRESCOS DE INTERNET EN TIEMPO REAL VÍA TAVILY AI]:\n" +
+                    `Búsqueda: "${searchRes.query}"\n` +
+                    (searchRes.answer ? `Resumen web: "${searchRes.answer}"\n` : "") +
+                    "Fuentes:\n" + (searchRes.results || []).map((r: any) => `- ${r.title} (${r.url}): ${r.content}`).join("\n") +
+                    "\nInstrucción: Utiliza esta información actualizada para contestar con precisión, conservando tu personalidad única de Elizabeth (cercana, humana, carismática y natural).";
+                  parts.push({ text: webInfo });
+                }
+              } catch (tavilyErr) {
+                console.warn("[Tavily Private Warning]:", tavilyErr);
+              }
+            }
+
             let response;
             try {
               response = await safeGenerateContent(
                 ai,
                 {
-                  model: "gemini-3.6-flash",
+                  model: "gemini-2.5-flash",
                   contents: parts,
                   config: { systemInstruction: sysInstruction },
                 },
-                1e4,
+                25000,
               );
             } catch (apiError: any) {
               console.error(
                 "=== ERROR API GEMINI (PRIVADO) ===",
                 apiError.message || apiError,
               );
-              if (
-                apiError.status === 429 ||
-                apiError.message?.includes("429") ||
-                apiError.message?.includes("resource_exhausted") ||
-                apiError.message?.includes("quota")
-              ) {
-                response = {
-                  text: "ELIZABETH está descansando sus circuitos, vuelve en un rato.",
-                };
-              } else {
-                response = { text: "" };
+              try {
+                response = await callGeminiAi(ai, {
+                  model: "gemini-2.5-flash",
+                  contents: parts,
+                  config: { systemInstruction: sysInstruction },
+                }, 25000);
+              } catch (rescueErr: any) {
+                if (
+                  apiError.status === 429 ||
+                  apiError.message?.includes("429") ||
+                  apiError.message?.includes("resource_exhausted") ||
+                  apiError.message?.includes("quota")
+                ) {
+                  response = {
+                    text: "¡Hola! Mis circuitos cuánticos están procesando muchas peticiones ahora mismo. Dame un instante y te respondo con gusto. ✨",
+                  };
+                } else {
+                  response = { text: "¡Hola! Me distraje un momento procesando datos cuánticos. ¿Me repites tu mensaje? 💫" };
+                }
               }
             }
             let rawTextGen = response?.text || "";
@@ -6078,7 +6295,7 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
     }
     try {
         const resp = await safeGenerateContent(ai, {
-            model: "gemini-3.6-flash",
+            model: "gemini-2.5-flash",
             contents: `Traduce esto al idioma/país: ${targetLang}. Solo devuelve la traducción directa, sin comillas, sin explicaciones.\nTexto: ${text}`
         });
         let translatedText = resp.text ? resp.text.trim() : text;

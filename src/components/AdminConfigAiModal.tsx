@@ -30,8 +30,11 @@ import {
   Smile,
   Flame,
   ArrowUpRight,
-  Search
+  Search,
+  Globe,
+  ExternalLink
 } from 'lucide-react';
+import { getSavedTavilyKey, saveTavilyKey } from '../utils/tavilySearch';
 import { socket } from '../socket';
 import {
   VOICE_ARCHETYPES,
@@ -77,6 +80,7 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
   const [groqBackupName, setGroqBackupName] = useState('ChatLiz-Groq-Backup');
   const [groqBackupKey, setGroqBackupKey] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
+  const [adminTavilyKey, setAdminTavilyKey] = useState(() => getSavedTavilyKey());
   const [preferredProvider, setPreferredProvider] = useState<'gemini' | 'groq'>('gemini');
   const [showGroqKey, setShowGroqKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
@@ -836,6 +840,47 @@ export function AdminConfigAiModal({ setAdminConfigAiOpen, aiProfileForm, setAiP
                      <span className="font-bold">{testResult.success ? '✓ Éxito:' : '✗ Error:'}</span> {testResult.msg}
                    </div>
                  )}
+
+                 {/* Tavily AI Web Search Configuration */}
+                 <div className="bg-[#0a0a14] p-3.5 rounded-2xl border border-cyan-500/20 space-y-2.5">
+                   <div className="flex items-center justify-between">
+                     <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+                       <Globe size={14} className="text-cyan-400" />
+                       <span>Tavily API Key (Búsqueda Web en Tiempo Real)</span>
+                     </div>
+                     <a
+                       href="https://tavily.com"
+                       target="_blank"
+                       rel="noreferrer"
+                       className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 hover:underline"
+                     >
+                       Obtener gratis <ExternalLink size={10} />
+                     </a>
+                   </div>
+                   <p className="text-[10px] text-gray-400 leading-relaxed">
+                     Permite que Elizabeth acceda a Internet en tiempo real para noticias, deportes, economía, clima, código y consultas actuales.
+                   </p>
+                   <div className="flex items-center gap-2">
+                     <input
+                       type="password"
+                       value={adminTavilyKey}
+                       onChange={e => setAdminTavilyKey(e.target.value)}
+                       placeholder="tvly-xxxxxxxxxxxxxxxxxxxx"
+                       className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400 font-mono"
+                     />
+                     <button
+                       type="button"
+                       onClick={() => {
+                         saveTavilyKey(adminTavilyKey.trim());
+                         setSuccessMsg("¡Tavily API Key guardada de forma segura!");
+                         setTimeout(() => setSuccessMsg(""), 3000);
+                       }}
+                       className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm"
+                     >
+                       Guardar
+                     </button>
+                   </div>
+                 </div>
 
                  <button
                    type="button"
