@@ -79,6 +79,7 @@ import { AdminPanelModal } from "./components/AdminPanelModal";
 import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModal";
 import { WelcomeLanding } from "./components/WelcomeLanding";
 import { GitHubAdminPanel } from "./components/GitHubAdminPanel";
+import { PoolGameModal } from "./components/PoolGameModal";
 import { ReadingModeModal } from "./components/ReadingModeModal";
 import { enqueueOfflineMessage, syncOfflineQueue } from "./utils/offlineQueue";
 import { requestNotificationPermission, showPushNotification, setupFirebasePushNotifications } from "./utils/pushNotifications";
@@ -581,6 +582,12 @@ function MainApp() {
   const isUserAdmin = isMasterAdmin || delegatedAdmins.includes(user?.username) || user?.role === "admin";
 
   useEffect(() => {
+    if (user.username && user.isAdmin !== isUserAdmin) {
+      setUser((prev) => ({ ...prev, isAdmin: isUserAdmin }));
+    }
+  }, [isUserAdmin, user.username, user.isAdmin]);
+
+  useEffect(() => {
     try {
       localStorage.setItem("chatliz_bell_notifications", JSON.stringify(bellNotifications));
     } catch {}
@@ -874,6 +881,13 @@ function MainApp() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isTavilyModalOpen, setIsTavilyModalOpen] = useState(false);
   const [isGitHubAdminOpen, setIsGitHubAdminOpen] = useState(false);
+  const [showGitHubPanel, setShowGitHubPanel] = useState(false);
+  const [poolGame, setPoolGame] = useState<{
+    gameId: string;
+    opponent: any;
+    bet: number;
+    isHost: boolean;
+  } | null>(null);
   const [isReadingMode, setIsReadingMode] = useState(false);
   const [readingFontSize, setReadingFontSize] = useState<'sm' | 'base' | 'lg' | 'xl'>('lg');
   const [readingFontFamily, setReadingFontFamily] = useState<'serif' | 'sans'>('serif');
@@ -3206,17 +3220,15 @@ function MainApp() {
              </button>
            )}
 
-           {/* GitHub Admin Panel Button: Only for AXISS, Axiss, and delegated admins */}
-           {isUserAdmin && (
+           {/* GitHub Admin Panel Button: Only for Admins */}
+           {(user.isAdmin || isUserAdmin) && (
              <button
-               onClick={() => {
-                 setIsGitHubAdminOpen(true);
-               }}
-               className="p-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-               title="Panel GitHub (El-Latido/Chat-Zenith8)"
+               onClick={() => setShowGitHubPanel(true)}
+               className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-sm shadow-lg transition cursor-pointer"
+               title="Panel de GitHub (Solo Admins)"
              >
-               <Github size={19} className="text-purple-400" />
-               <span className="hidden sm:inline text-xs font-bold font-mono tracking-wider">GITHUB</span>
+               <Github size={16} />
+               <span className="hidden md:inline">GitHub</span>
              </button>
            )}
 
@@ -5964,6 +5976,21 @@ function MainApp() {
                   alert(res.error || "Error al iniciar vs Bot");
                 }
               });
+            } else if (gameId.startsWith("pool_")) {
+              const parsedBet = parseInt(gameId.split("_")[1], 10);
+              const bet = isNaN(parsedBet) ? 10 : parsedBet;
+              socket.emit("create_pool_game", { bet, opponent: "Elizabeth" }, (res: any) => {
+                if (res?.success) {
+                  setPoolGame({
+                    gameId: res.gameId,
+                    opponent: { username: "Elizabeth", profilePic: "https://api.dicebear.com/7.x/avataaars/svg?seed=Elizabeth" },
+                    bet,
+                    isHost: true,
+                  });
+                } else {
+                  alert(res?.error || "Error al iniciar mesa de pool");
+                }
+              });
             }
           }}
         />
@@ -6189,10 +6216,25 @@ function MainApp() {
       )}
 
       {/* GitHub Admin Panel Modal */}
-      {isGitHubAdminOpen && (
+      {(showGitHubPanel || isGitHubAdminOpen) && (
         <GitHubAdminPanel
-          onClose={() => setIsGitHubAdminOpen(false)}
-          currentUser={{ username: user.username, isAdmin: isUserAdmin }}
+          onClose={() => {
+            setShowGitHubPanel(false);
+            setIsGitHubAdminOpen(false);
+          }}
+          currentUser={{ ...user, isAdmin: isUserAdmin || user.isAdmin }}
+        />
+      )}
+
+      {/* Pool 8-Ball Game Modal */}
+      {poolGame && (
+        <PoolGameModal
+          onClose={() => setPoolGame(null)}
+          user={user}
+          gameId={poolGame.gameId}
+          opponent={poolGame.opponent}
+          bet={poolGame.bet}
+          isHost={poolGame.isHost}
         />
       )}
 

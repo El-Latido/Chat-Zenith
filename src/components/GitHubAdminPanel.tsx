@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Github, X, Minus, Maximize2, Minimize2, Folder, FileCode, GitCommit, Save, RefreshCw, Lock, Unlock } from 'lucide-react';
+import { Github, X, Minus, Maximize2, Minimize2, Folder, FileCode, GitCommit, Save, RefreshCw, Lock, Unlock, Search, History } from 'lucide-react';
 
 interface GitHubAdminPanelProps {
   onClose: () => void;
@@ -12,13 +12,18 @@ interface FileNode {
   name: string;
 }
 
+interface CommitHistory {
+  sha: string;
+  message: string;
+  date: string;
+}
+
 const REPO_OWNER = 'El-Latido';
 const REPO_NAME = 'Chat-Zenith8';
 const DEFAULT_BRANCH = 'main';
 const TOKEN_STORAGE_KEY = 'chatliz_github_token';
 
 export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps) {
-  // Seguridad: solo admins
   if (!currentUser.isAdmin) {
     return (
       <div className="fixed bottom-4 right-4 bg-red-900 text-white p-4 rounded-lg shadow-xl z-50">
@@ -38,8 +43,12 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info'; msg: string } | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentBranch, setCurrentBranch] = useState(DEFAULT_BRANCH);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [commitHistory, setCommitHistory] = useState<CommitHistory[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
-  // Posición y tamaño de la ventana
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const [size, setSize] = useState({ width: 900, height: 600 });
   const [isDragging, setIsDragging] = useState(false);
@@ -47,13 +56,47 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
   const dragStart = useRef({ x: 0, y: 0 });
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
+  // Cargar ramas
+  const loadBranches = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setBranches(data.map((b: any) => b.name));
+      }
+    } catch (e) {}
+  };
+
+  // Cargar historial de commits
+  const loadCommitHistory = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits?sha=${currentBranch}&per_page=10`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setCommitHistory(data.map((c: any) => ({
+          sha: c.sha.substring(0, 7),
+          message: c.commit.message,
+          date: new Date(c.commit.author.date).toLocaleString(),
+        })));
+      }
+    } catch (e) {}
+  };
+
   // Cargar archivos del repo
   const loadRepoTree = async () => {
     if (!token) return;
     setLoading(true);
     try {
       const res = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${DEFAULT_BRANCH}?recursive=1`,
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${currentBranch}?recursive=1`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) throw new Error('Token inválido o error de red');
@@ -66,7 +109,8 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
           name: item.path.split('/').pop() || item.path,
         }));
       setFiles(tree);
-      showStatus('success', `📂 ${tree.length} archivos cargados del repo`);
+      showStatus('success', `📂 ${tree.length} archivos cargados`);
+      loadCommitHistory();
     } catch (e: any) {
       showStatus('error', e.message);
     }
@@ -79,7 +123,7 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
     setLoading(true);
     try {
       const res = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${DEFAULT_BRANCH}`,
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${currentBranch}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) throw new Error('No se pudo cargar el archivo');
@@ -103,17 +147,16 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
       showStatus('error', 'Escribe un mensaje de commit');
       return;
     }
+
     setLoading(true);
     try {
-      // 1. Obtener SHA del archivo actual
       const fileRes = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}?ref=${DEFAULT_BRANCH}`,
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}?ref=${currentBranch}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const fileData = await fileRes.json();
       const sha = fileData.sha;
 
-      // 2. Actualizar archivo
       const updateRes = await fetch(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}`,
         {
@@ -126,33 +169,35 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
             message: commitMessage,
             content: btoa(unescape(encodeURIComponent(fileContent))),
             sha,
-            branch: DEFAULT_BRANCH,
+            branch: currentBranch,
           }),
         }
       );
+
       if (!updateRes.ok) {
         const err = await updateRes.json();
         throw new Error(err.message || 'Error al hacer commit');
       }
+
       showStatus('success', `✅ Commit exitoso: "${commitMessage}"`);
       setCommitMessage('');
+      loadCommitHistory();
     } catch (e: any) {
       showStatus('error', e.message);
     }
     setLoading(false);
   };
 
-  // Guardar token
   const saveToken = () => {
     if (!tempToken.trim()) return;
     localStorage.setItem(TOKEN_STORAGE_KEY, tempToken);
     setToken(tempToken);
     setIsLocked(true);
-    showStatus('success', '🔐 Token guardado. Ya no tendrás que ingresarlo.');
+    showStatus('success', '🔐 Token guardado');
     loadRepoTree();
+    loadBranches();
   };
 
-  // Borrar token
   const clearToken = () => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken('');
@@ -162,7 +207,6 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
     showStatus('info', 'Token eliminado');
   };
 
-  // Auto-detección de ruta en el código pegado
   useEffect(() => {
     const match = fileContent.match(/^(\/\/|#|\/\*|<!--)\s*File:\s*(.+?)[\s\n]/i);
     if (match && match[2]) {
@@ -170,7 +214,7 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
       const exists = files.find(f => f.path === detectedPath);
       if (exists) {
         setSelectedFile(detectedPath);
-        showStatus('info', `🧠 Ruta detectada automáticamente: ${detectedPath}`);
+        showStatus('info', `🧠 Ruta detectada: ${detectedPath}`);
       }
     }
   }, [fileContent, files]);
@@ -180,7 +224,6 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
     setTimeout(() => setStatus(null), 4000);
   };
 
-  // Drag & Drop de la ventana
   const handleDragStart = (e: React.MouseEvent) => {
     if (isResizing) return;
     setIsDragging(true);
@@ -205,7 +248,6 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
       setIsDragging(false);
       setIsResizing(false);
     };
-
     if (isDragging || isResizing) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
@@ -222,18 +264,23 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
     resizeStart.current = { x: e.clientX, y: e.clientY, w: size.width, h: size.height };
   };
 
-  // Cargar árbol al iniciar si hay token
   useEffect(() => {
-    if (token && files.length === 0) loadRepoTree();
+    if (token && files.length === 0) {
+      loadRepoTree();
+      loadBranches();
+    }
   }, [token]);
 
-  // Agrupar archivos por carpeta
-  const filesByDir = files.reduce((acc, f) => {
-    if (f.type !== 'file') return acc;
+  const filteredFiles = files.filter(f => 
+    f.type === 'file' && f.path.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filesByDir = filteredFiles.reduce((acc, f) => {
     const dir = f.path.includes('/') ? f.path.substring(0, f.path.lastIndexOf('/')) : '/';
     if (!acc[dir]) acc[dir] = [];
     acc[dir].push(f);
-    return acc;  }, {} as Record<string, FileNode[]>);
+    return acc;
+  }, {} as Record<string, FileNode[]>);
 
   const windowStyle: React.CSSProperties = isMaximized
     ? { top: 0, left: 0, width: '100vw', height: '100vh', borderRadius: 0 }
@@ -256,14 +303,13 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
       className="fixed bg-gray-900 border-2 border-purple-500 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden"
       style={windowStyle}
     >
-      {/* Header arrastrable */}
       <div
         className="bg-gradient-to-r from-purple-700 to-pink-600 px-4 py-2 flex items-center justify-between cursor-move select-none"
         onMouseDown={handleDragStart}
       >
         <div className="flex items-center gap-2 text-white font-bold">
           <Github size={18} />
-          <span>GitHub Admin Panel — {REPO_NAME}</span>
+          <span>GitHub Admin — {REPO_NAME}</span>
           {isLocked && <Lock size={14} className="text-green-300" />}
         </div>
         <div className="flex gap-1">
@@ -279,7 +325,6 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
         </div>
       </div>
 
-      {/* Status bar */}
       {status && (
         <div className={`px-4 py-2 text-sm font-medium ${
           status.type === 'success' ? 'bg-green-900 text-green-200' :
@@ -290,15 +335,12 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
         </div>
       )}
 
-      {/* Contenido */}
       {!token ? (
-        // Pantalla de ingreso de token
         <div className="flex-1 p-6 flex flex-col items-center justify-center gap-4">
           <Lock size={48} className="text-purple-400" />
           <h3 className="text-white text-xl font-bold">Configuración Inicial</h3>
           <p className="text-gray-400 text-center max-w-md">
-            Ingresa tu <strong>Personal Access Token</strong> de GitHub con permisos <code>repo</code>. 
-            Solo se guardará una vez en tu navegador.
+            Ingresa tu <strong>Personal Access Token</strong> de GitHub con permisos <code>repo</code>.
           </p>
           <input
             type="password"
@@ -309,7 +351,7 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
           />
           <button
             onClick={saveToken}
-            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2"
+            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 cursor-pointer"
           >
             <Save size={16} /> Guardar Token
           </button>
@@ -323,48 +365,87 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
           </a>
         </div>
       ) : (
-        // Panel principal
         <div className="flex-1 flex overflow-hidden">
-          {/* Sidebar: Árbol de archivos */}
           <div className="w-64 bg-gray-800 border-r border-gray-700 overflow-y-auto">
-            <div className="p-2 border-b border-gray-700 flex items-center justify-between">
-              <span className="text-white text-sm font-bold">Archivos</span>
-              <button onClick={loadRepoTree} className="p-1 hover:bg-gray-700 rounded" title="Recargar">
-                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              </button>
+            <div className="p-2 border-b border-gray-700">
+              <div className="relative">
+                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar archivos..."
+                  className="w-full bg-gray-900 text-white border border-gray-600 rounded pl-8 pr-2 py-1 text-sm focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <select
+                  value={currentBranch}
+                  onChange={(e) => setCurrentBranch(e.target.value)}
+                  className="flex-1 bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-xs"
+                >
+                  {branches.length > 0 ? (
+                    branches.map(b => <option key={b} value={b}>{b}</option>)
+                  ) : (
+                    <option value={DEFAULT_BRANCH}>{DEFAULT_BRANCH}</option>
+                  )}
+                </select>
+                <button onClick={loadRepoTree} className="p-1 hover:bg-gray-700 rounded cursor-pointer" title="Recargar">
+                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                </button>
+                <button onClick={() => setShowHistory(!showHistory)} className="p-1 hover:bg-gray-700 rounded cursor-pointer" title="Historial">
+                  <History size={14} />
+                </button>
+              </div>
             </div>
-            <div className="p-2 space-y-1">
-              {Object.keys(filesByDir).sort().map(dir => (
-                <div key={dir}>
-                  <div className="text-gray-400 text-xs font-bold px-2 py-1 flex items-center gap-1">
-                    <Folder size={12} /> {dir || '/'}
+
+            {showHistory ? (
+              <div className="p-2 space-y-2">
+                <div className="text-white text-sm font-bold px-2">Últimos Commits</div>
+                {commitHistory.length === 0 ? (
+                  <div className="text-xs text-gray-400 px-2">Sin historial o cargando...</div>
+                ) : (
+                  commitHistory.map(c => (
+                    <div key={c.sha} className="text-xs text-gray-300 px-2 py-1 bg-gray-900 rounded">
+                      <div className="font-mono text-purple-400">{c.sha}</div>
+                      <div className="truncate">{c.message}</div>
+                      <div className="text-gray-500">{c.date}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="p-2 space-y-1">
+                {Object.keys(filesByDir).sort().map(dir => (
+                  <div key={dir}>
+                    <div className="text-gray-400 text-xs font-bold px-2 py-1 flex items-center gap-1">
+                      <Folder size={12} /> {dir || '/'}
+                    </div>
+                    {filesByDir[dir].map(f => (
+                      <button
+                        key={f.path}
+                        onClick={() => loadFileContent(f.path)}
+                        className={`w-full text-left px-4 py-1 text-sm rounded flex items-center gap-2 cursor-pointer ${
+                          selectedFile === f.path ? 'bg-purple-600 text-white' : 'text-gray-300 hover:bg-gray-700'
+                        }`}
+                      >
+                        <FileCode size={12} />
+                        <span className="truncate">{f.name}</span>
+                      </button>
+                    ))}
                   </div>
-                  {filesByDir[dir].map(f => (
-                    <button
-                      key={f.path}
-                      onClick={() => loadFileContent(f.path)}
-                      className={`w-full text-left px-4 py-1 text-sm rounded flex items-center gap-2 ${
-                        selectedFile === f.path ? 'bg-purple-600 text-white' : 'text-gray-300 hover:bg-gray-700'
-                      }`}
-                    >
-                      <FileCode size={12} />
-                      <span className="truncate">{f.name}</span>
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Editor central */}
           <div className="flex-1 flex flex-col">
-            {/* Barra de herramientas */}
             <div className="bg-gray-800 border-b border-gray-700 p-2 flex items-center gap-2">
               <input
                 type="text"
                 value={selectedFile}
                 onChange={(e) => setSelectedFile(e.target.value)}
-                placeholder="Ruta del archivo (ej: src/components/PoolTable.tsx)"
+                placeholder="Ruta del archivo"
                 className="flex-1 bg-gray-900 text-white border border-gray-600 rounded px-3 py-1 text-sm focus:outline-none focus:border-purple-500"
               />
               <input
@@ -377,24 +458,23 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
               <button
                 onClick={commitAndPush}
                 disabled={loading}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-1 rounded font-bold text-sm flex items-center gap-1"
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-1 rounded font-bold text-sm flex items-center gap-1 cursor-pointer"
               >
                 <GitCommit size={14} /> Commit
               </button>
               <button
                 onClick={clearToken}
-                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
+                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1 cursor-pointer"
                 title="Borrar token"
               >
                 <Unlock size={14} />
               </button>
             </div>
 
-            {/* Editor de código */}
             <textarea
               value={fileContent}
               onChange={(e) => setFileContent(e.target.value)}
-              placeholder="Pega aquí el código del archivo...&#10;&#10;💡 Tip: Si pegas al inicio del código:&#10;// File: src/components/PoolTable.tsx&#10;La ruta se detectará automáticamente."
+              placeholder="Pega aquí el código...&#10;&#10;💡 Tip: // File: src/components/PoolTable.tsx"
               className="flex-1 bg-gray-950 text-green-300 font-mono text-sm p-4 resize-none focus:outline-none"
               spellCheck={false}
             />
@@ -402,7 +482,6 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
         </div>
       )}
 
-      {/* Handle de redimensionado */}
       {!isMaximized && (
         <div
           className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize bg-purple-500 hover:bg-purple-400"

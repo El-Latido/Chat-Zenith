@@ -4,6 +4,7 @@ export interface UserObj {
   frameId?: number;
   statusMessage?: string;
   role?: string;
+  isAdmin?: boolean;
   isMasterAdmin?: boolean;
   adminType?: string;
   djSchedule?: { start: string, end: string };

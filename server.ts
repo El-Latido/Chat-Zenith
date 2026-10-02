@@ -950,7 +950,8 @@ const transporter = nodemailer.createTransport({
     });
   });
   let activeUsers: Record<string, any> = {};
-  const chessGames = {};
+  const chessGames: Record<string, any> = {};
+  const poolGames: Record<string, any> = {};
   // customRooms declared globally to persist across sessions
   
   // Timer de Limpieza Automática de Salas Comunitarias (cada 60 segundos verifica intervalos 1h, 6h, 24h)
@@ -6280,6 +6281,104 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
     socket.on("leave_chess_bot_game", (gameId) => {
       socket.leave(gameId);
     });
+
+    // --- LÓGICA DEL JUEGO DE POOL ---
+    const handlePoolGameOver = async (gameId: string, winnerName: string, reason: string) => {
+      const game = poolGames[gameId];
+      if (!game) return;
+
+      const loserName = winnerName === game.host ? game.guest : game.host;
+
+      if (activeUsers[winnerName]) {
+        activeUsers[winnerName].lizCoins = (activeUsers[winnerName].lizCoins || 0) + (game.bet || 0) * 2;
+      }
+
+      if (fdb) {
+        try {
+          await updateDoc(doc(fdb, "users", winnerName), {
+            lizCoins: activeUsers[winnerName]?.lizCoins,
+          });
+        } catch (e) { console.error("Error updating winner coins", e); }
+      } else {
+        if (fallbackState.users[winnerName]) {
+          fallbackState.users[winnerName].lizCoins = activeUsers[winnerName]?.lizCoins;
+        }
+        saveFallbackDB();
+      }
+
+      io.to(gameId).emit("pool_game_over", { winner: winnerName, reason });
+      delete poolGames[gameId];
+      emitActiveUsers();
+    };
+
+    socket.on("join_pool_game", (gameId) => {
+      socket.join(gameId);
+    });
+
+    socket.on("leave_pool_game", (gameId) => {
+      socket.leave(gameId);
+    });
+
+    socket.on("pool_ball_pocketed", (data: { gameId: string, ballNumber: number | 'white', player: string }) => {
+      if (poolGames[data.gameId] && poolGames[data.gameId].currentTurn !== data.player) {
+        return;
+      }
+      
+      if (data.ballNumber === 8) {
+        const winner = data.player;
+        handlePoolGameOver(data.gameId, winner, "8-ball pocketed");
+      }
+      
+      socket.to(data.gameId).emit("pool_ball_pocketed_sync", data);
+    });
+
+    socket.on("pool_change_turn", (data: { gameId: string, nextTurn: string }) => {
+      if (poolGames[data.gameId]) {
+        poolGames[data.gameId].currentTurn = data.nextTurn;
+        io.to(data.gameId).emit("pool_turn_update", { currentTurn: data.nextTurn });
+      }
+    });
+
+    socket.on("pool_chat", (data: { gameId: string, text: string }) => {
+      io.to(data.gameId).emit("pool_chat", {
+        sender: currentUsername,
+        text: data.text,
+      });
+    });
+
+    socket.on("pool_shot_sync", (data: { gameId: string, angle: number, force: number }) => {
+      socket.to(data.gameId).emit("pool_shot_sync", data);
+    });
+
+    socket.on("abandon_pool_game", (gameId) => {
+      const game = poolGames[gameId];
+      if (game) {
+        const winnerName = currentUsername === game.host ? game.guest : game.host;
+        handlePoolGameOver(gameId, winnerName, "opponent_abandoned");
+      }
+    });
+
+    socket.on("create_pool_game", (data: { bet: number, opponent?: string }, callback) => {
+      if (!currentUsername) return callback?.({ success: false, error: "No autenticado" });
+      const bet = data.bet || 10;
+      const userCoins = activeUsers[currentUsername]?.lizCoins || 0;
+      if (userCoins < bet) {
+        return callback?.({ success: false, error: "LizCoins insuficientes para apostar" });
+      }
+      const gameId = `pool_${Date.now()}_${currentUsername}`;
+      poolGames[gameId] = {
+        id: gameId,
+        host: currentUsername,
+        guest: data.opponent || "Elizabeth",
+        bet,
+        currentTurn: currentUsername,
+      };
+      if (activeUsers[currentUsername]) {
+        activeUsers[currentUsername].lizCoins -= bet;
+      }
+      emitActiveUsers();
+      callback?.({ success: true, gameId });
+    });
     socket.on("logout", () => {
       if (
         currentUsername &&
@@ -6428,6 +6527,13 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
               g.moves > 0 ? winnerName : null,
               "abandoned",
             );
+          }
+        }
+        for (const gId in poolGames) {
+          const g = poolGames[gId];
+          if (g.host === currentUsername || g.guest === currentUsername) {
+            const winnerName = currentUsername === g.host ? g.guest : g.host;
+            handlePoolGameOver(gId, winnerName, "opponent_disconnected");
           }
         }
         if (
