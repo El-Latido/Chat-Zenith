@@ -2302,6 +2302,10 @@ __name(ensureAutoRadio, "ensureAutoRadio");
         }
     });
 
+    socket.on("ping_elizabeth", (data) => {
+        socket.emit("elizabeth_status", { status: "active", latency: 25, timestamp: Date.now() });
+    });
+
     socket.on("reconnect_user", async (data) => {
       const { username } = data;
       if (!username) return;

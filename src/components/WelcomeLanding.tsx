@@ -194,11 +194,17 @@ export function WelcomeLanding({
 
   return (
     <div className="min-h-screen bg-[#0a0d18] text-gray-100 flex flex-col justify-between selection:bg-cyan-500 selection:text-black relative overflow-x-hidden">
-      {/* Background Ambient Glows */}
+      {/* Radiant Glassmorphic Particles & Background Glows */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[55%] h-[55%] bg-purple-900/15 rounded-full blur-[140px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[55%] h-[55%] bg-cyan-900/15 rounded-full blur-[140px]" />
-        <div className="absolute top-[40%] left-[30%] w-[40%] h-[40%] bg-pink-900/10 rounded-full blur-[160px]" />
+        <div className="absolute top-[-10%] left-[-10%] w-[55%] h-[55%] bg-cyan-600/20 rounded-full blur-[140px] animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[55%] h-[55%] bg-purple-600/20 rounded-full blur-[140px] animate-pulse" />
+        <div className="absolute top-[40%] left-[30%] w-[40%] h-[40%] bg-pink-600/15 rounded-full blur-[160px]" />
+        {/* Subtle grid pattern */}
+        <div className="absolute inset-0 bg-[radial-gradient(#ffffff0a_1px,transparent_1px)] [background-size:24px_24px] opacity-40"></div>
+        {/* Animated ambient particle dots */}
+        <div className="absolute top-1/4 left-1/5 w-2.5 h-2.5 rounded-full bg-cyan-400/70 blur-[1px] animate-ping duration-[3000ms]"></div>
+        <div className="absolute top-2/3 right-1/4 w-3.5 h-3.5 rounded-full bg-purple-400/60 blur-[2px] animate-pulse duration-[4000ms]"></div>
+        <div className="absolute bottom-1/4 left-1/3 w-2.5 h-2.5 rounded-full bg-pink-400/70 blur-[1px] animate-ping duration-[5000ms]"></div>
       </div>
 
       {/* Top Header / Navigation Bar */}
@@ -391,14 +397,14 @@ export function WelcomeLanding({
               
               {/* Card Header & Mode Switch */}
               <div className="text-center mb-6">
-                <div className="inline-flex p-1 bg-black/40 rounded-xl border border-white/10 mb-4">
+                <div className="inline-flex p-1.5 bg-black/60 rounded-2xl border border-white/10 mb-4 shadow-inner">
                   <button
                     type="button"
                     onClick={() => setIsRegisterMode(true)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                       isRegisterMode
-                        ? 'bg-gradient-to-r from-cyan-500 to-purple-600 text-black shadow-md'
-                        : 'text-gray-400 hover:text-white'
+                        ? 'bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.5)] border border-cyan-300/40'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
                     Registrarse
@@ -406,10 +412,10 @@ export function WelcomeLanding({
                   <button
                     type="button"
                     onClick={() => setIsRegisterMode(false)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                       !isRegisterMode
-                        ? 'bg-gradient-to-r from-cyan-500 to-purple-600 text-black shadow-md'
-                        : 'text-gray-400 hover:text-white'
+                        ? 'bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.5)] border border-cyan-300/40'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
                     Iniciar Sesión
@@ -499,7 +505,7 @@ export function WelcomeLanding({
                       setTermsAgreedCheckbox(true);
                       setHasAcceptedTerms(true);
                     }}
-                    className="w-full bg-gradient-to-r from-cyan-500 via-purple-600 to-pink-500 hover:opacity-95 text-black font-black tracking-wide rounded-xl py-3.5 shadow-lg shadow-cyan-500/25 transition-all text-xs uppercase flex items-center justify-center gap-2 active:scale-95"
+                    className="w-full bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 hover:from-cyan-300 hover:via-sky-400 hover:to-blue-500 text-white font-black tracking-wider rounded-2xl py-4 shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all text-xs uppercase flex items-center justify-center gap-2 border border-cyan-300/40 hover:scale-[1.01] active:scale-[0.98] cursor-pointer"
                   >
                     <CheckCircle2 size={16} />
                     <span>Aceptar Términos y Pasar al Registro</span>
@@ -717,10 +723,11 @@ export function WelcomeLanding({
                       {/* Submit Button */}
                       <button
                         type="submit"
-                        className="w-full bg-gradient-to-r from-cyan-500 via-purple-600 to-pink-500 hover:opacity-95 text-black font-black tracking-wide rounded-xl py-3 shadow-lg shadow-cyan-500/20 transition-all text-xs uppercase flex items-center justify-center gap-2"
+                        className="w-full bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 hover:from-cyan-300 hover:via-sky-400 hover:to-blue-500 text-white font-black tracking-wider rounded-2xl py-4 shadow-[0_0_30px_rgba(6,182,212,0.55),0_8px_20px_rgba(0,0,0,0.6)] hover:shadow-[0_0_45px_rgba(6,182,212,0.85)] hover:scale-[1.02] active:scale-[0.98] transition-all text-sm uppercase flex items-center justify-center gap-2 border border-cyan-300/50 cursor-pointer"
                       >
+                        <Sparkles size={16} className="text-cyan-200 animate-pulse" />
                         <span>{isRegisterMode ? 'CREAR CUENTA GRATIS' : 'ENTRAR AL CHAT'}</span>
-                        <ChevronRight size={16} />
+                        <ChevronRight size={17} />
                       </button>
                     </div>
                   </form>

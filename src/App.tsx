@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, VolumeX, Clock, Sparkles, Key, Sliders } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, VolumeX, Clock, Sparkles, Key, Sliders, BookOpen, Github } from "lucide-react";
 import { 
   speakElizabethMessage, 
   stopSpeaking, 
@@ -78,6 +78,10 @@ import { MailboxModal, MailboxItem } from "./components/MailboxModal";
 import { AdminPanelModal } from "./components/AdminPanelModal";
 import { LegalAndPrivacyModal, LegalTab } from "./components/LegalAndPrivacyModal";
 import { WelcomeLanding } from "./components/WelcomeLanding";
+import { GitHubAdminPanel } from "./components/GitHubAdminPanel";
+import { ReadingModeModal } from "./components/ReadingModeModal";
+import { enqueueOfflineMessage, syncOfflineQueue } from "./utils/offlineQueue";
+import { requestNotificationPermission, showPushNotification, setupFirebasePushNotifications } from "./utils/pushNotifications";
 import { TavilyConfigModal } from "./components/TavilyConfigModal";
 import { getSavedTavilyKey, requiresWebSearch } from "./utils/tavilySearch";
 import { UniversalBackground, parseBackgroundMedia } from "./components/UniversalBackground";
@@ -867,8 +871,41 @@ function MainApp() {
   const [selectedFile, setSelectedFile] = useState<{name: string, type: string, url: string} | null>(null);
   const [showRoomCleanerModal, setShowRoomCleanerModal] = useState(false);
   const isCleaningGlobalRef = useRef(false);
-const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isTavilyModalOpen, setIsTavilyModalOpen] = useState(false);
+  const [isGitHubAdminOpen, setIsGitHubAdminOpen] = useState(false);
+  const [isReadingMode, setIsReadingMode] = useState(false);
+  const [readingFontSize, setReadingFontSize] = useState<'sm' | 'base' | 'lg' | 'xl'>('lg');
+  const [readingFontFamily, setReadingFontFamily] = useState<'serif' | 'sans'>('serif');
+  const [visibleMessageCount, setVisibleMessageCount] = useState(80);
+  const elizabethMonitorTimeoutRef = useRef<any>(null);
+
+  const clearElizabethWatchdog = () => {
+    if (elizabethMonitorTimeoutRef.current) {
+      clearTimeout(elizabethMonitorTimeoutRef.current);
+      elizabethMonitorTimeoutRef.current = null;
+    }
+  };
+
+  const armElizabethWatchdog = () => {
+    clearElizabethWatchdog();
+    elizabethMonitorTimeoutRef.current = setTimeout(() => {
+      console.warn("⚠️ Watchdog: Elizabeth no respondió en 5 segundos. Forzando reconexión al socket...");
+      addSystemToast("⚡ Monitoreo de Elizabeth: Sin respuesta > 5s. Reanudando conexión cuántica con el servidor...", "Elizabeth");
+      if (socket) {
+        if (socket.connected) {
+          socket.emit("ping_elizabeth", { user: user.username });
+          socket.disconnect();
+          setTimeout(() => {
+            socket.connect();
+            addSystemToast("✨ Conexión con Elizabeth restablecida con éxito.", "Elizabeth");
+          }, 600);
+        } else {
+          socket.connect();
+        }
+      }
+    }, 5000);
+  };
   const [isWebSearchActive, setIsWebSearchActive] = useState(() => {
     return localStorage.getItem("chatliz_auto_web_search") !== "false";
   });
@@ -1082,9 +1119,29 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
           // Or since we don't have the password, we can emit a new 'reconnect_user' event
           socket.emit("reconnect_user", { username: user.username });
         }
+        syncOfflineQueue(socket, (count) => {
+          if (count > 0) {
+            addSystemToast(`🟢 Conexión restablecida: ${count} mensaje(s) pendientes sincronizados automáticamente.`, "Sistema");
+          }
+        });
       }
     };
     socket.on("connect", handleReconnect);
+
+    // Setup Web Push / Firebase Cloud Messaging listener
+    setupFirebasePushNotifications();
+    requestNotificationPermission();
+
+    const handleWindowOnline = () => {
+      if (socket && socket.connected) {
+        syncOfflineQueue(socket, (count) => {
+          if (count > 0) {
+            addSystemToast(`🟢 Red recuperada: ${count} mensaje(s) de la cola local enviados.`, "Sistema");
+          }
+        });
+      }
+    };
+    window.addEventListener("online", handleWindowOnline);
 
     let unsubMessages: any = null;
 
@@ -1675,6 +1732,17 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     });
 
     socket.on("receive_private", (msg: any, fromUser: string) => {
+      if (fromUser === "Elizabeth" || msg.sender === "Elizabeth" || msg.isAi) {
+        clearElizabethWatchdog();
+        setIsSearchingWeb(false);
+      }
+      if (document.hidden) {
+        showPushNotification({
+          title: `Chat-Liz • Mensaje de ${fromUser}`,
+          body: msg.text || (msg.audio ? "Audio de voz" : "Nuevo mensaje privado"),
+          icon: msg.senderPic || `https://api.dicebear.com/7.x/avataaars/svg?seed=${fromUser}`
+        });
+      }
       if (activeChatRef.current !== fromUser) {
         playNotifySound();
         setUnreadPMs((prev) => ({ ...prev, [fromUser]: true }));
@@ -1730,10 +1798,21 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     });
 
     socket.on("message", (msg: any) => {
+      if (msg && (msg.sender === "Elizabeth" || msg.isAi)) {
+        clearElizabethWatchdog();
+        setIsSearchingWeb(false);
+      }
       if (msg && msg.sender && msg.sender !== user.username) {
         const myName = (user.username || "").toLowerCase();
         const txt = (msg.text || "").toLowerCase();
         if (myName && (txt.includes(`@${myName}`) || txt.includes(myName))) {
+          if (document.hidden) {
+            showPushNotification({
+              title: `Chat-Liz • Mención de ${msg.sender}`,
+              body: msg.text || 'Te ha mencionado en el chat',
+              icon: msg.senderPic || `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.sender}`
+            });
+          }
           setMailboxItems(prev => [{
             id: `${Date.now()}_${msg.sender}`,
             type: 'mention',
@@ -2009,6 +2088,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       setIsSearchingWeb(false);
     });
     socket.on("typing", (data: { username: string; chat: string }) => {
+      if (data.username === "Elizabeth") {
+        clearElizabethWatchdog();
+      }
       const targetChat =
         data.chat === user.username ? data.username : data.chat;
       setTypingUsers((prev) => {
@@ -2750,6 +2832,39 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       timestamp: Date.now(),
       createdAt: Date.now(),
     };
+
+    const isTargetingElizabeth = activeChat === "Elizabeth" || /@?(elizabeth|liz)\b/i.test(inputValue);
+    if (isTargetingElizabeth) {
+      armElizabethWatchdog();
+    }
+
+    if (!socket.connected || !navigator.onLine) {
+      enqueueOfflineMessage({
+        id: msgId,
+        chat: activeChat,
+        sender: user.username,
+        text: inputValue,
+        imageUrl: selectedImage || selectedGif || undefined,
+        audioUrl: audioUrl || undefined,
+        replyTo: replyingTo ? { id: replyingTo.id, sender: replyingTo.sender, text: replyingTo.text } : undefined,
+        tavilyKey: userTavilyKey,
+        webSearch: shouldSearchWeb
+      });
+      const offlineMsgData = {
+        ...msgData,
+        isQueued: true,
+        status: 'pending_sync'
+      };
+      setMessages((prev) => [...prev, offlineMsgData]);
+      setTimeout(scrollToBottom, 100);
+      addSystemToast("💾 Sin conexión: Mensaje guardado en cola local. Se enviará automáticamente al recuperar la red.", "Sistema");
+      if (inputRef.current) inputRef.current.value = "";
+      setSelectedImage(null);
+      setSelectedGif(null);
+      setAudioUrl(null);
+      setShowEmojiPicker(false);
+      return;
+    }
     if (activeChat === "global") {
       setMessages((prev) => [...prev, msgData]);
       setTimeout(
@@ -3090,6 +3205,34 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                <span className="hidden sm:inline text-xs font-bold font-mono tracking-wider">ADMIN</span>
              </button>
            )}
+
+           {/* GitHub Admin Panel Button: Only for AXISS, Axiss, and delegated admins */}
+           {isUserAdmin && (
+             <button
+               onClick={() => {
+                 setIsGitHubAdminOpen(true);
+               }}
+               className="p-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+               title="Panel GitHub (El-Latido/Chat-Zenith8)"
+             >
+               <Github size={19} className="text-purple-400" />
+               <span className="hidden sm:inline text-xs font-bold font-mono tracking-wider">GITHUB</span>
+             </button>
+           )}
+
+           {/* Reading Mode Button */}
+           <button
+             onClick={() => setIsReadingMode(true)}
+             className={`p-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
+               isReadingMode
+                 ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                 : "hover:text-white text-gray-300 hover:bg-white/5 border border-transparent"
+             }`}
+             title="Modo Lectura (Leer última respuesta de Elizabeth)"
+           >
+             <BookOpen size={20} className="text-cyan-400" />
+             <span className="hidden md:inline text-xs font-semibold">Lectura</span>
+           </button>
 
            <button className="hover:text-white transition-colors hidden sm:block"><Calendar size={22} /></button>
 
@@ -3865,6 +4008,14 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                               <Palette size={20} />
                             </button>
                           )}
+                          {/* Botón de Modo Lectura */}
+                          <button
+                            onClick={() => setIsReadingMode(true)}
+                            className="text-sm font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 p-2 rounded-xl transition-colors border border-cyan-500/30 flex items-center justify-center mr-1 shadow-sm"
+                            title="Modo Lectura Inmersivo (Leer última respuesta)"
+                          >
+                            <BookOpen size={19} />
+                          </button>
                           <button
                             onClick={() => setActiveChat("global")}
                             className="text-sm font-bold text-white/80 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-xl transition-colors border border-white/20 flex items-center justify-center"
@@ -3908,18 +4059,39 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                       </button>
                     </div>
                   )}
-                  {messages
-                    .filter((m) => m && m.sender)
-                    .filter((m) => {
-                      if (user.blocked_list?.includes(m.sender)) return false;
-                      const senderInfo = usersOnline.find(
-                        (u) => u.username === m.sender,
-                      );
-                      if (senderInfo?.blocked_list?.includes(user.username))
-                        return false;
-                      return true;
-                    })
-                    .map((m, idx) => {
+                  {(() => {
+                    const filteredMessages = messages
+                      .filter((m) => m && m.sender)
+                      .filter((m) => {
+                        if (user.blocked_list?.includes(m.sender)) return false;
+                        const senderInfo = usersOnline.find(
+                          (u) => u.username === m.sender,
+                        );
+                        if (senderInfo?.blocked_list?.includes(user.username))
+                          return false;
+                        return true;
+                      });
+
+                    const hasOlderMessages = filteredMessages.length > visibleMessageCount;
+                    const renderedMessages = hasOlderMessages 
+                      ? filteredMessages.slice(-visibleMessageCount) 
+                      : filteredMessages;
+
+                    return (
+                      <>
+                        {hasOlderMessages && (
+                          <div className="flex justify-center py-2">
+                            <button
+                              type="button"
+                              onClick={() => setVisibleMessageCount((prev) => prev + 50)}
+                              className="text-xs font-semibold px-4 py-1.5 rounded-full bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                            >
+                              <RotateCcw size={13} className="text-cyan-400" />
+                              <span>Cargar mensajes anteriores ({filteredMessages.length - visibleMessageCount} más)</span>
+                            </button>
+                          </div>
+                        )}
+                        {renderedMessages.map((m, idx) => {
                       const isLiz = m.sender === "Elizabeth" || m.isAi;
                       const isMe = m.sender === user.username;
                       const safeText = isLiz ? filterOffensiveText(m.text || '') : (m.text || '');
@@ -4138,6 +4310,11 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                                           <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
                                         </svg>
                                       </button>
+                                      {(m.isQueued || m.status === 'pending_sync') && (
+                                        <span className="text-[10px] text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-full font-mono flex items-center gap-1">
+                                          ⏳ Sin conexión (en cola)
+                                        </span>
+                                      )}
                                       <span className={`${timeColor} text-[11px] font-mono shrink-0 ml-auto pl-2`}>
                                         {timeStr}
                                       </span>
@@ -4223,6 +4400,9 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         </div>
                       );
                     })}
+                      </>
+                    );
+                  })()}
 
 
 
@@ -4335,14 +4515,21 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
                         onSelect={(type, val) => {
                           if (type === "emoji") {
                             if (inputRef.current) {
-                              const start = inputRef.current.selectionStart ?? inputRef.current.value.length;
-                              const end = inputRef.current.selectionEnd ?? inputRef.current.value.length;
-                              const text = inputRef.current.value;
-                              inputRef.current.value = text.slice(0, start) + val + text.slice(end);
+                              const inputEl = inputRef.current;
+                              const start = inputEl.selectionStart ?? inputEl.value.length;
+                              const end = inputEl.selectionEnd ?? inputEl.value.length;
+                              const text = inputEl.value;
+                              const nextVal = text.slice(0, start) + val + text.slice(end);
+                              const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                              if (nativeSetter) {
+                                nativeSetter.call(inputEl, nextVal);
+                              } else {
+                                inputEl.value = nextVal;
+                              }
                               const newPos = start + val.length;
-                              inputRef.current.focus();
-                              inputRef.current.setSelectionRange(newPos, newPos);
-                              inputRef.current.dispatchEvent(new Event('input', { bubbles: true }));
+                              inputEl.focus();
+                              inputEl.setSelectionRange(newPos, newPos);
+                              inputEl.dispatchEvent(new Event('input', { bubbles: true }));
                             }
                           } else if (type === "gif") {
                             setSelectedGif(val);
@@ -5998,6 +6185,30 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
             closeAllModals();
           }}
           onOpenPrivateChat={handleOpenPrivateChatWith}
+        />
+      )}
+
+      {/* GitHub Admin Panel Modal */}
+      {isGitHubAdminOpen && (
+        <GitHubAdminPanel
+          onClose={() => setIsGitHubAdminOpen(false)}
+          currentUser={{ username: user.username, isAdmin: isUserAdmin }}
+        />
+      )}
+
+      {/* Modo Lectura Modal */}
+      {isReadingMode && (
+        <ReadingModeModal
+          onClose={() => setIsReadingMode(false)}
+          lastElizabethMessage={
+            [...messages].reverse().find(m => m.sender === "Elizabeth" || m.isAi)?.text ||
+            "Elizabeth aún no ha escrito ningún mensaje en esta sala. Escríbele o menciónala con @Elizabeth para comenzar a dialogar."
+          }
+          senderName={activeChat === "global" ? "Elizabeth" : activeChat}
+          speakerAudio={
+            [...messages].reverse().find(m => m.sender === "Elizabeth" || m.isAi)?.audio ||
+            [...messages].reverse().find(m => m.sender === "Elizabeth" || m.isAi)?.audioBase64
+          }
         />
       )}
     </div>

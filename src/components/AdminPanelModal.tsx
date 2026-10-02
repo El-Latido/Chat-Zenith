@@ -19,6 +19,7 @@ import {
   Link,
   Play,
   Film,
+  Github,
 } from 'lucide-react';
 import { parseBackgroundMedia } from './UniversalBackground';
 
@@ -34,6 +35,7 @@ interface AdminPanelModalProps {
   onOpenSyncToAxis: () => void;
   onOpenCustomizer: () => void;
   onOpenAiConfig: () => void;
+  onOpenGitHubAdmin?: () => void;
   onPromoteToAdmin: (username: string) => Promise<void>;
   onDemoteAdmin: (username: string) => Promise<void>;
   onBanAdminOrUser: (username: string) => Promise<void>;
@@ -53,6 +55,7 @@ export function AdminPanelModal({
   onOpenSyncToAxis,
   onOpenCustomizer,
   onOpenAiConfig,
+  onOpenGitHubAdmin,
   onPromoteToAdmin,
   onDemoteAdmin,
   onBanAdminOrUser,
@@ -215,6 +218,36 @@ export function AdminPanelModal({
                 className="px-3 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs shadow-md transition-all shrink-0"
               >
                 Transportar
+              </button>
+            </div>
+
+            {/* GitHub Admin Panel Button */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/40 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
+                  <Github size={20} />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-xs flex items-center gap-2">
+                    <span>GitHub Admin Panel</span>
+                    <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-[10px] font-mono text-purple-300 border border-purple-500/30">
+                      El-Latido/Chat-Zenith8
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    Explora el árbol de archivos, edita y haz commits directos con tu token
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenGitHubAdmin?.();
+                }}
+                className="px-3 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-xs shadow-md transition-all shrink-0 flex items-center gap-1.5"
+              >
+                <Github size={14} />
+                Abrir GitHub
               </button>
             </div>
 

@@ -238,18 +238,18 @@ export function ProfileConfigModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center sm:p-4 overflow-hidden">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/70 backdrop-blur-md transition-opacity pointer-events-auto" 
+        className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity pointer-events-auto" 
         onClick={() => setIsConfigOpen(false)}
       />
       
       {/* Modal Container */}
-      <div className="relative w-full max-w-4xl bg-gradient-to-br from-[#12141c] to-[#0a0a0f] rounded-3xl shadow-2xl border border-white/10 flex flex-col md:flex-row overflow-hidden animate-in fade-in zoom-in-95 duration-300 mt-6 sm:mt-0 mb-6 sm:mb-0">
+      <div className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-gradient-to-br from-[#12141c] to-[#0a0a0f] rounded-none sm:rounded-3xl shadow-2xl border-0 sm:border border-white/10 flex flex-col md:flex-row overflow-hidden animate-in fade-in zoom-in-95 duration-300">
         
         {/* Sidebar Tabs */}
-        <div className="w-full md:w-64 bg-black/40 border-b md:border-b-0 md:border-r border-white/5 p-4 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-visible shrink-0">
+        <div className="w-full md:w-64 bg-black/40 border-b md:border-b-0 md:border-r border-white/5 p-3 sm:p-4 flex flex-row md:flex-col gap-1.5 sm:gap-2 overflow-x-auto md:overflow-visible shrink-0 scrollbar-none">
           <div className="hidden md:flex items-center gap-3 px-3 py-4 mb-2">
              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.3)]">
                <Settings className="text-white" size={20} />
@@ -268,7 +268,7 @@ export function ProfileConfigModal({
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 flex flex-col h-[75vh] md:h-[650px] max-h-[85vh] overflow-hidden">
+        <div className="flex-1 flex flex-col h-full sm:h-[75vh] md:h-[650px] overflow-hidden">
           {/* Integrated Header with Title & Close Button */}
           <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-black/30 shrink-0">
             <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
