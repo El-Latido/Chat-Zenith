@@ -1,1021 +1,362 @@
-import React, { useState, useEffect } from 'react';
-import { EyeOff, Settings, X, LogOut, Bot, Palette, Lock, User, Globe, MessageSquare, Users, Calendar, Copy, Check, Shield, Sparkles, Key, ExternalLink, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Camera, Type, Palette, Image as ImageIcon, Sparkles, User, MessageSquare, Settings } from 'lucide-react';
 import { socket } from '../socket';
-import { UserObj } from '../types';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
-import { preloadMedia } from '../utils/mediaPreloader';
-import { getSavedTavilyKey, saveTavilyKey, searchWeb } from '../utils/tavilySearch';
 
-interface ProfileConfigModalProps {
-  user: UserObj & { password?: string };
-  setUser: React.Dispatch<React.SetStateAction<UserObj & { password?: string, securityEmail?: string }>>;
-  setIsConfigOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setAdminConfigAiOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  usersOnline: UserObj[];
-  setAiProfileForm: React.Dispatch<React.SetStateAction<{ profilePic: string; statusMessage: string; systemInstruction: string; }>>;
-  customFrames: Record<number, string>;
+export interface ProfileConfigModalProps {
+  user: any;
+  onClose?: () => void;
+  onUpdate?: (updates: any) => void;
+  setUser?: React.Dispatch<React.SetStateAction<any>>;
+  setIsConfigOpen?: (open: boolean) => void;
+  setAdminConfigAiOpen?: (open: boolean) => void;
+  usersOnline?: any[];
+  onLogout?: () => void;
 }
 
-export function ProfileConfigModal({
-  user, setUser, setIsConfigOpen, setAdminConfigAiOpen, usersOnline, setAiProfileForm, customFrames
+const BUBBLE_STYLES = [
+  { id: 'default', name: 'Clásico', preview: 'bg-gray-700' },
+  { id: 'neon', name: 'Neón', preview: 'bg-black border-2 border-cyan-400' },
+  { id: 'gradient', name: 'Degradado', preview: 'bg-gradient-to-r from-purple-600 to-pink-600' },
+  { id: 'glass', name: 'Cristal', preview: 'bg-white/20 backdrop-blur' },
+  { id: 'fire', name: 'Fuego 🔥', preview: 'bg-gradient-to-br from-red-600 to-yellow-500' },
+  { id: 'galaxy', name: 'Galaxia 🌌', preview: 'bg-gradient-to-br from-indigo-900 to-pink-700' },
+  { id: 'matrix', name: 'Matrix 💚', preview: 'bg-black border border-green-500' },
+];
+
+const PROFILE_FRAMES = [
+  { id: 'none', name: 'Sin marco' },
+  { id: 'fire', name: '🔥 Fuego', color: 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.8)]' },
+  { id: 'galaxy', name: '🌌 Galaxia', color: 'border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]' },
+  { id: 'neon', name: '💎 Neón', color: 'border-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.9)]' },
+];
+
+const FONTS = [
+  { id: 'default', name: 'Predeterminada', family: 'inherit' },
+  { id: 'cursive', name: 'Cursiva', family: '"Brush Script MT", cursive' },
+  { id: 'mono', name: 'Monoespaciada', family: 'monospace' },
+  { id: 'serif', name: 'Serif', family: 'Georgia, serif' },
+  { id: 'impact', name: 'Impacto', family: 'Impact, sans-serif' },
+];
+
+const NEON_COLORS = [
+  '#22d3ee', '#f472b6', '#a855f7', '#34d399', '#fbbf24', '#f87171', '#ffffff',
+];
+
+export function ProfileConfigModal({ 
+  user, 
+  onClose, 
+  onUpdate, 
+  setUser, 
+  setIsConfigOpen, 
+  setAdminConfigAiOpen,
+  onLogout 
 }: ProfileConfigModalProps) {
-  const [activeTab, setActiveTab] = useState<'perfil' | 'apariencia' | 'idioma' | 'cuenta' | 'apikeys'>('perfil');
-  const [incognito, setIncognito] = useState((user as any).incognito || false);
-  const [comentario, setComentario] = useState(user.statusMessage || '');
-  const [pais, setPais] = useState(user.pais_idioma || 'es');
-  const [password, setPassword] = useState(user.password || '');
-  const [fotoURL, setFotoURL] = useState(user.profilePic || '');
-  const [frameId, setFrameId] = useState<number | undefined>(user.frameId);
-  const [isFriendsPublic, setIsFriendsPublic] = useState(user.is_friends_public || false);
-  const [backgroundBase64, setBackgroundBase64] = useState(user.preferred_background || '');
-  const [preferredTheme, setPreferredTheme] = useState(user.preferred_theme || localStorage.getItem("chatliz_theme") || "default");
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
-
-  // Tavily AI Web Search state
-  const [tavilyKey, setTavilyKey] = useState(() => getSavedTavilyKey());
-  const [showTavilyKey, setShowTavilyKey] = useState(false);
-  const [testingTavily, setTestingTavily] = useState(false);
-  const [tavilyTestResult, setTavilyTestResult] = useState<{ text: string; error: boolean } | null>(null);
-
-  const [newUsernameInput, setNewUsernameInput] = useState(user.username || '');
-  const [usernameMsg, setUsernameMsg] = useState<{ text: string, error: boolean } | null>(null);
-  const [isChangingUsername, setIsChangingUsername] = useState(false);
-  const [copiedId, setCopiedId] = useState(false);
-
-  const handleChangeUsername = () => {
-    const trimmed = (newUsernameInput || '').trim();
-    if (!trimmed) return setUsernameMsg({ text: "El nombre no puede estar vacío.", error: true });
-    if (trimmed === user.username) return setUsernameMsg({ text: "El nombre ingresado es idéntico al actual.", error: true });
-    if (trimmed.length < 3 || trimmed.length > 20) return setUsernameMsg({ text: "El nombre debe tener entre 3 y 20 caracteres.", error: true });
-    if (!/^[a-zA-Z0-9_.-]+$/.test(trimmed)) return setUsernameMsg({ text: "Solo se permiten letras, números, guiones y puntos.", error: true });
-    if (trimmed.toLowerCase() === "elizabeth") return setUsernameMsg({ text: "Ese nombre está reservado para la IA oficial.", error: true });
-    if (trimmed.toUpperCase() === "AXISS" && user.username.toUpperCase() !== "AXISS") return setUsernameMsg({ text: "Ese nombre está reservado para el Super Administrador.", error: true });
-
-    setIsChangingUsername(true);
-    setUsernameMsg(null);
-    socket.emit("change_username", { newUsername: trimmed }, (res: any) => {
-      setIsChangingUsername(false);
-      if (res && res.success) {
-        setUser(prev => {
-          const updated = { ...prev, username: res.newUsername, uid: res.uid || prev.uid };
-          localStorage.setItem("chatliz_user", JSON.stringify(updated));
-          return updated;
-        });
-        setUsernameMsg({ text: `¡Nombre actualizado exitosamente a ${res.newUsername}! Tu ID único #${res.uid || user.uid} se mantiene intacto.`, error: false });
-      } else {
-        setUsernameMsg({ text: res?.error || "Error al cambiar el nombre de usuario.", error: true });
-      }
-    });
-  };
-
-  const [bubbleColor, setBubbleColor] = useState(user.bubbleColor || '#121B2A');
-  const [bubbleBorder, setBubbleBorder] = useState(user.bubbleBorder || 'border-[#5A52A5]/30');
-  const [bubbleShape, setBubbleShape] = useState(user.bubbleShape || 'rounded-2xl rounded-tr-sm');
-  const [bubbleTexture, setBubbleTexture] = useState(user.bubbleTexture || 'none');
+  const [activeTab, setActiveTab] = useState<'profile' | 'chat' | 'appearance'>('profile');
+  const [avatar, setAvatar] = useState(user.avatar || user.profilePic || '');
+  const [banner, setBanner] = useState(user.banner || user.preferred_background || '');
+  const [bannerType, setBannerType] = useState<'image' | 'video'>(user.bannerType || 'image');
+  const [bio, setBio] = useState(user.bio || user.statusMessage || '');
   const [bubbleStyle, setBubbleStyle] = useState(user.bubbleStyle || 'default');
-  const [audioVisStyle, setAudioVisStyle] = useState(user.audioVisualizerStyle || 'neon_waves');
-  const [audioVisColor1, setAudioVisColor1] = useState(user.audioVisualizerColor1 || '#00f2fe');
-  const [audioVisColor2, setAudioVisColor2] = useState(user.audioVisualizerColor2 || '#4facfe');
+  const [fontStyle, setFontStyle] = useState(user.fontStyle || 'default');
+  const [fontColor, setFontColor] = useState(user.fontColor || '#ffffff');
+  const [profileFrame, setProfileFrame] = useState(user.profileFrame || (user.frameId ? 'fire' : 'none'));
+  const [loading, setLoading] = useState(false);
 
-
-  useEffect(() => {
-    const match = (user.bubbleColor || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (match) {
-        const r = parseInt(match[1]).toString(16).padStart(2, '0');
-        const g = parseInt(match[2]).toString(16).padStart(2, '0');
-        const b = parseInt(match[3]).toString(16).padStart(2, '0');
-        setBubbleColor(`#${r}${g}${b}`);
-    }
-  }, [user.bubbleColor]);
-
-
-  const toggleIncognito = () => {
-     const nextVal = !incognito;
-     setIncognito(nextVal);
-     setUser(prev => ({ ...prev, incognito: nextVal }));
-     socket.emit("update_incognito", nextVal);
+  const handleCloseModal = () => {
+    if (onClose) onClose();
+    if (setIsConfigOpen) setIsConfigOpen(false);
   };
 
-  const handleSaveProfile = async () => {
-    try {
-      setSaveStatus("Guardando...");
-      
-      const r = parseInt(bubbleColor.slice(1,3), 16) || 18;
-      const g = parseInt(bubbleColor.slice(3,5), 16) || 27;
-      const b = parseInt(bubbleColor.slice(5,7), 16) || 42;
-      const finalBubbleColor = `rgba(${r}, ${g}, ${b}, 0.95)`;
-
-      // Always save locally immediately so user sees background instantly without delay
-      if (backgroundBase64) {
-        localStorage.setItem("chatliz_personal_bg", backgroundBase64);
-        window.dispatchEvent(new CustomEvent("chatliz_personal_bg_changed", { detail: backgroundBase64 }));
-      } else {
-        localStorage.removeItem("chatliz_personal_bg");
-      }
-
-      // Avoid Firestore 1MB document limit crash if background is a large video/GIF base64
-      const safeBackgroundForFirestore = (backgroundBase64 && backgroundBase64.length > 300000)
-        ? (backgroundBase64.startsWith('http') ? backgroundBase64 : '')
-        : backgroundBase64;
-
-      const savePromise = setDoc(doc(db, "users", user.username!), {
-        password: password,
-        profilePic: fotoURL,
-        frameId: frameId,
-        statusMessage: comentario,
-        pais_idioma: pais,
-        is_friends_public: isFriendsPublic,
-        incognito: incognito,
-        preferred_background: safeBackgroundForFirestore,
-        preferred_theme: preferredTheme,
-        bubbleColor: finalBubbleColor,
-        bubbleBorder: bubbleBorder,
-        bubbleShape: bubbleShape,
-        bubbleTexture: bubbleTexture,
-        bubbleStyle: bubbleStyle,
-        updatedAt: new Date()
-      }, { merge: true }).catch((err) => {
-        console.warn("Firestore background save warning:", err);
-      });
-
-      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(true), 3500));
-      await Promise.race([savePromise, timeoutPromise]);
-      
-      localStorage.setItem("chatliz_theme", preferredTheme);
-      window.dispatchEvent(new CustomEvent("chatliz_theme_changed", { detail: preferredTheme }));
-
-      setUser(prev => ({
-          ...prev,
-          password,
-          profilePic: fotoURL,
-          frameId,
-          statusMessage: comentario,
-          pais_idioma: pais,
-          is_friends_public: isFriendsPublic,
-          incognito: incognito,
-          preferred_background: backgroundBase64,
-          preferred_theme: preferredTheme,
-          bubbleColor: finalBubbleColor,
-          bubbleBorder,
-          bubbleShape,
-          bubbleTexture,
-          bubbleStyle
-      }));
-
-      socket.emit("update_incognito", incognito);
-      socket.emit("broadcast_profile_change", {
-        username: user.username,
-        statusMessage: comentario,
-        profilePic: fotoURL,
-        frameId: frameId,
-        countryLanguage: pais,
-        is_friends_public: isFriendsPublic,
-        preferred_background: safeBackgroundForFirestore,
-        preferred_theme: preferredTheme,
-        bubbleStyle: bubbleStyle
-      });
-
-      saveTavilyKey(tavilyKey);
-
-      setSaveStatus("¡Guardado correctamente!");
-      setTimeout(() => setSaveStatus(null), 3000);
-    } catch (e) {
-      console.error(e);
-      saveTavilyKey(tavilyKey);
-      setSaveStatus("¡Guardado correctamente!");
-      setTimeout(() => setSaveStatus(null), 3000);
-    }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'banner') => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isGif = file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif');
-      const isVideo = file.type.startsWith('video/') || file.name.toLowerCase().match(/\.(mp4|webm|mov)$/i);
-
-      // Preserve pristine animated frames and video content without canvas conversion
-      if (isGif || isVideo) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const res = event.target?.result as string;
-          setter(res);
-          if (res) preloadMedia(res).catch(() => {});
-        };
-        reader.readAsDataURL(file);
-        return;
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = reader.result as string;
+      if (type === 'avatar') setAvatar(url);
+      else {
+        setBanner(url);
+        setBannerType(file.type.startsWith('video') ? 'video' : 'image');
       }
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const MAX_SIZE = 1200;
-          if (width > height) {
-            if (width > MAX_SIZE) {
-              height *= MAX_SIZE / width;
-              width = MAX_SIZE;
-            }
-          } else {
-            if (height > MAX_SIZE) {
-              width *= MAX_SIZE / height;
-              height = MAX_SIZE;
-            }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          setter(canvas.toDataURL('image/jpeg', 0.85));
-        };
-        img.src = event.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-    }
+    };
+    reader.readAsDataURL(file);
   };
+
+  const handleSave = () => {
+    setLoading(true);
+    const updates = {
+      avatar,
+      profilePic: avatar,
+      banner,
+      preferred_background: banner,
+      bannerType,
+      bio,
+      statusMessage: bio,
+      bubbleStyle,
+      fontStyle,
+      fontColor,
+      profileFrame,
+    };
+
+    socket.emit('update_profile', updates);
+    if (onUpdate) onUpdate(updates);
+    if (setUser) setUser((prev: any) => ({ ...prev, ...updates }));
+    setLoading(false);
+    handleCloseModal();
+  };
+
+  const tabs = [
+    { id: 'profile', label: 'Perfil', icon: User },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
+    { id: 'appearance', label: 'Apariencia', icon: Sparkles },
+  ] as const;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center sm:p-4 overflow-hidden">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity pointer-events-auto" 
-        onClick={() => setIsConfigOpen(false)}
-      />
-      
-      {/* Modal Container */}
-      <div className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-gradient-to-br from-[#12141c] to-[#0a0a0f] rounded-none sm:rounded-3xl shadow-2xl border-0 sm:border border-white/10 flex flex-col md:flex-row overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-        
-        {/* Sidebar Tabs */}
-        <div className="w-full md:w-64 bg-black/40 border-b md:border-b-0 md:border-r border-white/5 p-3 sm:p-4 flex flex-row md:flex-col gap-1.5 sm:gap-2 overflow-x-auto md:overflow-visible shrink-0 scrollbar-none">
-          <div className="hidden md:flex items-center gap-3 px-3 py-4 mb-2">
-             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.3)]">
-               <Settings className="text-white" size={20} />
-             </div>
-             <div>
-               <h2 className="text-white font-bold text-lg leading-none">Ajustes</h2>
-               <p className="text-xs text-gray-400 mt-1">Configura tu experiencia</p>
-             </div>
-          </div>
-          
-          <TabButton active={activeTab === 'perfil'} onClick={() => setActiveTab('perfil')} icon={<User size={18} />} label="Perfil" />
-          <TabButton active={activeTab === 'idioma'} onClick={() => setActiveTab('idioma')} icon={<Globe size={18} />} label="Idioma y Sala" />
-          <TabButton active={activeTab === 'apariencia'} onClick={() => setActiveTab('apariencia')} icon={<Palette size={18} />} label="Apariencia" />
-          <TabButton active={activeTab === 'cuenta'} onClick={() => setActiveTab('cuenta')} icon={<Lock size={18} />} label="Privacidad y Cuenta" />
-          <TabButton active={activeTab === 'apikeys'} onClick={() => setActiveTab('apikeys')} icon={<Key size={18} />} label="Ajustes / API Keys" />
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 border border-purple-500/50 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+        {/* Header */}
+        <div className="relative h-40 bg-gradient-to-br from-purple-700 to-pink-600">
+          {banner ? (
+            bannerType === 'video' ? (
+              <video src={banner} autoPlay loop muted className="w-full h-full object-cover" />
+            ) : (
+              <img src={banner} className="w-full h-full object-cover" alt="Banner" />
+            )
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-purple-700 to-pink-600" />
+          )}
+          <button onClick={handleCloseModal} className="absolute top-3 right-3 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full cursor-pointer transition">
+            <X size={20} />
+          </button>
+          <label className="absolute bottom-3 right-3 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full cursor-pointer transition">
+            <Camera size={18} />
+            <input type="file" accept="image/*,video/*" onChange={(e) => handleFileUpload(e, 'banner')} className="hidden" />
+          </label>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 flex flex-col h-full sm:h-[75vh] md:h-[650px] overflow-hidden">
-          {/* Integrated Header with Title & Close Button */}
-          <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-black/30 shrink-0">
-            <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
-              {activeTab === 'perfil' && <span className="flex items-center gap-2"><User size={18} className="text-cyan-400" /> Mi Perfil</span>}
-              {activeTab === 'idioma' && <span className="flex items-center gap-2"><Globe size={18} className="text-cyan-400" /> Idioma y Sala</span>}
-              {activeTab === 'apariencia' && <span className="flex items-center gap-2"><Palette size={18} className="text-cyan-400" /> Apariencia y Visualizador</span>}
-              {activeTab === 'cuenta' && <span className="flex items-center gap-2"><Lock size={18} className="text-cyan-400" /> Privacidad y Cuenta</span>}
-              {activeTab === 'apikeys' && <span className="flex items-center gap-2"><Key size={18} className="text-cyan-400" /> Ajustes / API Keys (Tavily)</span>}
+        {/* Avatar */}
+        <div className="relative -mt-16 px-6 flex items-end justify-between gap-4">
+          <div className="flex items-end gap-4">
+            <div className="relative">
+              {avatar ? (
+                <img src={avatar} className="w-24 h-24 rounded-full object-cover border-4 border-gray-900 shadow-md" alt={user.username} />
+              ) : (
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 border-4 border-gray-900 flex items-center justify-center text-white text-3xl font-bold shadow-md">
+                  {user.username?.[0]?.toUpperCase() || 'U'}
+                </div>
+              )}
+              <label className="absolute bottom-0 right-0 bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-full cursor-pointer shadow">
+                <Camera size={14} />
+                <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'avatar')} className="hidden" />
+              </label>
             </div>
-            <button 
-              type="button"
-              onClick={() => setIsConfigOpen(false)} 
-              className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors"
-              title="Cerrar Ajustes"
-            >
-              <X size={18} />
-            </button>
+            <div className="pb-2">
+              <h2 className="text-white text-xl font-bold">{user.username}</h2>
+              <p className="text-gray-400 text-xs">{user.role === 'admin' ? '🛡️ Administrador' : 'Miembro de ChatLiz'}</p>
+            </div>
           </div>
-          
-          <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-            {activeTab === 'perfil' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex flex-col items-center justify-center gap-4">
-                   <div className="relative group cursor-pointer">
-                      <div className="w-28 h-28 rounded-full border-4 border-cyan-500/30 overflow-hidden relative">
-                         <img 
-                           referrerPolicy="no-referrer" 
-                           src={fotoURL || `https://api.dicebear.com/7.x/notionists/svg?seed=${user.username}`} 
-                           className="w-full h-full object-cover" 
-                           alt="Profile" 
-                         />
-                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span className="text-xs font-bold text-white tracking-wider">CAMBIAR</span>
-                         </div>
-                      </div>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={(e) => handleImageUpload(e, setFotoURL)}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-                   </div>
-                   <h3 className="text-2xl font-bold text-white">{user.username}</h3>
-                   
-                   <div 
-                     onClick={() => {
-                       const idToCopy = user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000');
-                       navigator.clipboard.writeText(idToCopy);
-                       setCopiedId(true);
-                       setTimeout(() => setCopiedId(false), 2000);
-                     }}
-                     title="Haz clic para copiar tu ID permanente único"
-                     className="cursor-pointer group inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-mono text-xs transition-all shadow-sm"
-                   >
-                     <Shield size={12} className="text-cyan-400" />
-                     <span className="font-bold">ID: #{user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000')}</span>
-                     <span className="text-[10px] text-cyan-400/70 group-hover:text-cyan-200">• Fijo (Inmutable)</span>
-                     {copiedId ? (
-                       <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-400 font-bold ml-1">
-                         <Check size={11} /> Copiado
-                       </span>
-                     ) : (
-                       <Copy size={11} className="text-cyan-400/60 group-hover:text-cyan-300 ml-0.5" />
-                     )}
-                   </div>
-                   
-                   <div className="flex gap-4 text-white/70 text-sm font-medium bg-white/5 px-4 py-2 rounded-full border border-white/10 shadow-inner">
-                      {user.gender && <div className="flex items-center gap-1"><Users size={14} className="text-cyan-400"/> {user.gender}</div>}
-                      {user.age !== undefined && <div className="flex items-center gap-1"><Calendar size={14} className="text-pink-400"/> {user.age} años</div>}
-                   </div>
 
+          {onLogout && (
+            <button
+              onClick={() => {
+                handleCloseModal();
+                onLogout();
+              }}
+              className="mb-2 px-3 py-1.5 rounded-xl bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/40 text-xs font-bold transition cursor-pointer"
+            >
+              Cerrar Sesión
+            </button>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-700 mt-4 px-4 bg-black/20">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-3 flex items-center justify-center gap-2 font-bold transition cursor-pointer text-sm ${
+                activeTab === tab.id
+                  ? 'text-purple-400 border-b-2 border-purple-400'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <tab.icon size={18} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {activeTab === 'profile' && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-white font-bold mb-2 block flex items-center gap-2">
+                  <MessageSquare size={16} /> Biografía
+                </label>
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Cuéntanos sobre ti..."
+                  maxLength={200}
+                  className="w-full bg-gray-800 text-white rounded-xl p-3 h-24 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                />
+                <p className="text-gray-500 text-xs mt-1">{bio.length}/200</p>
+              </div>
+
+              <div>
+                <label className="text-white font-bold mb-2 block">Marco de Perfil</label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {PROFILE_FRAMES.map(frame => (
+                    <button
+                      key={frame.id}
+                      onClick={() => setProfileFrame(frame.id)}
+                      className={`p-3 rounded-xl border-2 transition cursor-pointer ${
+                        profileFrame === frame.id
+                          ? 'border-purple-500 bg-purple-500/20'
+                          : 'border-gray-700 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className={`w-12 h-12 rounded-full mx-auto mb-2 bg-gradient-to-br from-purple-600 to-pink-600 ${frame.color || ''}`} />
+                      <p className="text-white text-xs text-center font-medium">{frame.name}</p>
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                <div className="space-y-3">
-                   <label className="text-sm font-semibold text-gray-400 ml-1">Marco de Perfil</label>
-                   
-                   <div className="grid grid-cols-5 sm:grid-cols-8 gap-3 max-h-48 overflow-y-auto p-3 bg-black/20 rounded-2xl border border-white/5">
-                      <div 
-                         className={`relative w-12 h-12 rounded-full cursor-pointer flex items-center justify-center border-2 ${!frameId ? 'border-cyan-400 bg-white/10' : 'border-transparent hover:bg-white/5'}`}
-                         onClick={() => setFrameId(undefined)}
-                         title="Sin Marco"
-                      >
-                         <X size={20} className="text-gray-400" />
-                      </div>
-                      {Array.from({ length: 40 }, (_, i) => i + 1).map(id => (
-                         <div 
-                            key={id}
-                            className={`relative w-12 h-12 rounded-full cursor-pointer border-2 transition-all group ${frameId === id ? 'border-cyan-400 scale-110 shadow-[0_0_10px_rgba(34,211,238,0.5)]' : 'border-transparent hover:scale-105 hover:bg-white/5'}`}
-                            onClick={() => setFrameId(id)}
-                            title={`Marco ${id}`}
-                         >
-                            <img 
-                               src={customFrames[id] || `/frames/${id}.png`} 
-                               className="w-full h-full object-contain scale-[1.35]"
-                               style={customFrames[id] ? undefined : {
-                                  WebkitMaskImage: 'radial-gradient(circle closest-side, transparent 74%, black 75%)',
-                                  maskImage: 'radial-gradient(circle closest-side, transparent 74%, black 75%)'
-                               }}
-                               alt={`Marco ${id}`}
-                               onError={(e) => {
-                                  // Fallback simple si la imagen no se ha subido aún
-                                  (e.target as HTMLImageElement).src = `https://placehold.co/100x100/1a1a24/3a3a4c?text=${id}`;
-                                  (e.target as HTMLImageElement).style.maskImage = 'none';
-                                  (e.target as any).style.webkitMaskImage = 'none';
-                               }}
-                            />
-                            {user.username === "Axiss" && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const url = window.prompt(`Ingresa la URL del marco ${id} (deja en blanco para usar el archivo local):`);
-                                  if (url !== null) {
-                                    socket.emit("set_custom_frame", { id, url });
-                                  }
-                                }}
-                                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-full text-[10px] text-white font-bold"
-                              >
-                                EDIT
-                              </button>
-                            )}
-                         </div>
-                      ))}
-                   </div>
-                   <p className="text-xs text-cyan-400/70 ml-1 bg-cyan-400/10 p-2 rounded-lg border border-cyan-400/20">
-                     💡 <b>Tip:</b> Sube tus 40 imágenes de marcos a la carpeta <code className="bg-black/50 px-1 rounded">public/frames/</code> en la barra lateral, nombrándolas <code className="bg-black/50 px-1 rounded">1.png</code> al <code className="bg-black/50 px-1 rounded">40.png</code>.
-                   </p>
+              {setAdminConfigAiOpen && user.role === 'admin' && (
+                <div className="pt-4 border-t border-gray-800">
+                  <button
+                    onClick={() => {
+                      handleCloseModal();
+                      setAdminConfigAiOpen(true);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold text-xs hover:bg-purple-500/30 transition flex items-center justify-center gap-2"
+                  >
+                    <Settings size={15} /> Configuración Avanzada de IA y Shaders
+                  </button>
                 </div>
+              )}
+            </div>
+          )}
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-400 ml-1">Estado o Biografía</label>
+          {activeTab === 'chat' && (
+            <div className="space-y-6">
+              <div>
+                <label className="text-white font-bold mb-3 block flex items-center gap-2">
+                  <MessageSquare size={16} /> Estilo de Burbuja
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {BUBBLE_STYLES.map(style => (
+                    <button
+                      key={style.id}
+                      onClick={() => setBubbleStyle(style.id)}
+                      className={`p-3 rounded-xl border-2 transition cursor-pointer ${
+                        bubbleStyle === style.id
+                          ? 'border-purple-500 bg-purple-500/20'
+                          : 'border-gray-700 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className={`${style.preview} rounded-lg px-3 py-2 text-xs text-white mb-2 text-center`}>
+                        Hola 👋
+                      </div>
+                      <p className="text-white text-xs text-center font-medium">{style.name}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-white font-bold mb-3 block flex items-center gap-2">
+                  <Type size={16} /> Tipo de Letra
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {FONTS.map(font => (
+                    <button
+                      key={font.id}
+                      onClick={() => setFontStyle(font.id)}
+                      className={`p-3 rounded-xl border-2 transition cursor-pointer ${
+                        fontStyle === font.id
+                          ? 'border-purple-500 bg-purple-500/20'
+                          : 'border-gray-700 hover:border-gray-500'
+                      }`}
+                      style={{ fontFamily: font.family }}
+                    >
+                      <p className="text-white text-lg mb-1">Aa</p>
+                      <p className="text-gray-400 text-xs">{font.name}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-white font-bold mb-3 block flex items-center gap-2">
+                  <Palette size={16} /> Color de Texto (Neón)
+                </label>
+                <div className="flex gap-3 flex-wrap items-center">
+                  {NEON_COLORS.map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setFontColor(color)}
+                      className={`w-10 h-10 rounded-full border-4 transition cursor-pointer ${
+                        fontColor === color ? 'border-white scale-110' : 'border-gray-700'
+                      }`}
+                      style={{ backgroundColor: color, boxShadow: `0 0 15px ${color}` }}
+                    />
+                  ))}
                   <input
-                    type="text"
-                    value={comentario}
-                    onChange={e => setComentario(e.target.value)}
-                    placeholder="Escribe algo sobre ti..."
-                    className="w-full bg-black/30 p-4 rounded-2xl border border-white/10 focus:border-cyan-400 outline-none text-white transition-colors"
+                    type="color"
+                    value={fontColor}
+                    onChange={(e) => setFontColor(e.target.value)}
+                    className="w-10 h-10 rounded-full cursor-pointer bg-transparent border-0"
+                    title="Color personalizado"
                   />
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {activeTab === 'idioma' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="bg-cyan-500/10 border border-cyan-500/20 p-4 rounded-2xl">
-                  <h4 className="text-cyan-400 font-bold mb-2 flex items-center gap-2">
-                    <Globe size={18} /> Traducción Automática de Sala
-                  </h4>
-                  <p className="text-sm text-gray-300 leading-relaxed">
-                    Al seleccionar un idioma, todos los mensajes de la sala se traducirán automáticamente a tu idioma preferido. Los demás usuarios verán tus mensajes en el idioma que ellos hayan elegido.
-                  </p>
-                </div>
-                
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-400 ml-1">Mi Idioma Principal</label>
-                  <select 
-                    value={pais} 
-                    onChange={e => setPais(e.target.value)} 
-                    className="w-full bg-black/30 p-4 rounded-2xl border border-white/10 focus:border-cyan-400 outline-none text-white transition-colors appearance-none cursor-pointer"
-                  >
-                    <option value="es">Español 🇪🇸</option>
-                    <option value="en">English 🇺🇸</option>
-                    <option value="pt">Português 🇧🇷</option>
-                    <option value="fr">Français 🇫🇷</option>
-                    <option value="de">Deutsch 🇩🇪</option>
-                    <option value="it">Italiano 🇮🇹</option>
-                    <option value="ru">Русский 🇷🇺</option>
-                    <option value="ja">日本語 🇯🇵</option>
-                    <option value="ko">한국어 🇰🇷</option>
-                    <option value="zh">中文 🇨🇳</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'apariencia' && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
-                {/* Theme Selector */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-bold text-white flex items-center gap-2">
-                      <Palette size={16} className="text-[#f472b6]" />
-                      Tema Visual de la Interfaz
-                    </label>
-                    <span className="text-xs text-[#f472b6] font-medium bg-[#f472b6]/10 px-2.5 py-0.5 rounded-full border border-[#f472b6]/30">
-                      Personalizable
-                    </span>
+          {activeTab === 'appearance' && (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">
+                Personaliza tu fondo de pantalla. Puedes usar una imagen o un video en bucle.
+              </p>
+              <div className="aspect-video bg-gray-800 rounded-xl overflow-hidden relative">
+                {banner ? (
+                  bannerType === 'video' ? (
+                    <video src={banner} autoPlay loop muted className="w-full h-full object-cover" />
+                  ) : (
+                    <img src={banner} className="w-full h-full object-cover" alt="Fondo" />
+                  )
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">
+                    Sin fondo personalizado
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Cyberpunk Neón Card */}
-                    <div
-                      onClick={() => setPreferredTheme('default')}
-                      className={`cursor-pointer p-3.5 rounded-2xl border-2 transition-all relative overflow-hidden flex flex-col justify-between ${
-                        preferredTheme === 'default'
-                          ? 'border-cyan-400 bg-gradient-to-br from-[#0a1120] via-[#050811] to-black shadow-[0_0_20px_rgba(6,182,212,0.3)]'
-                          : 'border-white/10 bg-black/20 hover:border-white/20'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">⚡</span>
-                          <span className="text-sm font-bold text-white">Cyberpunk Neón</span>
-                        </div>
-                        {preferredTheme === 'default' && (
-                          <span className="text-[11px] font-bold text-cyan-400 bg-cyan-500/20 px-2 py-0.5 rounded-full border border-cyan-500/40">
-                            Activo
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-400 mb-3 leading-relaxed">
-                        Diseño futurista oscuro con acentos neón y líneas tecnológicas estilizadas.
-                      </p>
-                      {/* Mini preview */}
-                      <div className="p-2 rounded-xl bg-black/40 border border-white/10 flex flex-col gap-1.5 mb-2">
-                        <div className="self-start px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] text-gray-300 font-medium">
-                          Mensaje
-                        </div>
-                        <div className="self-end px-2 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-[10px] text-cyan-300 font-medium">
-                          Enviado
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <hr className="border-white/5" />
-
-                {/* Background */}
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-gray-400 flex items-center gap-2">Fondo General de la Sala (URL o Archivo)</label>
-                  <div className="flex flex-col gap-3 bg-black/20 p-3 rounded-2xl border border-white/5">
-                    <div className="flex gap-3 items-center">
-                      {backgroundBase64 ? (
-                         backgroundBase64.match(/\.(mp4|webm|ogg)$/i) ? (
-                            <div className="h-16 w-16 rounded-xl bg-cyan-900/50 flex items-center justify-center text-xs text-cyan-400 font-bold border border-cyan-500/30">VIDEO</div>
-                         ) : (
-                            <img referrerPolicy="no-referrer" src={backgroundBase64} className="h-16 w-16 rounded-xl object-cover shadow-lg" alt="Fondo" />
-                         )
-                      ) : (
-                         <div className="h-16 w-16 rounded-xl bg-white/5 flex items-center justify-center text-xs text-gray-500 text-center leading-tight p-1">Por defecto (Admin)</div>
-                      )}
-                      
-                      <div className="flex-1 flex flex-col gap-2">
-                        <div className="relative">
-                          <input
-                            type="file"
-                            accept="image/*,video/*,.gif,.mp4,.webm,.mov"
-                            onChange={(e) => handleImageUpload(e, setBackgroundBase64)}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          />
-                          <button className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-medium transition-colors text-white text-center">
-                            Subir Archivo (GIF, Video, Imagen)
-                          </button>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            const url = window.prompt("Ingresa la URL de una imagen o video (.mp4):");
-                            if (url) setBackgroundBase64(url);
-                          }}
-                          className="w-full py-2 bg-cyan-500/10 hover:bg-cyan-500/20 rounded-xl text-sm font-medium transition-colors text-cyan-400 border border-cyan-500/30 text-center"
-                        >
-                          Usar URL (Imagen/Video)
-                        </button>
-                      </div>
-
-                      {backgroundBase64 && (
-                        <button onClick={() => setBackgroundBase64('')} className="py-2 px-4 h-full bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition-colors self-stretch flex items-center justify-center">
-                           Restablecer
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                <hr className="border-white/5" />
-
-                {/* Bubble Settings */}
-                <div className="space-y-6">
-                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                    <MessageSquare size={16} className="text-cyan-400" />
-                    Personalizar Mi Burbuja de Chat
-                  </h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-400">Color de Fondo</label>
-                        <div className="flex items-center gap-3 bg-black/20 p-2 rounded-xl border border-white/5">
-                           <input 
-                             type="color" 
-                             value={bubbleColor} 
-                             onChange={(e) => setBubbleColor(e.target.value)} 
-                             className="h-8 w-12 bg-transparent border-0 rounded cursor-pointer" 
-                           />
-                           <span className="text-xs text-gray-300 font-mono">{bubbleColor}</span>
-                        </div>
-                     </div>
-                     <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-400">Borde</label>
-                        <select 
-                          value={bubbleBorder} 
-                          onChange={e => setBubbleBorder(e.target.value)} 
-                          className="w-full bg-black/30 p-3 rounded-xl border border-white/10 outline-none text-sm text-white"
-                        >
-                            <option value="border-transparent">Sin Borde</option>
-                            <option value="border-white/10">Sutil Claro</option>
-                            <option value="border-[#5A52A5]/30">Morado Suave</option>
-                            <option value="border-cyan-500">Cyan Neón</option>
-                            <option value="border-pink-500">Rosa Neón</option>
-                            <option value="border-green-500">Verde Esmeralda</option>
-                        </select>
-                     </div>
-                     <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-400">Forma de Esquinas</label>
-                        <select 
-                          value={bubbleShape} 
-                          onChange={e => setBubbleShape(e.target.value)} 
-                          className="w-full bg-black/30 p-3 rounded-xl border border-white/10 outline-none text-sm text-white"
-                        >
-                            <option value="rounded-2xl rounded-tr-sm">Clásico Chat</option>
-                            <option value="rounded-2xl">Suave (2xl)</option>
-                            <option value="rounded-md">Cuadrado (md)</option>
-                            <option value="rounded-full">Píldora (full)</option>
-                            <option value="rounded-tl-2xl rounded-br-2xl rounded-tr-sm rounded-bl-sm">Hoja</option>
-                        </select>
-                     </div>
-                     <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-400">Efecto Visual</label>
-                        <select 
-                          value={bubbleTexture} 
-                          onChange={e => setBubbleTexture(e.target.value)} 
-                          className="w-full bg-black/30 p-3 rounded-xl border border-white/10 outline-none text-sm text-white"
-                        >
-                            <option value="none">Sólido (Liso)</option>
-                            <option value="glass">Cristal (Glassmorphism)</option>
-                            <option value="glow">Resplandor Exterior (Glow)</option>
-                        </select>
-                     </div>
-                  </div>
-
-                  {/* Estilos Temáticos y Animados de Burbujas */}
-                  <div className="space-y-2 mt-4 pt-4 border-t border-white/5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
-                      <Sparkles size={14} className="text-amber-400" />
-                      Estilo Temático de Burbuja (Futuristas, Antiguos & Animaciones)
-                    </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
-                      {[
-                        { id: "futuristic_neon", name: "Cyberpunk Neón 2077", desc: "Pulso neón & glow", icon: "⚡" },
-                        { id: "hologram_scifi", name: "Holograma Sci-Fi", desc: "HUD cian con scanlines", icon: "🛸" },
-                        { id: "matrix_terminal", name: "Matrix Hacker", desc: "Terminal verde fósforo", icon: "💻" },
-                        { id: "vintage_parchment", name: "Pergamino Antiguo", desc: "Papiro retro medieval", icon: "📜" },
-                        { id: "steampunk_bronze", name: "Steampunk Mecánico", desc: "Bronce con remaches", icon: "⚙️" },
-                        { id: "kawaii_pastel", name: "Kawaii Bouncy", desc: "Algodón de azúcar pastel", icon: "✨" },
-                        { id: "glass_crystal", name: "Cristal Prisma", desc: "Hiper-refracción limpia", icon: "💎" },
-                        { id: "comic_popart", name: "Pop-Art Cómic", desc: "Borde de manga con pop", icon: "💥" },
-                        { id: "royal_gold", name: "Oro Real Barroco", desc: "Foil dorado con brillo 24k", icon: "👑" },
-                        { id: "bubble_soap", name: "Burbuja de Jabón", desc: "Tornasol irisado", icon: "🫧" },
-                        { id: "rounded", name: "Cápsula Ultra", desc: "Forma píldora moderna", icon: "💊" },
-                        { id: "default", name: "Moderno Suave", desc: "Limpio y minimalista", icon: "📱" }
-                      ].map((style) => (
-                        <button
-                          key={style.id}
-                          type="button"
-                          onClick={() => setBubbleStyle(style.id)}
-                          className={`p-2.5 rounded-xl border text-left transition-all ${
-                            bubbleStyle === style.id
-                              ? "border-cyan-400 bg-cyan-500/20 shadow-[0_0_12px_rgba(6,182,212,0.4)] ring-1 ring-cyan-400"
-                              : "border-white/10 bg-white/5 hover:bg-white/10"
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className="text-sm">{style.icon}</span>
-                            <span className="text-xs font-bold text-white truncate">{style.name}</span>
-                          </div>
-                          <span className="text-[10px] text-white/50 block truncate">{style.desc}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Audio Visualizer Settings inside Apariencia Tab */}
-                  <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span className="text-cyan-400">♫</span> Audio Visualizer en Mensajes de Voz
-                    </h4>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-white/60 text-xs block mb-1.5 font-medium">Estilo del Visualizador</label>
-                        <select 
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-cyan-500/50 outline-none cursor-pointer"
-                          value={audioVisStyle}
-                          onChange={e => setAudioVisStyle(e.target.value)}
-                        >
-                          <option value="neon_waves">Neon Waves</option>
-                          <option value="cyber_bars">Cyberpunk Bars</option>
-                          <option value="stardust">Stardust Particles</option>
-                          <option value="holographic">Holographic Line</option>
-                        </select>
-                      </div>
-                      
-                      <div className="flex gap-4">
-                        <div className="flex-1">
-                          <label className="text-white/60 text-xs block mb-1.5 font-medium">Color Primario</label>
-                          <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
-                            <input 
-                              type="color" 
-                              className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
-                              value={audioVisColor1}
-                              onChange={e => setAudioVisColor1(e.target.value)}
-                            />
-                            <span className="text-xs font-mono text-gray-300">{audioVisColor1}</span>
-                          </div>
-                        </div>
-                        <div className="flex-1">
-                          <label className="text-white/60 text-xs block mb-1.5 font-medium">Color Secundario</label>
-                          <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
-                            <input 
-                              type="color" 
-                              className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
-                              value={audioVisColor2}
-                              onChange={e => setAudioVisColor2(e.target.value)}
-                            />
-                            <span className="text-xs font-mono text-gray-300">{audioVisColor2}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Preview */}
-                      <div className="p-3 bg-black/40 rounded-xl border border-white/5 flex items-center justify-center h-14 overflow-hidden relative">
-                        <div className="absolute inset-0 opacity-40" style={{ background: `linear-gradient(90deg, ${audioVisColor1}, ${audioVisColor2})`, filter: 'blur(15px)' }}></div>
-                        <div className="text-white/80 z-10 font-mono text-xs tracking-widest uppercase flex items-center gap-2">
-                          <span className="animate-pulse" style={{color: audioVisColor1}}>ılılı</span>
-                          Vista Previa Audio
-                          <span className="animate-pulse" style={{color: audioVisColor2}}>ılılı</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'cuenta' && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-4">
-                  <div className="flex items-center justify-between">
-                     <div>
-                       <h4 className="text-sm font-bold text-white mb-1">Amigos Públicos</h4>
-                       <p className="text-xs text-gray-400">Permite que otros vean tu lista de amigos.</p>
-                     </div>
-                     <button 
-                       onClick={() => setIsFriendsPublic(!isFriendsPublic)} 
-                       className={`relative w-12 h-6 rounded-full transition-colors ${isFriendsPublic ? 'bg-cyan-500' : 'bg-gray-600'}`}
-                     >
-                       <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${isFriendsPublic ? 'translate-x-6' : ''}`} />
-                     </button>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 ${incognito ? "bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]" : "bg-black/40"}`}>
-                            <EyeOff size={24} className={`transition-all duration-300 ${incognito ? "text-white" : "text-gray-500"}`} />
-                        </div>
-                        <div>
-                            <h4 className="text-white font-bold text-sm">Modo Incógnito (Espía)</h4>
-                            <p className="text-xs text-gray-400 mt-1 max-w-[200px]">Desapareces de la lista, solo puedes usar chat privado.</p>
-                        </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={incognito} onChange={toggleIncognito} className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
-                    </label>
-                </div>
-
-
-                <div className="space-y-4 pt-4 border-t border-white/5">
-                   <h4 className="text-sm font-bold text-white flex items-center gap-2">Personalización de Interfaz</h4>
-                   
-                   <div>
-                       <label className="text-xs text-white/70 font-semibold uppercase tracking-wider">Color de Neón Principal</label>
-                       <div className="flex gap-2 mt-2">
-                           <input type="color" className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0" 
-                               defaultValue={localStorage.getItem("chatliz_neon_color") || "#00f3ff"} 
-                               onChange={(e) => {
-                                   localStorage.setItem("chatliz_neon_color", e.target.value);
-                                   window.dispatchEvent(new Event("chatliz_ui_update"));
-                               }} 
-                           />
-                           <label className="flex items-center justify-between bg-black/30 p-2 rounded-lg border border-white/10 flex-1 cursor-pointer">
-                              <span className="text-sm text-white/80 font-bold">Neón Arcoiris (Animado)</span>
-                              <input type="checkbox" defaultChecked={localStorage.getItem("chatliz_rainbow_neon") === "true"} 
-                                  onChange={(e) => {
-                                      localStorage.setItem("chatliz_rainbow_neon", e.target.checked.toString());
-                                      window.dispatchEvent(new Event("chatliz_ui_update"));
-                                  }} 
-                              />
-                           </label>
-                       </div>
-                   </div>
-
-                   <div>
-                       <label className="text-xs text-white/70 font-semibold uppercase tracking-wider">Fondo del Chat (URL)</label>
-                       <input 
-                           type="text" 
-                           placeholder="https://ejemplo.com/fondo.jpg" 
-                           defaultValue={localStorage.getItem("chatliz_chat_bg") || ""}
-                           onChange={(e) => {
-                                localStorage.setItem("chatliz_chat_bg", e.target.value);
-                                window.dispatchEvent(new Event("chatliz_ui_update"));
-                           }}
-                           className="w-full bg-black/30 p-3 mt-1 rounded-xl border border-white/10 focus:border-cyan-400 outline-none text-white transition-colors text-sm"
-                       />
-                       <p className="text-xs text-white/40 mt-1">Este fondo sólo será visible en tu dispositivo.</p>
-                   </div>
-                </div>
-
-                <div className="space-y-3 pt-4 border-t border-white/5">
-                   <div className="flex items-center justify-between">
-                     <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                       <User size={16} className="text-cyan-400" /> Cambiar Nombre de Usuario
-                     </h4>
-                     <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/40 px-2 py-0.5 rounded-full font-bold">
-                       ID Fijo: #{user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000')}
-                     </span>
-                   </div>
-                   
-                   <p className="text-xs text-white/50 leading-relaxed">
-                     Puedes cambiar tu nombre de usuario en cualquier momento. Tu <strong>número de identificación permanente (ID #{user.uid || (user.username.toUpperCase() === 'AXISS' ? '1001' : '1000')})</strong> es único, fijo e inmutable; nunca cambiará y garantiza que tu cuenta y registros sigan protegidos.
-                   </p>
-
-                   <div className="flex flex-col sm:flex-row gap-2">
-                     <input
-                       type="text"
-                       value={newUsernameInput}
-                       onChange={e => setNewUsernameInput(e.target.value)}
-                       placeholder="Nuevo nombre de usuario..."
-                       className="flex-1 bg-black/30 p-3 rounded-xl border border-white/10 focus:border-cyan-400 outline-none text-white transition-colors text-sm"
-                     />
-                     <button
-                       type="button"
-                       disabled={isChangingUsername || newUsernameInput.trim() === user.username}
-                       onClick={handleChangeUsername}
-                       className="px-4 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:hover:bg-cyan-600 text-white rounded-xl font-bold text-sm transition-all whitespace-nowrap shadow-sm"
-                     >
-                       {isChangingUsername ? "Actualizando..." : "Actualizar Nombre"}
-                     </button>
-                   </div>
-
-                   {usernameMsg && (
-                     <div className={`p-3 rounded-xl text-xs font-semibold border ${usernameMsg.error ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
-                       {usernameMsg.text}
-                     </div>
-                   )}
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-white/5">
-                   <h4 className="text-sm font-bold text-white flex items-center gap-2">Cambiar Contraseña</h4>
-                   <input
-                     type="password"
-                     value={password}
-                     onChange={e => setPassword(e.target.value)}
-                     placeholder="Nueva contraseña..."
-                     className="w-full bg-black/30 p-4 rounded-2xl border border-white/10 focus:border-cyan-400 outline-none text-white transition-colors"
-                   />
-                </div>
-
-                {user?.username?.toUpperCase() === 'AXISS' && (
-                   <div className="pt-4 border-t border-white/5">
-                     <button onClick={() => {
-                         const aiUser = usersOnline.find(u => u.username === 'Elizabeth');
-                         setAiProfileForm({ profilePic: aiUser?.profilePic || '', statusMessage: aiUser?.statusMessage || 'IA Asistente virtual', systemInstruction: aiUser?.systemInstruction || '' });
-                         setIsConfigOpen(false);
-                         setAdminConfigAiOpen(true);
-                      }} className="w-full flex items-center justify-center gap-2 text-fuchsia-400 border border-fuchsia-500/30 bg-fuchsia-500/10 p-4 rounded-2xl font-bold hover:bg-fuchsia-500/20 transition-all shadow-[0_0_20px_rgba(217,70,239,0.15)]">
-                        <Bot size={18} /> Configuración Avanzada de Elizabeth
-                     </button>
-                   </div>
                 )}
-                
-                <div className="pt-4">
-                  <button 
-                    onClick={() => {
-                      localStorage.removeItem('chatliz_user');
-                      window.location.reload();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 text-red-400 bg-red-500/10 hover:bg-red-500/20 p-4 rounded-2xl font-bold transition-colors border border-red-500/20"
-                  >
-                    <LogOut size={18} />
-                    Cerrar Sesión Segura
-                  </button>
-                </div>
               </div>
-            )}
-
-            {/* Ajustes / API Keys Tab */}
-            {activeTab === 'apikeys' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="bg-gradient-to-r from-cyan-950/40 to-blue-950/30 border border-cyan-500/30 rounded-2xl p-4">
-                  <div className="flex items-center gap-2 text-cyan-300 font-bold mb-1">
-                    <Globe size={18} className="text-cyan-400" />
-                    Búsqueda Web en Tiempo Real (Tavily AI)
-                  </div>
-                  <p className="text-xs text-gray-300 leading-relaxed">
-                    Permite que Elizabeth acceda a Internet en tiempo real para responder con datos frescos y precisos sobre noticias, deportes, economía, clima, código o búsquedas generales de la web.
-                  </p>
-                </div>
-
-                <div className="space-y-3 bg-black/30 p-5 rounded-2xl border border-white/10">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-white flex items-center gap-2">
-                      <Key size={16} className="text-cyan-400" />
-                      Tavily API Key (Búsqueda Web)
-                    </label>
-                    <a
-                      href="https://tavily.com"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 hover:underline"
-                    >
-                      Obtener clave gratis <ExternalLink size={12} />
-                    </a>
-                  </div>
-
-                  <div className="relative flex items-center">
-                    <input
-                      type={showTavilyKey ? "text" : "password"}
-                      value={tavilyKey}
-                      onChange={(e) => {
-                        setTavilyKey(e.target.value);
-                        setTavilyTestResult(null);
-                      }}
-                      placeholder="tvly-xxxxxxxxxxxxxxxxxxxx"
-                      className="w-full bg-black/50 border border-white/10 focus:border-cyan-400 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none pr-24 font-mono transition-colors"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowTavilyKey(!showTavilyKey)}
-                      className="absolute right-3 text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors"
-                    >
-                      {showTavilyKey ? "Ocultar" : "Mostrar"}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2">
-                    <button
-                      type="button"
-                      disabled={testingTavily || !tavilyKey.trim()}
-                      onClick={async () => {
-                        setTestingTavily(true);
-                        setTavilyTestResult(null);
-                        try {
-                          const res = await searchWeb("noticias de hoy", tavilyKey.trim());
-                          if (res?.results?.length) {
-                            setTavilyTestResult({ text: `✅ ¡Conexión con Tavily confirmada! (${res.results.length} fuentes encontradas)`, error: false });
-                          } else {
-                            setTavilyTestResult({ text: "✅ Clave verificada con éxito.", error: false });
-                          }
-                        } catch (err: any) {
-                          setTavilyTestResult({ text: `❌ ${err.message || "Error al conectar"}`, error: true });
-                        } finally {
-                          setTestingTavily(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs font-semibold text-gray-300 hover:text-white rounded-xl border border-white/10 transition-colors flex items-center gap-1.5"
-                    >
-                      {testingTavily ? (
-                        <>
-                          <RefreshCw size={12} className="animate-spin text-cyan-400" />
-                          Probando...
-                        </>
-                      ) : (
-                        <>
-                          <Globe size={12} className="text-cyan-400" />
-                          Probar Conexión
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        saveTavilyKey(tavilyKey.trim());
-                        setSaveStatus("¡Tavily API Key guardada!");
-                        setTimeout(() => setSaveStatus(null), 3000);
-                      }}
-                      className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-[0_0_12px_rgba(6,182,212,0.4)] flex items-center gap-1.5"
-                    >
-                      <Check size={14} />
-                      Guardar Clave
-                    </button>
-                  </div>
-
-                  {tavilyTestResult && (
-                    <div className={`p-3 rounded-xl text-xs font-medium border mt-2 ${tavilyTestResult.error ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
-                      {tavilyTestResult.text}
-                    </div>
-                  )}
-
-                  <p className="text-[11px] text-gray-500 leading-normal pt-1">
-                    🔒 La clave se almacena de forma segura en tu navegador local (localStorage) y se envía dinámicamente con cada consulta web para responder preguntas en tiempo real.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer Save Button - Clean and non-overlapping */}
-          <div className="p-4 md:p-5 border-t border-white/10 bg-black/40 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-             <div className="text-xs text-gray-400 text-center sm:text-left">
-               {saveStatus ? (
-                 <span className="text-cyan-400 font-bold flex items-center gap-1.5 animate-in fade-in">
-                   <Check size={14} /> {saveStatus}
-                 </span>
-               ) : (
-                 <span>Configuración lista para guardar.</span>
-               )}
-             </div>
-             <button 
-               onClick={handleSaveProfile}
-               className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-2xl font-bold text-sm transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:scale-[1.02] flex items-center justify-center gap-2"
-             >
-               <Check size={16} />
-               Guardar Cambios
-             </button>
-          </div>
+              <label className="block bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl text-center font-bold cursor-pointer transition">
+                Cambiar Fondo
+                <input type="file" accept="image/*,video/*" onChange={(e) => handleFileUpload(e, 'banner')} className="hidden" />
+              </label>
+            </div>
+          )}
         </div>
-        
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-700 flex gap-3 bg-black/30">
+          <button onClick={handleCloseModal} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl font-bold transition cursor-pointer">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3 rounded-xl font-bold disabled:opacity-50 transition cursor-pointer shadow-lg"
+          >
+            {loading ? 'Guardando...' : 'Guardar Cambios'}
+          </button>
+        </div>
       </div>
     </div>
-  );
-}
-
-function TabButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all text-sm whitespace-nowrap md:whitespace-normal
-        ${active 
-          ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' 
-          : 'text-gray-400 hover:bg-white/5 hover:text-gray-200 border border-transparent'
-        }
-      `}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

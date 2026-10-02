@@ -260,6 +260,79 @@ async function callGeminiAi(aiInstance: any, params: any, timeoutMs = 25000): Pr
   throw new Error("No response generated from Gemini");
 }
 
+async function callAI(prompt: string, memory: string[] = [], username?: string): Promise<{ text: string; newMemory?: string }> {
+  const memoryContext = memory && memory.length > 0 ? `\nRecuerdos sobre ${username || 'el usuario'}:\n- ${memory.slice(-20).join("\n- ")}` : '';
+  const systemInstruction = `Eres Elizabeth, la reina y carismática asistente virtual de ChatLiz. Responde de forma cordial, empática, inteligente y concisa en español.${memoryContext}`;
+
+  let replyText = "";
+  try {
+    const aiInstance = getAiInstance();
+    const res = await callGeminiAi(aiInstance, {
+      contents: [
+        { role: "user", parts: [{ text: `${systemInstruction}\n\nMensaje: ${prompt}` }] }
+      ]
+    });
+    replyText = res.text;
+  } catch (err) {
+    try {
+      replyText = await callGroqBackup(`${systemInstruction}\n\nMensaje: ${prompt}`);
+    } catch {
+      replyText = "¡Hola! Estoy experimentando una breve saturación cuántica, pero aquí sigo contigo.";
+    }
+  }
+
+  let newMemory: string | undefined = undefined;
+  const lower = prompt.toLowerCase();
+  if (lower.includes("me llamo") || lower.includes("mi nombre es") || lower.includes("mi cumple") || lower.includes("me gusta") || lower.includes("vivo en") || lower.includes("trabajo en")) {
+    newMemory = `${username || 'Usuario'}: "${prompt.trim().substring(0, 120)}"`;
+  }
+
+  return { text: replyText, newMemory };
+}
+
+async function generateXTTS(text: string): Promise<string | undefined> {
+  try {
+    const cleanText = text.replace(/[*_#`~]/g, '').trim().substring(0, 300);
+    if (!cleanText) return undefined;
+    const wavBuf = await generateXTTSVoice(cleanText, "elizabeth");
+    if (wavBuf && wavBuf.length > 100) {
+      return `data:audio/wav;base64,${wavBuf.toString("base64")}`;
+    }
+  } catch (e) {
+    console.warn("[generateXTTS error]:", e);
+  }
+  return undefined;
+}
+
+async function transcribeAudio(audioBase64: string): Promise<string> {
+  try {
+    const aiInstance = getAiInstance();
+    const result = await aiInstance.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: "audio/webm",
+                data: audioBase64
+              }
+            },
+            {
+              text: "Transcribe exactamente las palabras pronunciadas en este audio en español. Si no se escucha nada claro, devuelve un texto vacío. No agregues comentarios."
+            }
+          ]
+        }
+      ]
+    });
+    return (result.text || "").trim();
+  } catch (err) {
+    console.warn("[transcribeAudio error]:", err);
+    return "Hola Elizabeth";
+  }
+}
+
 let globalAiVoiceConfig: any = null;
 let customRooms: Record<string, any> = {};
 
@@ -952,6 +1025,24 @@ const transporter = nodemailer.createTransport({
   let activeUsers: Record<string, any> = {};
   const chessGames: Record<string, any> = {};
   const poolGames: Record<string, any> = {};
+  let feedPosts: any[] = [
+    {
+      id: "post_sample_elizabeth",
+      author: "Elizabeth",
+      authorAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Elizabeth",
+      authorFrame: "galaxy",
+      content: "¡Bienvenidos a la nueva comunidad y Feed de ChatLiz! 📸 Comparte tus mejores momentos, fotos y pensamientos con nosotros ✨",
+      media: [
+        { type: "image", url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80" }
+      ],
+      likes: ["Axiss"],
+      comments: [
+        { user: "Axiss", text: "¡Gran actualización para la comunidad!", time: Date.now() - 3600000 }
+      ],
+      createdAt: Date.now() - 7200000
+    }
+  ];
+  let userMemories: Record<string, string[]> = {};
   // customRooms declared globally to persist across sessions
   
   // Timer de Limpieza Automática de Salas Comunitarias (cada 60 segundos verifica intervalos 1h, 6h, 24h)
@@ -6379,6 +6470,115 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
       emitActiveUsers();
       callback?.({ success: true, gameId });
     });
+
+    // --- INSTAGRAM FEED SOCKET EVENTS ---
+    socket.on("feed_load_posts", () => {
+      socket.emit("feed_posts", feedPosts);
+    });
+
+    socket.on("feed_create_post", (post: any) => {
+      if (!post || !post.author) return;
+      feedPosts.unshift(post);
+      if (feedPosts.length > 200) feedPosts.pop();
+      io.emit("feed_new_post", post);
+    });
+
+    socket.on("feed_toggle_like", ({ postId, user }: { postId: string, user: string }) => {
+      const post = feedPosts.find(p => p.id === postId);
+      if (!post || !user) return;
+      if (!post.likes) post.likes = [];
+      const idx = post.likes.indexOf(user);
+      if (idx > -1) {
+        post.likes.splice(idx, 1);
+      } else {
+        post.likes.push(user);
+      }
+      io.emit("feed_post_updated", post);
+    });
+
+    socket.on("feed_add_comment", ({ postId, user, text }: { postId: string, user: string, text: string }) => {
+      const post = feedPosts.find(p => p.id === postId);
+      if (!post || !user || !text.trim()) return;
+      if (!post.comments) post.comments = [];
+      post.comments.push({
+        user,
+        text: text.trim(),
+        time: Date.now()
+      });
+      io.emit("feed_post_updated", post);
+    });
+
+    // --- ELIZABETH AI WITH MEMORY & XTTS ---
+    socket.on("elizabeth_load_memory", (data: { user: string }) => {
+      const username = data?.user || currentUsername || "Anon";
+      socket.emit("elizabeth_memory", { memories: userMemories[username] || [] });
+    });
+
+    socket.on("elizabeth_chat", async (data: { user: string, message: string, memory: string[], wantsAudio: boolean }) => {
+      const username = data?.user || currentUsername || "Usuario";
+      const message = data?.message || "";
+      const memory = data?.memory || userMemories[username] || [];
+
+      try {
+        const { text: replyText, newMemory } = await callAI(message, memory, username);
+        if (newMemory) {
+          if (!userMemories[username]) userMemories[username] = [];
+          userMemories[username].push(newMemory);
+          if (userMemories[username].length > 50) userMemories[username].shift();
+        }
+
+        let audioUrl: string | undefined = undefined;
+        if (data.wantsAudio) {
+          audioUrl = await generateXTTS(replyText);
+        }
+
+        socket.emit("elizabeth_response", {
+          response: replyText,
+          audioUrl,
+          newMemory
+        });
+      } catch (err: any) {
+        socket.emit("elizabeth_response", {
+          response: "Disculpa, tuve una breve interferencia. ¿Podrías repetirme eso?",
+        });
+      }
+    });
+
+    socket.on("elizabeth_audio_transcribe", async (data: { user: string, audio: string, memory: string[] }) => {
+      try {
+        const transcription = await transcribeAudio(data.audio);
+        socket.emit("elizabeth_transcription", { transcription });
+      } catch (err: any) {
+        socket.emit("elizabeth_transcription", { transcription: "Hola Elizabeth" });
+      }
+    });
+
+    socket.on("update_profile", async (updates: any) => {
+      if (!currentUsername || !updates) return;
+      if (activeUsers[currentUsername]) {
+        activeUsers[currentUsername] = {
+          ...activeUsers[currentUsername],
+          ...updates,
+          profilePic: updates.avatar || updates.profilePic || activeUsers[currentUsername].profilePic,
+          statusMessage: updates.bio || updates.statusMessage || activeUsers[currentUsername].statusMessage,
+        };
+      }
+      if (fdb) {
+        try {
+          await updateDoc(doc(fdb, "users", currentUsername), updates);
+        } catch (_) {}
+      } else {
+        if (fallbackState.users[currentUsername]) {
+          fallbackState.users[currentUsername] = {
+            ...fallbackState.users[currentUsername],
+            ...updates,
+          };
+          saveFallbackDB();
+        }
+      }
+      emitActiveUsers();
+    });
+
     socket.on("logout", () => {
       if (
         currentUsername &&
