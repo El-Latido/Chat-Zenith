@@ -11,6 +11,8 @@ export interface ProfileConfigModalProps {
   setAdminConfigAiOpen?: (open: boolean) => void;
   usersOnline?: any[];
   onLogout?: () => void;
+  setAiProfileForm?: (form: any) => void;
+  customFrames?: any;
 }
 
 const BUBBLE_STYLES = [

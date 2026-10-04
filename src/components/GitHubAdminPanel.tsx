@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Github, X, Minus, Maximize2, Minimize2, Folder, FileCode, GitCommit, Save, RefreshCw, Lock, Unlock, Search, History } from 'lucide-react';
+import { Github, X, Minus, Maximize2, Minimize2, Folder, FileCode, GitCommit, Save, RefreshCw, Lock, Unlock, Search, History, Sparkles } from 'lucide-react';
 
 interface GitHubAdminPanelProps {
   onClose: () => void;
   currentUser: { username: string; isAdmin?: boolean };
+  initialFile?: string;
+  initialContent?: string;
+  initialCommitMessage?: string;
+  onClearStaged?: () => void;
 }
 
 interface FileNode {
@@ -23,11 +27,19 @@ const REPO_NAME = 'Chat-Zenith8';
 const DEFAULT_BRANCH = 'main';
 const TOKEN_STORAGE_KEY = 'chatliz_github_token';
 
-export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps) {
-  if (!currentUser.isAdmin) {
+export function GitHubAdminPanel({ 
+  onClose, 
+  currentUser,
+  initialFile,
+  initialContent,
+  initialCommitMessage,
+  onClearStaged
+}: GitHubAdminPanelProps) {
+  const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem(TOKEN_STORAGE_KEY));
+  if (!currentUser.isAdmin && !hasToken && !initialContent) {
     return (
       <div className="fixed bottom-4 right-4 bg-red-900 text-white p-4 rounded-lg shadow-xl z-50">
-        ⛔ Acceso denegado: Solo administradores.
+        ⛔ Acceso denegado: Se requieren permisos de administrador o Token de GitHub.
       </div>
     );
   }
@@ -36,10 +48,20 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
   const [tempToken, setTempToken] = useState('');
   const [isLocked, setIsLocked] = useState(!!localStorage.getItem(TOKEN_STORAGE_KEY));
   const [files, setFiles] = useState<FileNode[]>([]);
-  const [selectedFile, setSelectedFile] = useState('');
-  const [fileContent, setFileContent] = useState('');
-  const [commitMessage, setCommitMessage] = useState('');
+  const [selectedFile, setSelectedFile] = useState(initialFile || '');
+  const [fileContent, setFileContent] = useState(initialContent || '');
+  const [commitMessage, setCommitMessage] = useState(initialCommitMessage || '');
+  const [isStagedByElizabeth, setIsStagedByElizabeth] = useState(Boolean(initialContent));
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialFile) setSelectedFile(initialFile);
+    if (initialContent !== undefined) {
+      setFileContent(initialContent);
+      setIsStagedByElizabeth(true);
+    }
+    if (initialCommitMessage !== undefined) setCommitMessage(initialCommitMessage);
+  }, [initialFile, initialContent, initialCommitMessage]);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info'; msg: string } | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -150,12 +172,26 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
 
     setLoading(true);
     try {
-      const fileRes = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}?ref=${currentBranch}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const fileData = await fileRes.json();
-      const sha = fileData.sha;
+      let sha: string | undefined = undefined;
+      try {
+        const fileRes = await fetch(
+          `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}?ref=${currentBranch}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (fileRes.ok) {
+          const fileData = await fileRes.json();
+          sha = fileData.sha;
+        }
+      } catch (checkErr) {
+        console.warn("[GitHub SHA Check Warning]:", checkErr);
+      }
+
+      const bodyPayload: any = {
+        message: commitMessage,
+        content: btoa(unescape(encodeURIComponent(fileContent))),
+        branch: currentBranch,
+      };
+      if (sha) bodyPayload.sha = sha;
 
       const updateRes = await fetch(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}`,
@@ -165,12 +201,7 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            message: commitMessage,
-            content: btoa(unescape(encodeURIComponent(fileContent))),
-            sha,
-            branch: currentBranch,
-          }),
+          body: JSON.stringify(bodyPayload),
         }
       );
 
@@ -181,6 +212,8 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
 
       showStatus('success', `✅ Commit exitoso: "${commitMessage}"`);
       setCommitMessage('');
+      setIsStagedByElizabeth(false);
+      onClearStaged?.();
       loadCommitHistory();
     } catch (e: any) {
       showStatus('error', e.message);
@@ -440,6 +473,36 @@ export function GitHubAdminPanel({ onClose, currentUser }: GitHubAdminPanelProps
           </div>
 
           <div className="flex-1 flex flex-col">
+            {isStagedByElizabeth && (
+              <div className="bg-gradient-to-r from-purple-950 via-purple-900 to-pink-950 border-b border-purple-500/50 p-2.5 px-4 flex items-center justify-between text-xs text-purple-200">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={16} className="text-pink-400 animate-pulse shrink-0" />
+                  <div>
+                    <span className="font-bold text-white">✨ Código preparado por Elizabeth para:</span> <span className="font-mono text-cyan-300 font-semibold">{selectedFile || initialFile}</span>
+                    <span className="text-gray-300 ml-2 hidden sm:inline">Corrobora el código y pulsa "Commit y Push" para guardarlo en el repositorio.</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={commitAndPush}
+                    disabled={loading}
+                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold flex items-center gap-1 shadow cursor-pointer text-xs"
+                  >
+                    <GitCommit size={14} /> Commit y Push
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsStagedByElizabeth(false);
+                      onClearStaged?.();
+                    }}
+                    className="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded cursor-pointer text-xs"
+                    title="Descartar propuesta de Elizabeth"
+                  >
+                    Descartar
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="bg-gray-800 border-b border-gray-700 p-2 flex items-center gap-2">
               <input
                 type="text"

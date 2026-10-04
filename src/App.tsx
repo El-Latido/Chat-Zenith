@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, VolumeX, Clock, Sparkles, Key, Sliders, BookOpen, Github } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, VolumeX, Clock, Sparkles, Key, Sliders, BookOpen, Github, GitCommit } from "lucide-react";
 import { 
   speakElizabethMessage, 
   stopSpeaking, 
@@ -882,6 +882,72 @@ function MainApp() {
   const [isTavilyModalOpen, setIsTavilyModalOpen] = useState(false);
   const [isGitHubAdminOpen, setIsGitHubAdminOpen] = useState(false);
   const [showGitHubPanel, setShowGitHubPanel] = useState(false);
+  const [gitHubStagedFile, setGitHubStagedFile] = useState<string>("");
+  const [gitHubStagedContent, setGitHubStagedContent] = useState<string>("");
+  const [gitHubStagedCommitMsg, setGitHubStagedCommitMsg] = useState<string>("");
+
+  const parseElizabethCodeProposal = (text: string): { filePath: string; code: string; commitMessage: string } | null => {
+    if (!text) return null;
+
+    // 1. Tag explícito: [GITHUB_STAGE:{"file":"...","commit":"..."}]
+    const tagMatch = text.match(/\[GITHUB_STAGE:(\{.*?\})\]/s);
+    if (tagMatch) {
+      try {
+        const data = JSON.parse(tagMatch[1]);
+        if (data.file) {
+          let code = data.code;
+          if (!code) {
+            const codeBlock = text.match(/```(?:tsx?|jsx?|typescript|javascript|html|css)?\s*([\s\S]*?)```/);
+            code = codeBlock ? codeBlock[1].trim() : '';
+          }
+          return {
+            filePath: data.file,
+            code: code || '',
+            commitMessage: data.commit || `update: cambios en ${data.file}`,
+          };
+        }
+      } catch (_) {}
+    }
+
+    // 2. Encabezado de archivo en código: // File: <filepath>
+    const fileHeaderMatch = text.match(/(?:\/\/|#|\/\*|<!--)\s*File:\s*([a-zA-Z0-9_.\-\/]+\.[a-zA-Z0-9]+)/i);
+    if (fileHeaderMatch) {
+      const filePath = fileHeaderMatch[1].trim();
+      const codeBlockMatch = text.match(/```(?:tsx?|jsx?|typescript|javascript|html|css|json)?\s*([\s\S]*?)```/);
+      const code = codeBlockMatch ? codeBlockMatch[1].trim() : text;
+      return {
+        filePath,
+        code,
+        commitMessage: `feat: actualizar ${filePath.split('/').pop() || filePath}`,
+      };
+    }
+
+    // 3. Bloque de código si se menciona GitHub, commit, panel o icono
+    const genericCodeMatch = text.match(/```(?:tsx?|jsx?|typescript|javascript)?\s*([\s\S]*?)```/);
+    if (genericCodeMatch && (text.toLowerCase().includes('github') || text.toLowerCase().includes('commit') || text.toLowerCase().includes('icono') || text.toLowerCase().includes('panel'))) {
+      let guessedFile = 'src/App.tsx';
+      if (text.toLowerCase().includes('instagram') || text.toLowerCase().includes('feed')) {
+        guessedFile = 'src/components/InstagramFeed.tsx';
+      } else if (text.toLowerCase().includes('radio')) {
+        guessedFile = 'src/components/RadioPlayerModal.tsx';
+      }
+      return {
+        filePath: guessedFile,
+        code: genericCodeMatch[1].trim(),
+        commitMessage: `update: cambios preparados por Elizabeth en ${guessedFile}`,
+      };
+    }
+
+    return null;
+  };
+
+  const handleOpenStagedCodeInGitHub = (filePath: string, code: string, commitMsg: string) => {
+    setGitHubStagedFile(filePath);
+    setGitHubStagedContent(code);
+    setGitHubStagedCommitMsg(commitMsg);
+    setShowGitHubPanel(true);
+    addSystemToast(`🚀 Código preparado para ${filePath}. Corrobora el código y pulsa 'Commit y Push'.`, "Elizabeth");
+  };
   const [poolGame, setPoolGame] = useState<{
     gameId: string;
     opponent: any;
@@ -901,28 +967,21 @@ function MainApp() {
     }
   };
 
-  const armElizabethWatchdog = () => {
+  const armElizabethWatchdog = (durationMs = 40000) => {
     clearElizabethWatchdog();
     elizabethMonitorTimeoutRef.current = setTimeout(() => {
-      console.warn("⚠️ Watchdog: Elizabeth no respondió en 5 segundos. Forzando reconexión al socket...");
-      addSystemToast("⚡ Monitoreo de Elizabeth: Sin respuesta > 5s. Reanudando conexión cuántica con el servidor...", "Elizabeth");
+      console.warn("⚠️ Watchdog: Elizabeth tardó en responder. Verificando estado del socket...");
       if (socket) {
-        if (socket.connected) {
-          socket.emit("ping_elizabeth", { user: user.username });
-          socket.disconnect();
-          setTimeout(() => {
-            socket.connect();
-            addSystemToast("✨ Conexión con Elizabeth restablecida con éxito.", "Elizabeth");
-          }, 600);
-        } else {
+        if (!socket.connected) {
           socket.connect();
+          addSystemToast("✨ Reconectando con Elizabeth...", "Elizabeth");
+        } else {
+          socket.emit("ping_elizabeth", { user: user.username });
         }
       }
-    }, 5000);
+    }, durationMs);
   };
-  const [isWebSearchActive, setIsWebSearchActive] = useState(() => {
-    return localStorage.getItem("chatliz_auto_web_search") !== "false";
-  });
+  const [isWebSearchActive, setIsWebSearchActive] = useState(false);
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStream, setRecordingStream] = useState<MediaStream | null>(
@@ -2097,6 +2156,8 @@ function MainApp() {
 
     socket.on("elizabeth_searching_web", () => {
       setIsSearchingWeb(true);
+      clearElizabethWatchdog();
+      armElizabethWatchdog(45000);
     });
     socket.on("stop_typing", () => {
       setIsSearchingWeb(false);
@@ -2104,6 +2165,7 @@ function MainApp() {
     socket.on("typing", (data: { username: string; chat: string }) => {
       if (data.username === "Elizabeth") {
         clearElizabethWatchdog();
+        armElizabethWatchdog(45000);
       }
       const targetChat =
         data.chat === user.username ? data.username : data.chat;
@@ -2811,14 +2873,17 @@ function MainApp() {
     const msgId =
       Date.now().toString() + Math.random().toString(36).substr(2, 5);
     const userTavilyKey = getSavedTavilyKey();
-    const shouldSearchWeb = isWebSearchActive || Boolean(userTavilyKey && requiresWebSearch(inputValue));
+    const userGithubToken = localStorage.getItem("chatliz_github_token") || "";
+    const isCode = /\b(c[oó]digo|programar|programaci[oó]n|funci[oó]n|componente|icono|bot[oó]n|header|panel|github|commit|c[oó]mming|push|repertorio|repositorio|qu[ií]tame|agr[eé]game)\b/i.test(inputValue);
+    const shouldSearchWeb = !isCode && (isWebSearchActive || requiresWebSearch(inputValue));
     const payload: any = { 
       text: inputValue, 
       id: msgId,
       tavilyKey: userTavilyKey,
+      githubToken: userGithubToken,
       webSearch: shouldSearchWeb
     };
-    if (shouldSearchWeb && userTavilyKey && (activeChat === "global" || activeChat === "Elizabeth")) {
+    if (shouldSearchWeb && (activeChat === "global" || activeChat === "Elizabeth")) {
       setIsSearchingWeb(true);
     }
     if (selectedImage) payload.image = selectedImage;
@@ -4380,6 +4445,46 @@ function MainApp() {
                                       </div>
                                     )}
 
+                                    {/* Elizabeth GitHub Code Proposal & Direct Commit Staging Card */}
+                                    {isLiz && (() => {
+                                      const proposal = parseElizabethCodeProposal(m.text || "");
+                                      if (!proposal) return null;
+                                      return (
+                                        <div className="mt-3 p-3 bg-gradient-to-r from-purple-950/80 via-slate-900/95 to-pink-950/80 border border-purple-500/50 rounded-2xl flex flex-col gap-2.5 shadow-2xl animate-in fade-in slide-in-from-bottom-2">
+                                          <div className="flex items-center justify-between gap-2 border-b border-purple-500/30 pb-2">
+                                            <div className="flex items-center gap-2">
+                                              <Github size={18} className="text-purple-400 shrink-0" />
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-xs font-bold text-white tracking-wide">Código preparado por Elizabeth</span>
+                                                <span className="text-[11px] font-mono bg-purple-500/30 text-cyan-300 px-2 py-0.5 rounded border border-purple-500/40">
+                                                  {proposal.filePath}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/40 shrink-0">
+                                              ✓ Listo para Commit
+                                            </span>
+                                          </div>
+                                          <div className="bg-black/60 p-2 rounded-xl border border-white/10 text-xs text-gray-300 font-mono flex items-center justify-between gap-2">
+                                            <span className="truncate">💬 {proposal.commitMessage}</span>
+                                            <span className="text-[10px] text-gray-500 font-normal shrink-0">main</span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenStagedCodeInGitHub(proposal.filePath, proposal.code, proposal.commitMessage);
+                                            }}
+                                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-[0_0_18px_rgba(168,85,247,0.4)] transition-all active:scale-95 cursor-pointer border border-white/20"
+                                          >
+                                            <Sparkles size={15} className="text-yellow-300 animate-pulse" />
+                                            <span>Abrir en Panel de GitHub y Revisar Código</span>
+                                            <GitCommit size={15} className="text-emerald-300" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })()}
+
                                     {/* Reproductor de audio SÓLO para notas de voz humanas (NUNCA para mensajes de Elizabeth o IA) */}
                                     {!isLiz && !m.isAi && m.sender !== "Elizabeth" && m.sender?.toLowerCase() !== "elizabeth" && !["Sensei", "Shadow", "Neko"].includes(m.sender) && !(AI_CHARACTERS as any)[m.sender] && (m.type === "audio" || m.audio) && (
                                       <div className="w-full mt-1.5">
@@ -4563,12 +4668,12 @@ function MainApp() {
                     <button
                       type="button"
                       onClick={() => {
-                        const key = getSavedTavilyKey();
-                        if (!key) {
-                          setIsTavilyModalOpen(true);
-                        } else {
-                          setIsWebSearchActive(prev => !prev);
-                        }
+                        setIsWebSearchActive(prev => {
+                          const next = !prev;
+                          localStorage.setItem("chatliz_auto_web_search", next ? "true" : "false");
+                          addSystemToast(next ? "🌐 Búsqueda Web y de Videos ACTIVA para Elizabeth." : "🌐 Búsqueda Web desactivada.", "Elizabeth");
+                          return next;
+                        });
                       }}
                       onContextMenu={(e) => {
                         e.preventDefault();
@@ -4581,8 +4686,8 @@ function MainApp() {
                       }`}
                       title={
                         isWebSearchActive
-                          ? "Búsqueda Web en Tiempo Real ACTIVA (clic derecho para configurar API Key)"
-                          : "Activar Búsqueda Web en Tiempo Real con Tavily AI"
+                          ? "Búsqueda Web y de Videos ACTIVA en tiempo real (clic para alternar, clic derecho para API Key de Tavily)"
+                          : "Clic para activar Búsqueda Web y Videos en tiempo real (clic derecho para API Key)"
                       }
                     >
                       <Globe size={22} />
@@ -6223,6 +6328,14 @@ function MainApp() {
             setIsGitHubAdminOpen(false);
           }}
           currentUser={{ ...user, isAdmin: isUserAdmin || user.isAdmin }}
+          initialFile={gitHubStagedFile}
+          initialContent={gitHubStagedContent}
+          initialCommitMessage={gitHubStagedCommitMsg}
+          onClearStaged={() => {
+            setGitHubStagedFile("");
+            setGitHubStagedContent("");
+            setGitHubStagedCommitMsg("");
+          }}
         />
       )}
 

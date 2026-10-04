@@ -123,44 +123,29 @@ export async function searchWeb(query: string, apiKey: string): Promise<TavilySe
 }
 
 /**
- * Detecta si un mensaje del usuario probablemente requiere información actualizada de Internet.
+ * Detecta si un mensaje del usuario solicita explícitamente una búsqueda web en tiempo real.
  */
 export function requiresWebSearch(text: string): boolean {
   if (!text) return false;
-  const lower = text.toLowerCase();
+  const lower = text.toLowerCase().trim();
 
-  // Comandos explícitos de búsqueda
-  if (/\b(busca|buscar|búscame|investiga|googlea|consulta en internet|búsqueda web)\b/i.test(lower)) {
+  // Comandos explícitos de búsqueda web
+  if (/\b(busca en (?:la )?web|buscar en (?:la )?web|b\u00FAsqueda web|investiga en internet|googlea|consulta en internet|busca en google)\b/i.test(lower)) {
     return true;
   }
 
-  // Noticias y actualidad
-  if (/\b(noticias?|actualidad|últimas noticias|última hora|hoy|reciente|sucedió hoy|pasó hoy|este año)\b/i.test(lower)) {
+  // Búsqueda explícita de noticias en tiempo real
+  if (/\b(noticias? de hoy|últimas noticias de|noticias recientes de)\b/i.test(lower)) {
     return true;
   }
 
-  // Clima y meteorología
-  if (/\b(clima|temperatura|pronóstico|va a llover|tiempo en|grados hace)\b/i.test(lower)) {
+  // Clima o pronóstico específico
+  if (/\b(clima de hoy|pronóstico del tiempo|va a llover hoy en|tiempo en [a-záéíóúñ]+)\b/i.test(lower)) {
     return true;
   }
 
-  // Deportes y resultados
-  if (/\b(partido|resultado|campeonato|champions|mundial|tabla de posiciones|quién ganó|gol de|fútbol|baloncesto|nba|f1)\b/i.test(lower)) {
-    return true;
-  }
-
-  // Economía y mercados
-  if (/\b(precio del?|cotización|bitcoin|btc|ethereum|cripto|dólar|euro|bolsa|acciones de|inflación)\b/i.test(lower)) {
-    return true;
-  }
-
-  // Tecnología y versiones
-  if (/\b(nueva versión de|cuándo sale|lanzamiento|última actualización|changelog)\b/i.test(lower)) {
-    return true;
-  }
-
-  // Hora exacta y huso horario
-  if (/\b(hora es en|qué hora tiene|hora actual en)\b/i.test(lower)) {
+  // Cotizaciones en tiempo real
+  if (/\b(precio de bitcoin hoy|precio del dólar hoy|cotización de bitcoin|cotización del dólar)\b/i.test(lower)) {
     return true;
   }
 

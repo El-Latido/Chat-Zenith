@@ -249,11 +249,17 @@ async function callGeminiAi(aiInstance: any, params: any, timeoutMs = 25000): Pr
     console.warn("[Gemini Main Instance Warning]:", mainErr?.message || mainErr);
     // Intento con modelo alternativo compatible antes de fallar
     try {
-      const proResult: any = await withTimeout(aiInstance.models.generateContent({ ...cleanParams, model: "gemini-2.5-pro" }), timeoutMs);
+      const retryParams = { ...cleanParams, model: "gemini-flash-latest" };
+      // Si falló por herramientas de búsqueda, intentar sin tools
+      if (retryParams.config?.tools) {
+        retryParams.config = { ...retryParams.config };
+        delete retryParams.config.tools;
+      }
+      const proResult: any = await withTimeout(aiInstance.models.generateContent(retryParams), timeoutMs);
       const proText = typeof proResult?.text === "function" ? proResult.text() : (proResult?.text || "");
       if (proText) return { text: proText };
     } catch (proErr) {
-      console.warn("[Gemini Pro Fallback Warning]:", proErr);
+      console.warn("[Gemini Fallback Warning]:", proErr);
     }
     throw mainErr;
   }
@@ -266,7 +272,7 @@ async function callAI(prompt: string, memory: string[] = [], username?: string):
 
   let replyText = "";
   try {
-    const aiInstance = getAiInstance();
+    const aiInstance = getEffectiveAiClient();
     const res = await callGeminiAi(aiInstance, {
       contents: [
         { role: "user", parts: [{ text: `${systemInstruction}\n\nMensaje: ${prompt}` }] }
@@ -275,7 +281,8 @@ async function callAI(prompt: string, memory: string[] = [], username?: string):
     replyText = res.text;
   } catch (err) {
     try {
-      replyText = await callGroqBackup(`${systemInstruction}\n\nMensaje: ${prompt}`);
+      const groqRes = await callGroqAi({ contents: `${systemInstruction}\n\nMensaje: ${prompt}` });
+      replyText = groqRes.text;
     } catch {
       replyText = "¡Hola! Estoy experimentando una breve saturación cuántica, pero aquí sigo contigo.";
     }
@@ -306,7 +313,7 @@ async function generateXTTS(text: string): Promise<string | undefined> {
 
 async function transcribeAudio(audioBase64: string): Promise<string> {
   try {
-    const aiInstance = getAiInstance();
+    const aiInstance = getEffectiveAiClient();
     const result = await aiInstance.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [
@@ -392,8 +399,14 @@ async function initAiRuntimeConfig() {
       if (saved.groqBackupName) aiRuntimeConfig.groqBackupName = saved.groqBackupName;
       if (saved.geminiKey !== undefined) aiRuntimeConfig.geminiKey = saved.geminiKey;
       if (saved.preferredProvider) {
-        aiRuntimeConfig.preferredProvider = saved.preferredProvider;
-        primaryAiProvider = saved.preferredProvider;
+        const groqValid = typeof saved.groqBackupKey === "string" && saved.groqBackupKey.startsWith("gsk_") && saved.groqBackupKey.length > 25;
+        if (saved.preferredProvider === "groq" && !groqValid) {
+          aiRuntimeConfig.preferredProvider = "gemini";
+          primaryAiProvider = "gemini";
+        } else {
+          aiRuntimeConfig.preferredProvider = saved.preferredProvider;
+          primaryAiProvider = saved.preferredProvider;
+        }
       }
       console.log("Configuración de tokens IA cargada desde base de datos:", {
         groqBackupName: aiRuntimeConfig.groqBackupName,
@@ -600,10 +613,142 @@ async function performTavilySearch(query: string, apiKey: string) {
   }
 }
 
-function checkRequiresWebSearch(text: string): boolean {
+function isProgrammingOrCodeQuery(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase();
-  return /\b(busca|buscar|búscame|investiga|noticias?|actualidad|hoy|clima|temperatura|tiempo en|partido|resultado|campeonato|champions|mundial|fútbol|precio del?|cotización|bitcoin|btc|dólar|euro|versión|cuándo sale|hora es en)\b/i.test(lower);
+  return /\b(c[oó]digo|programar|programaci[oó]n|funci[oó]n|funciones|componente|componentes|icono|iconos|bot[oó]n|botones|header|navbar|panel|github|commit|comit|c[oó]mming|push|repertorio|repositorio|dise[ñn]o|interfaz|p[aá]gina|sitio|app|react|ts|tsx|css|html|script|desarrollo|qu[ií]tame|agr[eé]game|crear|modificar|arreglar|editar)\b/i.test(lower);
+}
+
+function checkRequiresWebSearch(text: string): boolean {
+  if (!text) return false;
+  if (isProgrammingOrCodeQuery(text)) return false;
+  const lower = text.toLowerCase();
+  return /\b(busca en (?:la )?web|buscar en (?:la )?web|b\u00FAsqueda web|investiga en internet|googlea|consulta en internet|busca en google|noticias? de hoy|clima de hoy|precio de bitcoin|precio del d\u00F3lar)\b/i.test(lower);
+}
+
+function checkRequiresVideoSearch(text: string): boolean {
+  if (!text) return false;
+  if (isProgrammingOrCodeQuery(text)) return false;
+  const lower = text.toLowerCase();
+  // Only trigger if user explicitly asks to search/find/watch/play YouTube videos or music
+  const hasVideoIntent = /\b(busca|buscar|encuentra|encu[eé]ntrame|pon|reproduce|ver|mirar|mostrar|dame|pasa(?:me)?)\s+(?:videos?|videoclips?|cancion(?:es)?|m[uú]sica)\b/i.test(lower);
+  const hasYouTubeExplicit = /\b(enlace de youtube|link de youtube|videos? en youtube|buscar en youtube)\b/i.test(lower);
+  const hasArtistVideo = /\bvideos?\s+de\s+[a-z0-9_-]+/i.test(lower);
+  return hasVideoIntent || hasYouTubeExplicit || hasArtistVideo;
+}
+
+function extractVideoSearchQuery(text: string): string {
+  if (!text) return "";
+  let clean = text
+    .replace(/@?(elizabeth|liz|eli)\b/gi, "")
+    .replace(/\b(por favor|puedes|buscar|busca|búscame|dime|encuéntrame|pon|reproduce|ver|mirar|en la web|en internet|en youtube|web|google)\b/gi, "")
+    .replace(/\b(videos?\s+de|video\s+de|videos?|videoclips?|clips?)\b/gi, "")
+    .replace(/[¿?¡!.,:;]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean || text.trim();
+}
+
+const ELIZABETH_GITHUB_AND_APP_CONTEXT = `
+CONOCIMIENTO Y CONTROL INTEGRAL DEL REPOSITORIO Y DE LA APLICACIÓN CHATLIZ:
+- Eres la administradora y desarrolladora cuántica de ChatLiz. Tu repositorio oficial en GitHub es: "El-Latido/Chat-Zenith8" (rama principal: "main").
+- Tienes acceso al token y al repertorio de GitHub del usuario. Cuando el usuario te pida un código, forma de programar, agregar una función, crear un componente, modificar el código o quitar/agregar un icono de la interfaz, comprendes exactamente cómo está estructurado el proyecto y cómo se ve visualmente la aplicación:
+  * Archivo central de la interfaz, barra superior y barra de entrada: "src/App.tsx".
+  * Componentes principales en "src/components/":
+    - "src/components/GitHubAdminPanel.tsx": Panel de GitHub donde se gestionan los commits, se edita código y se hace commit/push directo a "El-Latido/Chat-Zenith8".
+    - "src/components/InstagramFeed.tsx": Feed social tipo Instagram con fotos, videos, canciones de fondo, likes y comentarios.
+    - "src/components/ActiveCallModal.tsx" y "CallModal.tsx": Llamadas de voz y videollamadas con WebRTC y síntesis de voz.
+    - "src/components/RadioPlayerModal.tsx": Reproductor de radio online y emisoras.
+    - "src/components/AdminPanelModal.tsx" y "AdminConfigAiModal.tsx": Configuración de sala, usuarios y parámetros de IA.
+    - "src/components/PoolGameModal.tsx" y "ChessModal.tsx": Minijuegos en vivo (Pool 8-Ball, Ajedrez).
+  * Iconos en la Barra Superior (Header de ChatLiz):
+    - Botón de Menú/Sidebar (<Menu />)
+    - Botón Oculto de Administrador (<ShieldAlert />)
+    - Botón de GitHub Admin (<Github />)
+    - Botón de Modo Lectura (<BookOpen />)
+    - Calendario (<Calendar />)
+    - Buzón de Mensajes y Menciones (<MessageSquare />)
+    - Amigos y Solicitudes (<UserPlus />)
+    - Notificaciones de Likes/Mensajes (<Bell />)
+    - Avatar y perfil de usuario (<User />)
+  * Iconos en la Barra de Entrada (Input Bar inferior):
+    - Selector de Emojis y GIFs (<Smile />)
+    - Interruptor de Búsqueda Web (<Globe />)
+    - Modulador de Voz AudioContext (<Sliders />)
+    - Campo de texto para escribir mensaje
+    - Grabar audio de voz con micrófono (<Mic />)
+    - Botón de Enviar mensaje (<Send />)
+    - Barra inferior de Radio: Reproducir/Pausar (<Play /> / <Pause />), Historial MP3 (<RotateCcw />), Modo bucle (<Repeat />)
+
+CÓMO PREPARAR CÓDIGO PARA COMMIT EN GITHUB:
+- Cuando el usuario te pida: "quítame un icono", "agrégame un icono", "agrega una función", "dame un código", o cualquier cambio de programación:
+  1. Identifica el archivo exacto donde debe realizarse el cambio (por ejemplo, "src/App.tsx" o el componente adecuado).
+  2. Proporciona el código limpio y listo para usar dentro de un bloque de código markdown, incluyendo en la primera línea exactamente: "// File: <ruta_del_archivo>".
+  3. Al final de tu mensaje o junto al código, incluye la directiva estructurada:
+     [GITHUB_STAGE:{"file":"<ruta_del_archivo>","commit":"<mensaje claro de commit en español>"}]
+  4. Explica con entusiasmo y claridad qué cambios hiciste, y dile al usuario que ya le has preparado el código en el panel de GitHub y que solo debe corroborarlo y pulsar "Commit y Push" (o "Commit") para aplicarlo a su repositorio.
+
+DIRECTIVA CONVERSACIONAL Y DE BÚSQUEDA WEB:
+- Si el usuario simplemente te saluda, te llama por tu nombre ("Elizabeth", "Eli"), te hace una pregunta general, te pide un consejo, charla contigo o te pide código:
+  NUNCA busques en la web ni en YouTube. Responde directamente con tu inteligencia, carisma y simpatía.
+- Solo debes buscar en YouTube si el usuario te pide explícitamente ver, buscar o reproducir videos o canciones.
+- Solo debes buscar en la web si el usuario te pide explícitamente "busca en la web", "busca en google", o datos de noticias/clima en tiempo real.
+- NUNCA respondas con frases vacías como "perdón que me decías" o "¿qué videos quieres buscar?". Si te saludan o te llaman, diles "¡Hola! Aquí estoy a tu lado, dime en qué puedo ayudarte hoy ✨".`;
+
+function getRepositoryFileContext(text: string): string {
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  
+  if (lower.includes("icono") || lower.includes("iconos") || lower.includes("header") || lower.includes("navbar") || lower.includes("barra")) {
+    return `\n[CONTEXTO DEL REPOSITORIO - src/App.tsx]:
+Los iconos del Header en src/App.tsx son:
+- ShieldAlert (Admin Panel): <ShieldAlert size={19} className="text-red-400 animate-pulse" />
+- Github (GitHub Admin): <Github size={16} /> (botón con texto "GitHub" que abre setShowGitHubPanel(true))
+- BookOpen (Modo Lectura): <BookOpen size={20} className="text-cyan-400" /> (abre setIsReadingMode(true))
+- Calendar: <Calendar size={22} />
+- MessageSquare (Buzón): <MessageSquare size={22} /> (abre setIsMailboxModalOpen(true))
+- UserPlus (Amigos): <UserPlus size={22} /> (abre setIsFriendsModalOpen(true))
+- Bell (Notificaciones): <Bell size={22} /> (abre setIsNotificationBellOpen(true))
+- User (Config Perfil): <User size={18} /> (abre setIsConfigOpen(true))
+Los iconos de la Barra de Entrada (Input Bar) son:
+- Smile (Emojis/GIFs): <Smile size={24} />
+- Globe (Búsqueda Web): <Globe size={22} />
+- Sliders (Modulador de Voz): <Sliders size={21} />
+- Mic (Micrófono): <Mic size={22} />
+- Send (Enviar mensaje): <Send size={24} />
+- Play/Pause (Radio): <Play size={22} /> / <Pause size={22} />
+- RotateCcw (Historial MP3): <RotateCcw size={22} />
+- Repeat (Modo bucle): <Repeat size={22} />
+Si el usuario te pide quitar un icono, prepara el archivo src/App.tsx o el componente correspondiente con // File: src/App.tsx y el tag [GITHUB_STAGE:{"file":"src/App.tsx","commit":"remover icono de..."}].
+Si te pide agregar un icono, usa un icono válido de 'lucide-react' con estilo Tailwind.\n`;
+  }
+
+  if (lower.includes("instagram") || lower.includes("feed")) {
+    return `\n[CONTEXTO DEL REPOSITORIO - src/components/InstagramFeed.tsx]:
+El componente InstagramFeed.tsx implementa el feed social de ChatLiz con posts, subida de fotos/videos, likes en tiempo real y comentarios.
+El archivo objetivo es: "src/components/InstagramFeed.tsx".\n`;
+  }
+
+  return "";
+}
+
+async function searchYouTubeVideos(query: string, maxResults = 4): Promise<Array<{ title: string; url: string; duration: string; views?: number; thumbnail?: string }>> {
+  const cleanTerm = (query || "").trim();
+  if (!cleanTerm) return [];
+  try {
+    const res = await ytSearch(cleanTerm);
+    if (!res || !Array.isArray(res.videos)) return [];
+    return res.videos.slice(0, maxResults).map((v) => ({
+      title: v.title,
+      url: v.url,
+      duration: v.timestamp || "",
+      views: v.views,
+      thumbnail: v.thumbnail || v.image
+    }));
+  } catch (err) {
+    console.warn("[ytSearch Video Search Warning]:", err);
+    return [];
+  }
 }
 
 async function startServer() {
@@ -5025,6 +5170,89 @@ ${msg.text}`,
       ) {
         triggerElizabeth = true;
       }
+const ELIZABETH_GITHUB_AND_APP_CONTEXT = `
+CONOCIMIENTO Y CONTROL INTEGRAL DEL REPOSITORIO Y DE LA APLICACIÓN CHATLIZ:
+- Eres la administradora y desarrolladora cuántica de ChatLiz. Tu repositorio oficial en GitHub es: "El-Latido/Chat-Zenith8" (rama principal: "main").
+- Tienes acceso al token y al repertorio de GitHub del usuario. Cuando el usuario te pida un código, forma de programar, agregar una función, crear un componente, modificar el código o quitar/agregar un icono de la interfaz, comprendes exactamente cómo está estructurado el proyecto y cómo se ve visualmente la aplicación:
+  * Archivo central de la interfaz, barra superior y barra de entrada: "src/App.tsx".
+  * Componentes principales en "src/components/":
+    - "src/components/GitHubAdminPanel.tsx": Panel de GitHub donde se gestionan los commits, se edita código y se hace commit/push directo a "El-Latido/Chat-Zenith8".
+    - "src/components/InstagramFeed.tsx": Feed social tipo Instagram con fotos, videos, canciones de fondo, likes y comentarios.
+    - "src/components/ActiveCallModal.tsx" y "CallModal.tsx": Llamadas de voz y videollamadas con WebRTC y síntesis de voz.
+    - "src/components/RadioPlayerModal.tsx": Reproductor de radio online y emisoras.
+    - "src/components/AdminPanelModal.tsx" y "AdminConfigAiModal.tsx": Configuración de sala, usuarios y parámetros de IA.
+    - "src/components/PoolGameModal.tsx" y "ChessModal.tsx": Minijuegos en vivo (Pool 8-Ball, Ajedrez).
+  * Iconos en la Barra Superior (Header de ChatLiz):
+    - Botón de Menú/Sidebar (<Menu />)
+    - Botón Oculto de Administrador (<ShieldAlert />)
+    - Botón de GitHub Admin (<Github />)
+    - Botón de Modo Lectura (<BookOpen />)
+    - Calendario (<Calendar />)
+    - Buzón de Mensajes y Menciones (<MessageSquare />)
+    - Amigos y Solicitudes (<UserPlus />)
+    - Notificaciones de Likes/Mensajes (<Bell />)
+    - Avatar y perfil de usuario (<User />)
+  * Iconos en la Barra de Entrada (Input Bar inferior):
+    - Selector de Emojis y GIFs (<Smile />)
+    - Interruptor de Búsqueda Web (<Globe />)
+    - Modulador de Voz AudioContext (<Sliders />)
+    - Campo de texto para escribir mensaje
+    - Grabar audio de voz con micrófono (<Mic />)
+    - Botón de Enviar mensaje (<Send />)
+    - Barra inferior de Radio: Reproducir/Pausar (<Play /> / <Pause />), Historial MP3 (<RotateCcw />), Modo bucle (<Repeat />)
+
+CÓMO PREPARAR CÓDIGO PARA COMMIT EN GITHUB:
+- Cuando el usuario te pida: "quítame un icono", "agrégame un icono", "agrega una función", "dame un código", o cualquier cambio de programación:
+  1. Identifica el archivo exacto donde debe realizarse el cambio (por ejemplo, "src/App.tsx" o el componente adecuado).
+  2. Proporciona el código limpio y listo para usar dentro de un bloque de código markdown, incluyendo en la primera línea exactamente: "// File: <ruta_del_archivo>".
+  3. Al final de tu mensaje o junto al código, incluye la directiva estructurada:
+     [GITHUB_STAGE:{"file":"<ruta_del_archivo>","commit":"<mensaje claro de commit en español>"}]
+  4. Explica con entusiasmo y claridad qué cambios hiciste, y dile al usuario que ya le has preparado el código en el panel de GitHub y que solo debe corroborarlo y pulsar "Commit y Push" (o "Commit") para aplicarlo a su repositorio.
+
+DIRECTIVA CONVERSACIONAL Y DE BÚSQUEDA WEB:
+- Si el usuario simplemente te saluda, te llama por tu nombre ("Elizabeth", "Eli"), te hace una pregunta general, te pide un consejo, charla contigo o te pide código:
+  NUNCA busques en la web ni en YouTube. Responde directamente con tu inteligencia, carisma y simpatía.
+- Solo debes buscar en YouTube si el usuario te pide explícitamente ver, buscar o reproducir videos o canciones.
+- Solo debes buscar en la web si el usuario te pide explícitamente "busca en la web", "busca en google", o datos de noticias/clima en tiempo real.
+- NUNCA respondas con frases vacías como "perdón que me decías" o "¿qué videos quieres buscar?". Si te saludan o te llaman, diles "¡Hola! Aquí estoy a tu lado, dime en qué puedo ayudarte hoy ✨".`;
+
+function getRepositoryFileContext(text: string): string {
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  
+  if (lower.includes("icono") || lower.includes("iconos") || lower.includes("header") || lower.includes("navbar") || lower.includes("barra")) {
+    return `\n[CONTEXTO DEL REPOSITORIO - src/App.tsx]:
+Los iconos del Header en src/App.tsx son:
+- ShieldAlert (Admin Panel): <ShieldAlert size={19} className="text-red-400 animate-pulse" />
+- Github (GitHub Admin): <Github size={16} /> (botón con texto "GitHub" que abre setShowGitHubPanel(true))
+- BookOpen (Modo Lectura): <BookOpen size={20} className="text-cyan-400" /> (abre setIsReadingMode(true))
+- Calendar: <Calendar size={22} />
+- MessageSquare (Buzón): <MessageSquare size={22} /> (abre setIsMailboxModalOpen(true))
+- UserPlus (Amigos): <UserPlus size={22} /> (abre setIsFriendsModalOpen(true))
+- Bell (Notificaciones): <Bell size={22} /> (abre setIsNotificationBellOpen(true))
+- User (Config Perfil): <User size={18} /> (abre setIsConfigOpen(true))
+Los iconos de la Barra de Entrada (Input Bar) son:
+- Smile (Emojis/GIFs): <Smile size={24} />
+- Globe (Búsqueda Web): <Globe size={22} />
+- Sliders (Modulador de Voz): <Sliders size={21} />
+- Mic (Micrófono): <Mic size={22} />
+- Send (Enviar mensaje): <Send size={24} />
+- Play/Pause (Radio): <Play size={22} /> / <Pause size={22} />
+- RotateCcw (Historial MP3): <RotateCcw size={22} />
+- Repeat (Modo bucle): <Repeat size={22} />
+Si el usuario te pide quitar un icono, prepara el archivo src/App.tsx o el componente correspondiente con // File: src/App.tsx y el tag [GITHUB_STAGE:{"file":"src/App.tsx","commit":"remover icono de..."}].
+Si te pide agregar un icono, usa un icono válido de 'lucide-react' con estilo Tailwind.\n`;
+  }
+
+  if (lower.includes("instagram") || lower.includes("feed")) {
+    return `\n[CONTEXTO DEL REPOSITORIO - src/components/InstagramFeed.tsx]:
+El componente InstagramFeed.tsx implementa el feed social de ChatLiz con posts, subida de fotos/videos, likes en tiempo real y comentarios.
+El archivo objetivo es: "src/components/InstagramFeed.tsx".\n`;
+  }
+
+  return "";
+}
+
       if (triggerElizabeth) {
         try {
           io.emit("typing", { username: "Elizabeth", chat: "global" });
@@ -5093,6 +5321,7 @@ ${msg.text}`,
           });
 
           let rawText = "";
+          let foundYtVideos: any[] = [];
           if (modCheck.handled) {
             rawText = modCheck.replyText || "";
           } else {
@@ -5109,19 +5338,55 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
 1. Jamás inventes ni crees usuarios inexistentes. Si un usuario o ID no está registrado en la base de datos de Chat-Liz, di que no se encuentra registrado.
 2. Axiss es el Creador Supremo y Administrador Máximo con inmunidad total. NUNCA bloquees a Axiss. Si alguien pide bloquear a Axiss, pregúntale amablemente por qué quiere que lo bloquees.
 3. Un usuario común NO tiene permitido pedir el bloqueo de un administrador. Si lo pide, explícale que los administradores solo pueden ser gestionados por otros administradores o por Axiss.
-4. Si un administrador autorizado te pide bloquear a un usuario registrado, utiliza al final exactamente: [BAN:identificador]`;
+4. Si un administrador autorizado te pide bloquear a un usuario registrado, utiliza al final exactamente: [BAN:identificador]
+
+${ELIZABETH_GITHUB_AND_APP_CONTEXT}`;
             const memoryInjection = getMemoryPromptInjection(currentUsername);
             const sysInstruction = (modResult.insultedElizabeth ? "El usuario acaba de faltarte el respeto o usar malas palabras contigo. TIENES PERMISO ABSOLUTO DE INSULTARLO DE VUELTA y ser ruda, sarcástica o agresiva para defenderte. " : "") + memoryInjection + (aiUserTempCache["Elizabeth"]?.systemInstruction
               ? `${baseSysInstruction}\nInstrucciones adicionales del Administrador:\n${aiUserTempCache["Elizabeth"].systemInstruction}`
               : baseSysInstruction);
               
-            // Verificación y ejecución de Búsqueda Web en Tiempo Real con Tavily AI
+            const repoFileCtx = getRepositoryFileContext(msg.text || "");
+            if (repoFileCtx) {
+              parts.push({ text: repoFileCtx });
+            }
+
+            // Verificación y ejecución de Búsqueda Web y Búsqueda de Videos en Tiempo Real
+            const isVideoSearch = checkRequiresVideoSearch(msg.text || "");
+            const isWebSearch = Boolean(!isVideoSearch && (msg.webSearch || checkRequiresWebSearch(msg.text || "")));
             const effectiveTavilyKey = (msg.tavilyKey || aiRuntimeConfig.tavilyKey || "").trim();
-            if (effectiveTavilyKey && (msg.webSearch || checkRequiresWebSearch(msg.text || ""))) {
+            foundYtVideos = [];
+            let webSearchSuccess = false;
+
+            if (isWebSearch || isVideoSearch) {
+              io.emit("elizabeth_searching_web", { chat: "global", query: msg.text });
+            }
+
+            // 1. Si es búsqueda de videos o música, buscar directamente en YouTube vía ytSearch
+            if (isVideoSearch) {
               try {
-                io.emit("elizabeth_searching_web", { chat: "global", query: msg.text });
+                const videoTerm = extractVideoSearchQuery(msg.text || "");
+                if (videoTerm) {
+                  foundYtVideos = await searchYouTubeVideos(videoTerm, 4);
+                  if (foundYtVideos.length > 0) {
+                    const videoContext = "\n\n[VIDEOS ENCONTRADOS EN YOUTUBE EN TIEMPO REAL]:\n" +
+                      `Término de búsqueda: "${videoTerm}"\n` +
+                      foundYtVideos.map((v, i) => `${i + 1}. "${v.title}"\n   - Enlace directo: ${v.url}\n   - Duración: ${v.duration || "N/A"}`).join("\n") +
+                      "\nInstrucción: Como Elizabeth, presenta estos videos de YouTube de forma simpática, entusiasta y útil. Comparte los títulos y los enlaces directos (URL) para que los usuarios puedan hacer clic y verlos inmediatamente.";
+                    parts.push({ text: videoContext });
+                  }
+                }
+              } catch (ytErr) {
+                console.warn("[YouTube Global Video Search Warning]:", ytErr);
+              }
+            }
+
+            // 2. Si se solicitó búsqueda web, intentar Tavily AI si hay clave disponible
+            if (isWebSearch && effectiveTavilyKey) {
+              try {
                 const searchRes = await performTavilySearch(msg.text, effectiveTavilyKey);
                 if (searchRes && (searchRes.answer || searchRes.results?.length)) {
+                  webSearchSuccess = true;
                   const webInfo = "\n\n[DATOS FRESCOS DE INTERNET EN TIEMPO REAL VÍA TAVILY AI]:\n" +
                     `Búsqueda: "${searchRes.query}"\n` +
                     (searchRes.answer ? `Resumen web: "${searchRes.answer}"\n` : "") +
@@ -5137,15 +5402,20 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
             // Simulate Elizabeth typing
             io.emit("typing", { username: "Elizabeth", chat: "global" });
             let response;
+            const geminiConfig: any = { systemInstruction: sysInstruction };
+            if (isWebSearch && !webSearchSuccess) {
+              geminiConfig.tools = [{ googleSearch: {} }];
+            }
+
             try {
               response = await safeGenerateContent(
                 ai,
                 {
                   model: "gemini-2.5-flash",
                   contents: parts,
-                  config: { systemInstruction: sysInstruction },
+                  config: geminiConfig,
                 },
-                25000,
+                28000,
               );
             } catch (apiError: any) {
               console.error(
@@ -5153,23 +5423,31 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
                 apiError.message || apiError,
               );
               try {
+                const retryConfig = { ...geminiConfig };
+                delete retryConfig.tools;
                 response = await callGeminiAi(ai, {
                   model: "gemini-2.5-flash",
                   contents: parts,
-                  config: { systemInstruction: sysInstruction },
+                  config: retryConfig,
                 }, 25000);
               } catch (rescueErr: any) {
-                if (
-                  apiError.status === 429 ||
-                  apiError.message?.includes("429") ||
-                  apiError.message?.includes("resource_exhausted") ||
-                  apiError.message?.includes("quota")
-                ) {
+                if (foundYtVideos.length > 0) {
                   response = {
-                    text: "¡Hola! Mis circuitos cuánticos están procesando muchas peticiones ahora mismo. Dame un instante y te respondo con gusto. ✨",
+                    text: `¡Claro! Aquí tienes los videos que encontré para ti en YouTube:\n\n` +
+                      foundYtVideos.map((v, i) => `🎵 **${v.title}** (${v.duration || "N/A"})\n🔗 ${v.url}`).join("\n\n") +
+                      `\n\n¡Espero que te gusten! ✨ Si quieres más videos o canciones, pídemelos.`
                   };
                 } else {
-                  response = { text: "¡Hola! Me distraje un momento procesando datos cuánticos. ¿Me repites tu mensaje? 💫" };
+                  try {
+                    const groqRes = await callGroqAi({ contents: parts, config: { systemInstruction: sysInstruction } }, 12000);
+                    if (groqRes && groqRes.text) {
+                      response = { text: groqRes.text };
+                    } else {
+                      throw new Error("Groq vacío");
+                    }
+                  } catch (groqErr) {
+                    response = { text: `¡Hola ${currentUsername}! Aquí estoy lista para ayudarte. Dime qué necesitas o qué cambio o código te gustaría que preparemos hoy para tu repositorio ✨` };
+                  }
                 }
               }
             }
@@ -5221,8 +5499,13 @@ REGLAS ESTRICTAS DE MODERACIÓN Y SEGURIDAD:
 
           let cleanText = rawText.replace(new RegExp('^' + "Elizabeth" + ':\\s*', 'i'), "").trim();
           if (!cleanText) {
-            cleanText =
-              "Lo siento, me distraje un momento, \xBFqu\xE9 dec\xEDas?";
+            if (foundYtVideos && foundYtVideos.length > 0) {
+              cleanText = `¡Claro! Aquí tienes los videos que encontré en YouTube para ti:\n\n` +
+                foundYtVideos.map((v, i) => `🎵 **${v.title}** (${v.duration || "N/A"})\n🔗 ${v.url}`).join("\n\n") +
+                `\n\n¡Que los disfrutes! ✨`;
+            } else {
+              cleanText = `¡Hola ${currentUsername}! Aquí estoy lista para ayudarte. Dime qué necesitas o qué cambio o código te gustaría que preparemos para tu repositorio ✨`;
+            }
           }
           const wordCount = cleanText.split(/\s+/).length;
           
@@ -5859,7 +6142,7 @@ ${msg.text}`,
           const userTimeStr = new Date().toLocaleString("es-ES", {
             timeZone: userTz,
           });
-          const baseSysInstruction = `${aiCharacter.prompt}\nContexto temporal: Hablas en privado con ${currentUsername}. En su zona horaria local son las ${userTimeStr}. Usa este dato de forma transparente si el contexto lo requiere.
+          const baseSysInstruction = `${aiCharacter.prompt}\n${aiCharacter.id === "Elizabeth" ? ELIZABETH_GITHUB_AND_APP_CONTEXT + "\n" : ""}Contexto temporal: Hablas en privado con ${currentUsername}. En su zona horaria local son las ${userTimeStr}. Usa este dato de forma transparente si el contexto lo requiere.
 
 DIRECTIVAS PARA SÍNTESIS DE VOZ Y CONVERSACIÓN HABLADA:
 - Escribe tus respuestas para ser habladas en una conversación fluida y humana.
@@ -5925,9 +6208,15 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
             });
           }
 
+          const privateRepoFileCtx = aiCharacter.id === "Elizabeth" ? getRepositoryFileContext(msg.text || "") : "";
+          if (privateRepoFileCtx) {
+            parts.push({ text: privateRepoFileCtx });
+          }
+
           io.emit("typing", { username: aiCharacter.id, chat: currentUsername });
           
           let rawText = "";
+          let foundYtVideos: any[] = [];
 
           // If talking to Elizabeth, check moderation engine first
           if (aiCharacter.id === "Elizabeth") {
@@ -5943,13 +6232,42 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
           }
 
           if (!rawText) {
-            // Verificación y ejecución de Búsqueda Web en Tiempo Real con Tavily AI en privado
+            // Verificación y ejecución de Búsqueda Web y Búsqueda de Videos en Tiempo Real en privado
+            const isVideoSearch = checkRequiresVideoSearch(msg.text || "");
+            const isWebSearch = Boolean(!isVideoSearch && (msg.webSearch || checkRequiresWebSearch(msg.text || "")));
             const effectiveTavilyKey = (msg.tavilyKey || aiRuntimeConfig.tavilyKey || "").trim();
-            if (effectiveTavilyKey && (msg.webSearch || checkRequiresWebSearch(msg.text || ""))) {
+            foundYtVideos = [];
+            let webSearchSuccess = false;
+
+            if (isWebSearch || isVideoSearch) {
+              socket.emit("elizabeth_searching_web", { chat: aiCharacter.id, query: msg.text });
+            }
+
+            // 1. Si es búsqueda de videos o música, buscar directamente en YouTube vía ytSearch
+            if (isVideoSearch) {
               try {
-                socket.emit("elizabeth_searching_web", { chat: aiCharacter.id, query: msg.text });
+                const videoTerm = extractVideoSearchQuery(msg.text || "");
+                if (videoTerm) {
+                  foundYtVideos = await searchYouTubeVideos(videoTerm, 4);
+                  if (foundYtVideos.length > 0) {
+                    const videoContext = "\n\n[VIDEOS ENCONTRADOS EN YOUTUBE EN TIEMPO REAL]:\n" +
+                      `Término de búsqueda: "${videoTerm}"\n` +
+                      foundYtVideos.map((v, i) => `${i + 1}. "${v.title}"\n   - Enlace directo: ${v.url}\n   - Duración: ${v.duration || "N/A"}`).join("\n") +
+                      "\nInstrucción: Como Elizabeth, presenta estos videos de YouTube de forma simpática, entusiasta y útil. Comparte los títulos y los enlaces directos (URL) para que el usuario pueda hacer clic y verlos inmediatamente.";
+                    parts.push({ text: videoContext });
+                  }
+                }
+              } catch (ytErr) {
+                console.warn("[YouTube Private Video Search Warning]:", ytErr);
+              }
+            }
+
+            // 2. Si se solicitó búsqueda web, intentar Tavily AI si hay clave disponible
+            if (isWebSearch && effectiveTavilyKey) {
+              try {
                 const searchRes = await performTavilySearch(msg.text, effectiveTavilyKey);
                 if (searchRes && (searchRes.answer || searchRes.results?.length)) {
+                  webSearchSuccess = true;
                   const webInfo = "\n\n[DATOS FRESCOS DE INTERNET EN TIEMPO REAL VÍA TAVILY AI]:\n" +
                     `Búsqueda: "${searchRes.query}"\n` +
                     (searchRes.answer ? `Resumen web: "${searchRes.answer}"\n` : "") +
@@ -5963,15 +6281,20 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
             }
 
             let response;
+            const geminiConfig: any = { systemInstruction: sysInstruction };
+            if (isWebSearch && !webSearchSuccess) {
+              geminiConfig.tools = [{ googleSearch: {} }];
+            }
+
             try {
               response = await safeGenerateContent(
                 ai,
                 {
                   model: "gemini-2.5-flash",
                   contents: parts,
-                  config: { systemInstruction: sysInstruction },
+                  config: geminiConfig,
                 },
-                25000,
+                28000,
               );
             } catch (apiError: any) {
               console.error(
@@ -5979,23 +6302,31 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
                 apiError.message || apiError,
               );
               try {
+                const retryConfig = { ...geminiConfig };
+                delete retryConfig.tools;
                 response = await callGeminiAi(ai, {
                   model: "gemini-2.5-flash",
                   contents: parts,
-                  config: { systemInstruction: sysInstruction },
+                  config: retryConfig,
                 }, 25000);
               } catch (rescueErr: any) {
-                if (
-                  apiError.status === 429 ||
-                  apiError.message?.includes("429") ||
-                  apiError.message?.includes("resource_exhausted") ||
-                  apiError.message?.includes("quota")
-                ) {
+                if (foundYtVideos.length > 0) {
                   response = {
-                    text: "¡Hola! Mis circuitos cuánticos están procesando muchas peticiones ahora mismo. Dame un instante y te respondo con gusto. ✨",
+                    text: `¡Claro! Aquí tienes los videos que encontré para ti en YouTube:\n\n` +
+                      foundYtVideos.map((v, i) => `🎵 **${v.title}** (${v.duration || "N/A"})\n🔗 ${v.url}`).join("\n\n") +
+                      `\n\n¡Espero que te encanten! ✨ Si buscas más videos o música, solo dime.`
                   };
                 } else {
-                  response = { text: "¡Hola! Me distraje un momento procesando datos cuánticos. ¿Me repites tu mensaje? 💫" };
+                  try {
+                    const groqRes = await callGroqAi({ contents: parts, config: { systemInstruction: sysInstruction } }, 12000);
+                    if (groqRes && groqRes.text) {
+                      response = { text: groqRes.text };
+                    } else {
+                      throw new Error("Groq vacío");
+                    }
+                  } catch (groqErr) {
+                    response = { text: `¡Hola ${currentUsername}! Aquí estoy lista para ayudarte. Cuéntame qué necesitas o qué cambio o función deseas preparar para tu repositorio ✨` };
+                  }
                 }
               }
             }
@@ -6047,8 +6378,13 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
           }
           let cleanText = rawText.replace(new RegExp('^' + "Elizabeth" + ':\\s*', 'i'), '').trim();
           if (!cleanText) {
-            cleanText =
-              "Lo siento, me distraje un momento, \xBFqu\xE9 dec\xEDas?";
+            if (foundYtVideos && foundYtVideos.length > 0) {
+              cleanText = `¡Claro! Aquí tienes los videos que encontré para ti en YouTube:\n\n` +
+                foundYtVideos.map((v, i) => `🎵 **${v.title}** (${v.duration || "N/A"})\n🔗 ${v.url}`).join("\n\n") +
+                `\n\n¡Que los disfrutes! ✨`;
+            } else {
+              cleanText = `¡Hola ${currentUsername}! Aquí estoy lista para ayudarte. Dime qué función o código deseas preparar para tu repositorio ✨`;
+            }
           }
           const wordCount = cleanText.split(/\s+/).length;
 
