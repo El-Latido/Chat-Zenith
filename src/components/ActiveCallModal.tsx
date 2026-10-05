@@ -173,6 +173,19 @@ export function ActiveCallModal({
                       recognizer.interimResults = true;
                       
                       let finalPhrase = "";
+                      let latestSpoken = "";
+                      let silenceTimeout: any = null;
+
+                      const dispatchSpeech = () => {
+                        const messageToSend = (latestSpoken || finalPhrase).trim();
+                        if (messageToSend && messageToSend.length > 1) {
+                          sendVoicePromptToElizabeth(messageToSend);
+                          finalPhrase = "";
+                          latestSpoken = "";
+                          setUserSubtitle("");
+                        }
+                      };
+
                       recognizer.onresult = (event: any) => {
                         let interim = "";
                         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -184,24 +197,21 @@ export function ActiveCallModal({
                         }
                         const currentSpoken = (finalPhrase + " " + interim).trim();
                         if (currentSpoken) {
+                          latestSpoken = currentSpoken;
                           setUserSubtitle(currentSpoken);
+
+                          if (silenceTimeout) clearTimeout(silenceTimeout);
+                          silenceTimeout = setTimeout(dispatchSpeech, 1200);
                         }
                       };
 
-                      let silenceTimeout: any = null;
                       recognizer.onspeechstart = () => {
                         if (silenceTimeout) clearTimeout(silenceTimeout);
                       };
 
                       recognizer.onspeechend = () => {
-                        silenceTimeout = setTimeout(() => {
-                          const messageToSend = finalPhrase.trim();
-                          if (messageToSend && messageToSend.length > 1) {
-                            sendVoicePromptToElizabeth(messageToSend);
-                            finalPhrase = "";
-                            setUserSubtitle("");
-                          }
-                        }, 1200);
+                        if (silenceTimeout) clearTimeout(silenceTimeout);
+                        silenceTimeout = setTimeout(dispatchSpeech, 900);
                       };
 
                       recognizer.onerror = (e: any) => {
@@ -309,11 +319,12 @@ export function ActiveCallModal({
 
       socket.emit("send_private", {
         to: "Elizabeth",
+        recipient: "Elizabeth",
         text: clean,
         id: Date.now().toString(),
         timestamp: Date.now(),
         isVoiceCall: true
-      }, (res: any) => {
+      }, "Elizabeth", (res: any) => {
         if (!res?.success) {
           setIsAiThinking(false);
         }

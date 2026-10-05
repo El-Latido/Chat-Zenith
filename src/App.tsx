@@ -941,12 +941,84 @@ function MainApp() {
     return null;
   };
 
+  const [isDirectCommitting, setIsDirectCommitting] = useState(false);
+
   const handleOpenStagedCodeInGitHub = (filePath: string, code: string, commitMsg: string) => {
     setGitHubStagedFile(filePath);
     setGitHubStagedContent(code);
     setGitHubStagedCommitMsg(commitMsg);
     setShowGitHubPanel(true);
     addSystemToast(`🚀 Código preparado para ${filePath}. Corrobora el código y pulsa 'Commit y Push'.`, "Elizabeth");
+  };
+
+  const handleDirectCommitToGitHub = async (filePath: string, code: string, commitMsg: string) => {
+    const token = localStorage.getItem("chatliz_github_token");
+    if (!token) {
+      handleOpenStagedCodeInGitHub(filePath, code, commitMsg);
+      addSystemToast("🔑 Ingresa tu Token de GitHub para completar el cómit.", "GitHub");
+      return;
+    }
+
+    const repoOwner = "El-Latido";
+    let repoName = localStorage.getItem("chatliz_github_repo") || "Chat-Zenith";
+    const branch = "main";
+    setIsDirectCommitting(true);
+
+    try {
+      let sha: string | undefined = undefined;
+      let checkRes = await fetch(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}?ref=${branch}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (checkRes.status === 404) {
+        const altRepo = repoName === 'Chat-Zenith' ? 'Chat-Zenith8' : 'Chat-Zenith';
+        const altRes = await fetch(
+          `https://api.github.com/repos/${repoOwner}/${altRepo}/contents/${filePath}?ref=${branch}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (altRes.ok) {
+          repoName = altRepo;
+          localStorage.setItem("chatliz_github_repo", altRepo);
+          checkRes = altRes;
+        }
+      }
+      if (checkRes.ok) {
+        const fileData = await checkRes.json();
+        sha = fileData.sha;
+      }
+
+      const bodyPayload: any = {
+        message: commitMsg || `update: cambios en ${filePath}`,
+        content: btoa(unescape(encodeURIComponent(code))),
+        branch,
+      };
+      if (sha) bodyPayload.sha = sha;
+
+      const putRes = await fetch(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(bodyPayload),
+        }
+      );
+
+      if (!putRes.ok) {
+        const errJson = await putRes.json().catch(() => ({}));
+        throw new Error(errJson.message || `HTTP ${putRes.status}`);
+      }
+
+      addSystemToast(`🎉 ¡Commit realizado exitosamente en ${repoOwner}/${repoName} (${branch})!`, "GitHub");
+    } catch (e: any) {
+      console.error("Direct commit error:", e);
+      addSystemToast(`⚠️ ${e.message}. Abriendo panel de GitHub...`, "GitHub");
+      handleOpenStagedCodeInGitHub(filePath, code, commitMsg);
+    } finally {
+      setIsDirectCommitting(false);
+    }
   };
   const [poolGame, setPoolGame] = useState<{
     gameId: string;
@@ -4469,18 +4541,33 @@ function MainApp() {
                                             <span className="truncate">💬 {proposal.commitMessage}</span>
                                             <span className="text-[10px] text-gray-500 font-normal shrink-0">main</span>
                                           </div>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenStagedCodeInGitHub(proposal.filePath, proposal.code, proposal.commitMessage);
-                                            }}
-                                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-[0_0_18px_rgba(168,85,247,0.4)] transition-all active:scale-95 cursor-pointer border border-white/20"
-                                          >
-                                            <Sparkles size={15} className="text-yellow-300 animate-pulse" />
-                                            <span>Abrir en Panel de GitHub y Revisar Código</span>
-                                            <GitCommit size={15} className="text-emerald-300" />
-                                          </button>
+                                          <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                                            <button
+                                              type="button"
+                                              disabled={isDirectCommitting}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDirectCommitToGitHub(proposal.filePath, proposal.code, proposal.commitMessage);
+                                              }}
+                                              className="w-full sm:flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow-[0_0_15px_rgba(16,185,129,0.35)] transition-all active:scale-95 cursor-pointer border border-emerald-400/30"
+                                              title="Hacer commit y push directo a tu repositorio de GitHub"
+                                            >
+                                              <GitCommit size={15} className={isDirectCommitting ? "animate-spin text-emerald-200" : "text-emerald-200"} />
+                                              <span>{isDirectCommitting ? "Haciendo Cómit..." : "Aprobar y Hacer Cómit"}</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenStagedCodeInGitHub(proposal.filePath, proposal.code, proposal.commitMessage);
+                                              }}
+                                              className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-purple-900/60 hover:bg-purple-800/80 text-purple-200 hover:text-white font-semibold py-2.5 px-3 rounded-xl text-xs border border-purple-500/40 transition-all active:scale-95 cursor-pointer shrink-0"
+                                              title="Revisar y editar el código en el editor antes de hacer commit"
+                                            >
+                                              <Sparkles size={14} className="text-yellow-300" />
+                                              <span>Revisar en Panel</span>
+                                            </button>
+                                          </div>
                                         </div>
                                       );
                                     })()}

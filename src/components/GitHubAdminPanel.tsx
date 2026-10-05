@@ -22,10 +22,10 @@ interface CommitHistory {
   date: string;
 }
 
-const REPO_OWNER = 'El-Latido';
-const REPO_NAME = 'Chat-Zenith8';
+const DEFAULT_REPO_OWNER = 'El-Latido';
 const DEFAULT_BRANCH = 'main';
 const TOKEN_STORAGE_KEY = 'chatliz_github_token';
+const REPO_STORAGE_KEY = 'chatliz_github_repo';
 
 export function GitHubAdminPanel({ 
   onClose, 
@@ -35,17 +35,12 @@ export function GitHubAdminPanel({
   initialCommitMessage,
   onClearStaged
 }: GitHubAdminPanelProps) {
-  const hasToken = typeof window !== 'undefined' && Boolean(localStorage.getItem(TOKEN_STORAGE_KEY));
-  if (!currentUser.isAdmin && !hasToken && !initialContent) {
-    return (
-      <div className="fixed bottom-4 right-4 bg-red-900 text-white p-4 rounded-lg shadow-xl z-50">
-        ⛔ Acceso denegado: Se requieren permisos de administrador o Token de GitHub.
-      </div>
-    );
-  }
-
   const [token, setToken] = useState(localStorage.getItem(TOKEN_STORAGE_KEY) || '');
   const [tempToken, setTempToken] = useState('');
+  const [repoOwner, setRepoOwner] = useState(DEFAULT_REPO_OWNER);
+  const [repoName, setRepoName] = useState(() => {
+    return localStorage.getItem(REPO_STORAGE_KEY) || 'Chat-Zenith';
+  });
   const [isLocked, setIsLocked] = useState(!!localStorage.getItem(TOKEN_STORAGE_KEY));
   const [files, setFiles] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState(initialFile || '');
@@ -79,11 +74,12 @@ export function GitHubAdminPanel({
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
   // Cargar ramas
-  const loadBranches = async () => {
+  const loadBranches = async (overrideRepo?: string) => {
     if (!token) return;
+    const rName = overrideRepo || repoName;
     try {
       const res = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches`,
+        `https://api.github.com/repos/${repoOwner}/${rName}/branches`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.ok) {
@@ -94,11 +90,12 @@ export function GitHubAdminPanel({
   };
 
   // Cargar historial de commits
-  const loadCommitHistory = async () => {
+  const loadCommitHistory = async (overrideRepo?: string) => {
     if (!token) return;
+    const rName = overrideRepo || repoName;
     try {
       const res = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits?sha=${currentBranch}&per_page=10`,
+        `https://api.github.com/repos/${repoOwner}/${rName}/commits?sha=${currentBranch}&per_page=10`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.ok) {
@@ -117,13 +114,27 @@ export function GitHubAdminPanel({
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${currentBranch}?recursive=1`,
+      let activeRepo = repoName;
+      let res = await fetch(
+        `https://api.github.com/repos/${repoOwner}/${activeRepo}/git/trees/${currentBranch}?recursive=1`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (!res.ok) throw new Error('Token inválido o error de red');
+      if (res.status === 404) {
+        const altRepo = activeRepo === 'Chat-Zenith' ? 'Chat-Zenith8' : 'Chat-Zenith';
+        const altRes = await fetch(
+          `https://api.github.com/repos/${repoOwner}/${altRepo}/git/trees/${currentBranch}?recursive=1`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (altRes.ok) {
+          activeRepo = altRepo;
+          setRepoName(altRepo);
+          localStorage.setItem(REPO_STORAGE_KEY, altRepo);
+          res = altRes;
+        }
+      }
+      if (!res.ok) throw new Error(`Token inválido o repositorio ${repoOwner}/${activeRepo} no encontrado (HTTP ${res.status})`);
       const data = await res.json();
-      const tree: FileNode[] = data.tree
+      const tree: FileNode[] = (data.tree || [])
         .filter((item: any) => item.type === 'blob' || item.type === 'tree')
         .map((item: any) => ({
           path: item.path,
@@ -131,8 +142,9 @@ export function GitHubAdminPanel({
           name: item.path.split('/').pop() || item.path,
         }));
       setFiles(tree);
-      showStatus('success', `📂 ${tree.length} archivos cargados`);
-      loadCommitHistory();
+      showStatus('success', `📂 ${tree.length} archivos cargados de ${repoOwner}/${activeRepo}`);
+      loadCommitHistory(activeRepo);
+      loadBranches(activeRepo);
     } catch (e: any) {
       showStatus('error', e.message);
     }
@@ -145,7 +157,7 @@ export function GitHubAdminPanel({
     setLoading(true);
     try {
       const res = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${currentBranch}`,
+        `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${path}?ref=${currentBranch}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) throw new Error('No se pudo cargar el archivo');
@@ -175,7 +187,7 @@ export function GitHubAdminPanel({
       let sha: string | undefined = undefined;
       try {
         const fileRes = await fetch(
-          `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}?ref=${currentBranch}`,
+          `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${selectedFile}?ref=${currentBranch}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (fileRes.ok) {
@@ -194,7 +206,7 @@ export function GitHubAdminPanel({
       if (sha) bodyPayload.sha = sha;
 
       const updateRes = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${selectedFile}`,
+        `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${selectedFile}`,
         {
           method: 'PUT',
           headers: {
@@ -210,7 +222,7 @@ export function GitHubAdminPanel({
         throw new Error(err.message || 'Error al hacer commit');
       }
 
-      showStatus('success', `✅ Commit exitoso: "${commitMessage}"`);
+      showStatus('success', `✅ Commit exitoso en ${repoOwner}/${repoName}: "${commitMessage}"`);
       setCommitMessage('');
       setIsStagedByElizabeth(false);
       onClearStaged?.();
@@ -342,7 +354,7 @@ export function GitHubAdminPanel({
       >
         <div className="flex items-center gap-2 text-white font-bold">
           <Github size={18} />
-          <span>GitHub Admin — {REPO_NAME}</span>
+          <span>GitHub Admin — {repoOwner}/{repoName}</span>
           {isLocked && <Lock size={14} className="text-green-300" />}
         </div>
         <div className="flex gap-1">

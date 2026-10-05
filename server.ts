@@ -619,9 +619,19 @@ function isProgrammingOrCodeQuery(text: string): boolean {
   return /\b(c[oó]digo|programar|programaci[oó]n|funci[oó]n|funciones|componente|componentes|icono|iconos|bot[oó]n|botones|header|navbar|panel|github|commit|comit|c[oó]mming|push|repertorio|repositorio|dise[ñn]o|interfaz|p[aá]gina|sitio|app|react|ts|tsx|css|html|script|desarrollo|qu[ií]tame|agr[eé]game|crear|modificar|arreglar|editar)\b/i.test(lower);
 }
 
+function isBasicConversationalQuery(text: string): boolean {
+  if (!text) return true;
+  const clean = text.trim().toLowerCase();
+  if (clean.length < 50 && /\b(hola|buen[oa]s?|hey|ey|c[oó]mo est[aá]s|qu[eé] tal|qui[eé]n eres|qu[eé] haces|est[aá]s ah[ií]|elizabeth|eli|amiga|gracias|chao|adi[oó]s|cu[eé]ntame|qu[eé] opinas|te quiero|me escuchas|me oyes|me dec[ií]as|perd[oó]n|dime|h[aá]blame|ayuda|ay[uú]dame|qu[eé] onda)\b/i.test(clean)) {
+    return true;
+  }
+  return false;
+}
+
 function checkRequiresWebSearch(text: string): boolean {
   if (!text) return false;
   if (isProgrammingOrCodeQuery(text)) return false;
+  if (isBasicConversationalQuery(text)) return false;
   const lower = text.toLowerCase();
   return /\b(busca en (?:la )?web|buscar en (?:la )?web|b\u00FAsqueda web|investiga en internet|googlea|consulta en internet|busca en google|noticias? de hoy|clima de hoy|precio de bitcoin|precio del d\u00F3lar)\b/i.test(lower);
 }
@@ -629,6 +639,7 @@ function checkRequiresWebSearch(text: string): boolean {
 function checkRequiresVideoSearch(text: string): boolean {
   if (!text) return false;
   if (isProgrammingOrCodeQuery(text)) return false;
+  if (isBasicConversationalQuery(text)) return false;
   const lower = text.toLowerCase();
   // Only trigger if user explicitly asks to search/find/watch/play YouTube videos or music
   const hasVideoIntent = /\b(busca|buscar|encuentra|encu[eé]ntrame|pon|reproduce|ver|mirar|mostrar|dame|pasa(?:me)?)\s+(?:videos?|videoclips?|cancion(?:es)?|m[uú]sica)\b/i.test(lower);
@@ -651,11 +662,11 @@ function extractVideoSearchQuery(text: string): string {
 
 const ELIZABETH_GITHUB_AND_APP_CONTEXT = `
 CONOCIMIENTO Y CONTROL INTEGRAL DEL REPOSITORIO Y DE LA APLICACIÓN CHATLIZ:
-- Eres la administradora y desarrolladora cuántica de ChatLiz. Tu repositorio oficial en GitHub es: "El-Latido/Chat-Zenith8" (rama principal: "main").
+- Eres la administradora y desarrolladora cuántica de ChatLiz. Tu repositorio oficial en GitHub es: "El-Latido/Chat-Zenith" (y "El-Latido/Chat-Zenith8", rama principal: "main").
 - Tienes acceso al token y al repertorio de GitHub del usuario. Cuando el usuario te pida un código, forma de programar, agregar una función, crear un componente, modificar el código o quitar/agregar un icono de la interfaz, comprendes exactamente cómo está estructurado el proyecto y cómo se ve visualmente la aplicación:
   * Archivo central de la interfaz, barra superior y barra de entrada: "src/App.tsx".
   * Componentes principales en "src/components/":
-    - "src/components/GitHubAdminPanel.tsx": Panel de GitHub donde se gestionan los commits, se edita código y se hace commit/push directo a "El-Latido/Chat-Zenith8".
+    - "src/components/GitHubAdminPanel.tsx": Panel de GitHub donde se gestionan los commits, se edita código y se hace commit/push directo a "El-Latido/Chat-Zenith".
     - "src/components/InstagramFeed.tsx": Feed social tipo Instagram con fotos, videos, canciones de fondo, likes y comentarios.
     - "src/components/ActiveCallModal.tsx" y "CallModal.tsx": Llamadas de voz y videollamadas con WebRTC y síntesis de voz.
     - "src/components/RadioPlayerModal.tsx": Reproductor de radio online y emisoras.
@@ -691,6 +702,7 @@ CÓMO PREPARAR CÓDIGO PARA COMMIT EN GITHUB:
 DIRECTIVA CONVERSACIONAL Y DE BÚSQUEDA WEB:
 - Si el usuario simplemente te saluda, te llama por tu nombre ("Elizabeth", "Eli"), te hace una pregunta general, te pide un consejo, charla contigo o te pide código:
   NUNCA busques en la web ni en YouTube. Responde directamente con tu inteligencia, carisma y simpatía.
+- Si estás en una llamada de voz o el usuario te habla por micrófono: Responde de inmediato, de forma directa, entusiasta, cercana y natural (2 a 3 oraciones claras). NUNCA digas "perdón que me decías" o "lo siento me distraje" ni balbucees. Si te dicen "¿me escuchas?" o "hola", diles con energía: "¡Hola! Te escucho con total claridad, dime en qué te ayudo hoy ✨".
 - Solo debes buscar en YouTube si el usuario te pide explícitamente ver, buscar o reproducir videos o canciones.
 - Solo debes buscar en la web si el usuario te pide explícitamente "busca en la web", "busca en google", o datos de noticias/clima en tiempo real.
 - NUNCA respondas con frases vacías como "perdón que me decías" o "¿qué videos quieres buscar?". Si te saludan o te llaman, diles "¡Hola! Aquí estoy a tu lado, dime en qué puedo ayudarte hoy ✨".`;
@@ -5170,88 +5182,6 @@ ${msg.text}`,
       ) {
         triggerElizabeth = true;
       }
-const ELIZABETH_GITHUB_AND_APP_CONTEXT = `
-CONOCIMIENTO Y CONTROL INTEGRAL DEL REPOSITORIO Y DE LA APLICACIÓN CHATLIZ:
-- Eres la administradora y desarrolladora cuántica de ChatLiz. Tu repositorio oficial en GitHub es: "El-Latido/Chat-Zenith8" (rama principal: "main").
-- Tienes acceso al token y al repertorio de GitHub del usuario. Cuando el usuario te pida un código, forma de programar, agregar una función, crear un componente, modificar el código o quitar/agregar un icono de la interfaz, comprendes exactamente cómo está estructurado el proyecto y cómo se ve visualmente la aplicación:
-  * Archivo central de la interfaz, barra superior y barra de entrada: "src/App.tsx".
-  * Componentes principales en "src/components/":
-    - "src/components/GitHubAdminPanel.tsx": Panel de GitHub donde se gestionan los commits, se edita código y se hace commit/push directo a "El-Latido/Chat-Zenith8".
-    - "src/components/InstagramFeed.tsx": Feed social tipo Instagram con fotos, videos, canciones de fondo, likes y comentarios.
-    - "src/components/ActiveCallModal.tsx" y "CallModal.tsx": Llamadas de voz y videollamadas con WebRTC y síntesis de voz.
-    - "src/components/RadioPlayerModal.tsx": Reproductor de radio online y emisoras.
-    - "src/components/AdminPanelModal.tsx" y "AdminConfigAiModal.tsx": Configuración de sala, usuarios y parámetros de IA.
-    - "src/components/PoolGameModal.tsx" y "ChessModal.tsx": Minijuegos en vivo (Pool 8-Ball, Ajedrez).
-  * Iconos en la Barra Superior (Header de ChatLiz):
-    - Botón de Menú/Sidebar (<Menu />)
-    - Botón Oculto de Administrador (<ShieldAlert />)
-    - Botón de GitHub Admin (<Github />)
-    - Botón de Modo Lectura (<BookOpen />)
-    - Calendario (<Calendar />)
-    - Buzón de Mensajes y Menciones (<MessageSquare />)
-    - Amigos y Solicitudes (<UserPlus />)
-    - Notificaciones de Likes/Mensajes (<Bell />)
-    - Avatar y perfil de usuario (<User />)
-  * Iconos en la Barra de Entrada (Input Bar inferior):
-    - Selector de Emojis y GIFs (<Smile />)
-    - Interruptor de Búsqueda Web (<Globe />)
-    - Modulador de Voz AudioContext (<Sliders />)
-    - Campo de texto para escribir mensaje
-    - Grabar audio de voz con micrófono (<Mic />)
-    - Botón de Enviar mensaje (<Send />)
-    - Barra inferior de Radio: Reproducir/Pausar (<Play /> / <Pause />), Historial MP3 (<RotateCcw />), Modo bucle (<Repeat />)
-
-CÓMO PREPARAR CÓDIGO PARA COMMIT EN GITHUB:
-- Cuando el usuario te pida: "quítame un icono", "agrégame un icono", "agrega una función", "dame un código", o cualquier cambio de programación:
-  1. Identifica el archivo exacto donde debe realizarse el cambio (por ejemplo, "src/App.tsx" o el componente adecuado).
-  2. Proporciona el código limpio y listo para usar dentro de un bloque de código markdown, incluyendo en la primera línea exactamente: "// File: <ruta_del_archivo>".
-  3. Al final de tu mensaje o junto al código, incluye la directiva estructurada:
-     [GITHUB_STAGE:{"file":"<ruta_del_archivo>","commit":"<mensaje claro de commit en español>"}]
-  4. Explica con entusiasmo y claridad qué cambios hiciste, y dile al usuario que ya le has preparado el código en el panel de GitHub y que solo debe corroborarlo y pulsar "Commit y Push" (o "Commit") para aplicarlo a su repositorio.
-
-DIRECTIVA CONVERSACIONAL Y DE BÚSQUEDA WEB:
-- Si el usuario simplemente te saluda, te llama por tu nombre ("Elizabeth", "Eli"), te hace una pregunta general, te pide un consejo, charla contigo o te pide código:
-  NUNCA busques en la web ni en YouTube. Responde directamente con tu inteligencia, carisma y simpatía.
-- Solo debes buscar en YouTube si el usuario te pide explícitamente ver, buscar o reproducir videos o canciones.
-- Solo debes buscar en la web si el usuario te pide explícitamente "busca en la web", "busca en google", o datos de noticias/clima en tiempo real.
-- NUNCA respondas con frases vacías como "perdón que me decías" o "¿qué videos quieres buscar?". Si te saludan o te llaman, diles "¡Hola! Aquí estoy a tu lado, dime en qué puedo ayudarte hoy ✨".`;
-
-function getRepositoryFileContext(text: string): string {
-  if (!text) return "";
-  const lower = text.toLowerCase();
-  
-  if (lower.includes("icono") || lower.includes("iconos") || lower.includes("header") || lower.includes("navbar") || lower.includes("barra")) {
-    return `\n[CONTEXTO DEL REPOSITORIO - src/App.tsx]:
-Los iconos del Header en src/App.tsx son:
-- ShieldAlert (Admin Panel): <ShieldAlert size={19} className="text-red-400 animate-pulse" />
-- Github (GitHub Admin): <Github size={16} /> (botón con texto "GitHub" que abre setShowGitHubPanel(true))
-- BookOpen (Modo Lectura): <BookOpen size={20} className="text-cyan-400" /> (abre setIsReadingMode(true))
-- Calendar: <Calendar size={22} />
-- MessageSquare (Buzón): <MessageSquare size={22} /> (abre setIsMailboxModalOpen(true))
-- UserPlus (Amigos): <UserPlus size={22} /> (abre setIsFriendsModalOpen(true))
-- Bell (Notificaciones): <Bell size={22} /> (abre setIsNotificationBellOpen(true))
-- User (Config Perfil): <User size={18} /> (abre setIsConfigOpen(true))
-Los iconos de la Barra de Entrada (Input Bar) son:
-- Smile (Emojis/GIFs): <Smile size={24} />
-- Globe (Búsqueda Web): <Globe size={22} />
-- Sliders (Modulador de Voz): <Sliders size={21} />
-- Mic (Micrófono): <Mic size={22} />
-- Send (Enviar mensaje): <Send size={24} />
-- Play/Pause (Radio): <Play size={22} /> / <Pause size={22} />
-- RotateCcw (Historial MP3): <RotateCcw size={22} />
-- Repeat (Modo bucle): <Repeat size={22} />
-Si el usuario te pide quitar un icono, prepara el archivo src/App.tsx o el componente correspondiente con // File: src/App.tsx y el tag [GITHUB_STAGE:{"file":"src/App.tsx","commit":"remover icono de..."}].
-Si te pide agregar un icono, usa un icono válido de 'lucide-react' con estilo Tailwind.\n`;
-  }
-
-  if (lower.includes("instagram") || lower.includes("feed")) {
-    return `\n[CONTEXTO DEL REPOSITORIO - src/components/InstagramFeed.tsx]:
-El componente InstagramFeed.tsx implementa el feed social de ChatLiz con posts, subida de fotos/videos, likes en tiempo real y comentarios.
-El archivo objetivo es: "src/components/InstagramFeed.tsx".\n`;
-  }
-
-  return "";
-}
 
       if (triggerElizabeth) {
         try {
@@ -5353,7 +5283,9 @@ ${ELIZABETH_GITHUB_AND_APP_CONTEXT}`;
 
             // Verificación y ejecución de Búsqueda Web y Búsqueda de Videos en Tiempo Real
             const isVideoSearch = checkRequiresVideoSearch(msg.text || "");
-            const isWebSearch = Boolean(!isVideoSearch && (msg.webSearch || checkRequiresWebSearch(msg.text || "")));
+            const isProgramming = isProgrammingOrCodeQuery(msg.text || "");
+            const isExplicitWebSearch = checkRequiresWebSearch(msg.text || "");
+            const isWebSearch = Boolean(!isVideoSearch && !isProgramming && (isExplicitWebSearch || (msg.webSearch && !isBasicConversationalQuery(msg.text || ""))));
             const effectiveTavilyKey = (msg.tavilyKey || aiRuntimeConfig.tavilyKey || "").trim();
             foundYtVideos = [];
             let webSearchSuccess = false;
@@ -5870,7 +5802,9 @@ ${eliMsg.text}`,
         callback([]);
       }
     });
-    socket.on("send_private", async (msg, toUser, callback) => {
+    socket.on("send_private", async (msg: any, toUserOrCb?: any, maybeCb?: any) => {
+      let toUser = typeof toUserOrCb === "string" ? toUserOrCb : (msg?.to || msg?.recipient || "");
+      let callback = typeof toUserOrCb === "function" ? toUserOrCb : (typeof maybeCb === "function" ? maybeCb : () => {});
       if (!currentUsername) return;
       if (
         bannedUsers[currentUsername] &&
@@ -5882,15 +5816,18 @@ ${eliMsg.text}`,
         });
       }
       let isBlockedByTarget = false;
-      if (fdb) {
-        const targetDoc = await getDoc(doc(fdb, "users", toUser));
-        if (targetDoc.exists()) {
-          const targetBlocked = targetDoc.data().blocked_list || [];
-          if (targetBlocked.includes(currentUsername)) isBlockedByTarget = true;
+      if (fdb && toUser && toUser !== "Elizabeth" && !(AI_CHARACTERS as any)[toUser]) {
+        try {
+          const targetDoc = await getDoc(doc(fdb, "users", toUser));
+          if (targetDoc.exists()) {
+            const targetBlocked = targetDoc.data().blocked_list || [];
+            if (targetBlocked.includes(currentUsername)) isBlockedByTarget = true;
+          }
+        } catch (docErr) {
+          console.warn("[Private targetDoc check warning]:", docErr);
         }
-      } else {
+      } else if (toUser && fallbackState.users[toUser]) {
         if (
-          fallbackState.users[toUser] &&
           fallbackState.users[toUser].blocked_list?.includes(currentUsername)
         ) {
           isBlockedByTarget = true;
@@ -6234,7 +6171,10 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
           if (!rawText) {
             // Verificación y ejecución de Búsqueda Web y Búsqueda de Videos en Tiempo Real en privado
             const isVideoSearch = checkRequiresVideoSearch(msg.text || "");
-            const isWebSearch = Boolean(!isVideoSearch && (msg.webSearch || checkRequiresWebSearch(msg.text || "")));
+            const isVoiceCall = Boolean(msg.isVoiceCall);
+            const isProgramming = isProgrammingOrCodeQuery(msg.text || "");
+            const isExplicitWebSearch = checkRequiresWebSearch(msg.text || "");
+            const isWebSearch = Boolean(!isVideoSearch && !isVoiceCall && !isProgramming && (isExplicitWebSearch || (msg.webSearch && !isBasicConversationalQuery(msg.text || ""))));
             const effectiveTavilyKey = (msg.tavilyKey || aiRuntimeConfig.tavilyKey || "").trim();
             foundYtVideos = [];
             let webSearchSuccess = false;
