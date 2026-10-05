@@ -7,7 +7,7 @@ import React, {
   ErrorInfo,
   Component,
 } from "react";
-import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Calendar, Gift, RotateCcw, Repeat, List, Volume2, VolumeX, Clock, Sparkles, Key, Sliders, BookOpen, Github, GitCommit } from "lucide-react";
+import { Plus, Webcam, EyeOff, Send, User, MessageCircle, Settings, Bot, Image as ImageIcon, FileIcon, Mic, StopCircle, Trash2, Menu, Layers, X, Hash, MessageSquare, PlaySquare, LogOut, Search, Gamepad2, Music, Youtube, Paperclip, Smile, Globe, Box, Palette, Users, UserPlus, UserMinus, UserCheck, DollarSign, ShieldAlert, Shield, AlertTriangle, AlertCircle, Bell, PhoneCall, Heart, Home, Play, Pause, Coins , Star , Gift, RotateCcw, Repeat, List, Volume2, VolumeX, Clock, Sparkles, Key, Sliders, BookOpen, Github, GitCommit, Swords } from "lucide-react";
 import { 
   speakElizabethMessage, 
   stopSpeaking, 
@@ -2226,6 +2226,25 @@ function MainApp() {
       },
     );
 
+    socket.on(
+      "pool_invite_accepted",
+      (data: { gameId: string; opponent: string; bet: number }) => {
+        setUsersOnline((prev) => {
+          const oppObj = prev.find((u) => u.username === data.opponent) || {
+            username: data.opponent,
+            profilePic: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.opponent}`,
+          };
+          setPoolGame({
+            gameId: data.gameId,
+            opponent: oppObj,
+            bet: data.bet,
+            isHost: true,
+          });
+          return prev;
+        });
+      },
+    );
+
     socket.on("elizabeth_searching_web", () => {
       setIsSearchingWeb(true);
       clearElizabethWatchdog();
@@ -3383,7 +3402,18 @@ function MainApp() {
              <span className="hidden md:inline text-xs font-semibold">Lectura</span>
            </button>
 
-           <button className="hover:text-white transition-colors hidden sm:block"><Calendar size={22} /></button>
+           {/* Minijuegos (Pool 8-Ball & Ajedrez 3D) - Reemplaza el antiguo almanaque cerca del buzón */}
+           <button
+             onClick={() => {
+               closeAllModals();
+               setIsGamesMenuOpen(true);
+             }}
+             className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl transition-all flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.3)] relative group cursor-pointer active:scale-95"
+             title="Minijuegos (Pool 8-Ball Pro y Ajedrez 3D con apuestas de LizCoins)"
+           >
+             <Gamepad2 size={21} className="text-emerald-400 group-hover:scale-110 transition-transform drop-shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+             <span className="hidden sm:inline text-xs font-bold text-emerald-200">Juegos</span>
+           </button>
 
            {/* Buzón (MessageSquare) */}
            <button
@@ -3633,6 +3663,27 @@ function MainApp() {
                   <Hash size={18} />
                   Crear Sala
                 </div>
+              </button>
+            </div>
+
+            {/* Minijuegos (Pool 8-Ball & Ajedrez 3D) en el menú lateral */}
+            <div className="px-4 py-1">
+              <button
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all active:scale-95 cursor-pointer"
+                onClick={() => {
+                  closeAllModals();
+                  setIsSidebarOpen(false);
+                  setIsGamesMenuOpen(true);
+                }}
+                title="Menú de Minijuegos (Pool 8-Ball Pro y Ajedrez 3D con apuestas de LizCoins)"
+              >
+                <div className="flex items-center gap-2">
+                  <Gamepad2 size={18} className="text-emerald-400 animate-pulse" />
+                  <span>Minijuegos (Pool & Ajedrez)</span>
+                </div>
+                <span className="text-[10px] font-bold bg-emerald-500/30 text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-400/40">
+                  En Vivo
+                </span>
               </button>
             </div>
 
@@ -4492,6 +4543,79 @@ function MainApp() {
                                           </a>
                                         </div>
                                       )}
+
+                                    {/* Tarjeta interactiva de Desafío de Minijuegos (Pool 8-Ball & Ajedrez) */}
+                                    {(m.type === "chess_invite" || m.type === "pool_invite") && m.inviteData && (
+                                      <div className="mt-3 p-3.5 bg-gradient-to-r from-[#121B2A] to-[#1E293B] border border-emerald-500/40 rounded-2xl flex flex-col gap-2.5 shadow-xl animate-in fade-in">
+                                        <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                                          <div className="flex items-center gap-2.5">
+                                            <span className="text-2xl drop-shadow-md">{m.type === "chess_invite" ? "♟️" : "🎱"}</span>
+                                            <div>
+                                              <span className="text-xs font-bold text-white block">
+                                                {m.type === "chess_invite" ? "Reto de Ajedrez 3D" : "Reto de Pool 8-Ball Pro"}
+                                              </span>
+                                              <span className="text-[11px] text-emerald-400 font-semibold">
+                                                {m.inviteData.bet > 0 ? `Apuesta: ${m.inviteData.bet} LizCoins • Pozo: ${m.inviteData.bet * 2} LizCoins` : "Partida Amistosa (0 LizCoins)"}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <span className="text-[10px] text-emerald-300 font-bold bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30 shrink-0">
+                                            PvP en Vivo
+                                          </span>
+                                        </div>
+
+                                        {m.sender !== user.username ? (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (m.type === "chess_invite") {
+                                                socket.emit("accept_chess_invite", m.inviteData, (res: any) => {
+                                                  if (res?.success) {
+                                                    setActiveChessGame({
+                                                      id: m.inviteData.gameId,
+                                                      gameId: m.inviteData.gameId,
+                                                      opponent: {
+                                                        username: m.inviteData.host,
+                                                        profilePic: m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.inviteData.host}`,
+                                                      } as any,
+                                                      bet: m.inviteData.bet,
+                                                      isHost: false,
+                                                    });
+                                                  } else {
+                                                    alert(res?.error || "Error al unirse al juego de ajedrez.");
+                                                  }
+                                                });
+                                              } else {
+                                                socket.emit("accept_pool_invite", m.inviteData, (res: any) => {
+                                                  if (res?.success) {
+                                                    setPoolGame({
+                                                      gameId: m.inviteData.gameId,
+                                                      opponent: {
+                                                        username: m.inviteData.host,
+                                                        profilePic: m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.inviteData.host}`,
+                                                      },
+                                                      bet: m.inviteData.bet,
+                                                      isHost: false,
+                                                    });
+                                                  } else {
+                                                    alert(res?.error || "Error al entrar a la mesa de pool.");
+                                                  }
+                                                });
+                                              }
+                                            }}
+                                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                                          >
+                                            <Play size={14} fill="white" />
+                                            <span>¡Aceptar Desafío y Jugar!</span>
+                                          </button>
+                                        ) : (
+                                          <p className="text-[11px] text-gray-400 italic text-center py-1">
+                                            Has lanzado este desafío. Esperando a que otro usuario acepte para comenzar la partida...
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
 
                                     {/* Cartelito y Botón para reproducir video y recargar tokens en el mensaje de la IA */}
                                     {(m.isOutOfTokensNotice || (isLiz && (m.text?.includes("sin energía") || m.text?.includes("sin tokens") || m.text?.includes("Tokens Agotados") || m.text?.includes("recargar +50 tokens") || m.text?.includes("reproducir video")))) && (
@@ -6183,6 +6307,37 @@ function MainApp() {
                   alert(res?.error || "Error al iniciar mesa de pool");
                 }
               });
+            } else if (gameId.startsWith("poolpvp_")) {
+              const parsedBet = parseInt(gameId.split("_")[1], 10);
+              const bet = isNaN(parsedBet) ? 10 : parsedBet;
+              if ((user.lizCoins || 0) < bet) {
+                alert("No tienes suficientes LizCoins para apostar.");
+                return;
+              }
+              const msgData = {
+                id: Date.now().toString(),
+                text:
+                  bet > 0
+                    ? `¡Desafío de Billar Pool 8-Ball por ${bet * 2} LizCoins!`
+                    : `¡Desafío de Billar Pool 8-Ball Amistoso!`,
+                type: "pool_invite",
+                sender: user.username,
+                senderId: user.username,
+                avatar: user.profilePic,
+                inviteData: {
+                  gameId: `pool_${Date.now()}_${user.username}`,
+                  bet: bet,
+                  host: user.username,
+                  gameType: "pool",
+                },
+              };
+              socket.emit("send_global", msgData);
+              setActiveChat("global");
+              setMessages((prev) => [...prev, msgData]);
+              setTimeout(
+                scrollToBottom,
+                100,
+              );
             }
           }}
         />
@@ -6263,6 +6418,52 @@ function MainApp() {
                   alert(res.error || "Error al iniciar vs Bot");
                 }
               });
+            } else if (gameId.startsWith("pool_")) {
+              const parsedBet = parseInt(gameId.split("_")[1], 10);
+              const bet = isNaN(parsedBet) ? 10 : parsedBet;
+              socket.emit("create_pool_game", { bet, opponent: "Elizabeth" }, (res: any) => {
+                if (res?.success) {
+                  setPoolGame({
+                    gameId: res.gameId,
+                    opponent: { username: "Elizabeth", profilePic: "https://api.dicebear.com/7.x/avataaars/svg?seed=Elizabeth" },
+                    bet,
+                    isHost: true,
+                  });
+                } else {
+                  alert(res?.error || "Error al iniciar mesa de pool");
+                }
+              });
+            } else if (gameId.startsWith("poolpvp_")) {
+              const parsedBet = parseInt(gameId.split("_")[1], 10);
+              const bet = isNaN(parsedBet) ? 10 : parsedBet;
+              if ((user.lizCoins || 0) < bet) {
+                alert("No tienes suficientes LizCoins para apostar.");
+                return;
+              }
+              const msgData = {
+                id: Date.now().toString(),
+                text:
+                  bet > 0
+                    ? `¡Desafío de Billar Pool 8-Ball por ${bet * 2} LizCoins!`
+                    : `¡Desafío de Billar Pool 8-Ball Amistoso!`,
+                type: "pool_invite",
+                sender: user.username,
+                senderId: user.username,
+                avatar: user.profilePic,
+                inviteData: {
+                  gameId: `pool_${Date.now()}_${user.username}`,
+                  bet: bet,
+                  host: user.username,
+                  gameType: "pool",
+                },
+              };
+              socket.emit("send_global", msgData);
+              setActiveChat("global");
+              setMessages((prev) => [...prev, msgData]);
+              setTimeout(
+                scrollToBottom,
+                100,
+              );
             }
           }}
         />

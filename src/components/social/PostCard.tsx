@@ -89,9 +89,9 @@ export function PostCard({ post, currentUser, onUserClick }: PostCardProps & { o
   const timeAgo = (timestamp: number) => {
     const diff = Math.floor((Date.now() - timestamp) / 1000);
     if (diff < 60) return 'Hace un momento';
-    if (diff < 3600) return `Hace \${Math.floor(diff/60)}m`;
-    if (diff < 86400) return `Hace \${Math.floor(diff/3600)}h`;
-    return `Hace \${Math.floor(diff/86400)}d`;
+    if (diff < 3600) return `Hace ${Math.floor(diff/60)}m`;
+    if (diff < 86400) return `Hace ${Math.floor(diff/3600)}h`;
+    return `Hace ${Math.floor(diff/86400)}d`;
   };
 
   return (
@@ -99,7 +99,7 @@ export function PostCard({ post, currentUser, onUserClick }: PostCardProps & { o
       {/* Post Header */}
       <div className="p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img referrerPolicy="no-referrer" src={post.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=\${post.username}`} alt={post.username} className="w-10 h-10 rounded-full border border-[#D4AF37]/30 bg-black/50 object-cover cursor-pointer hover:opacity-80 transition-opacity" />
+          <img referrerPolicy="no-referrer" src={post.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.username}`} alt={post.username} className="w-10 h-10 rounded-full border border-[#D4AF37]/30 bg-black/50 object-cover cursor-pointer hover:opacity-80 transition-opacity" />
           <div>
             <h3 onClick={() => onUserClick && onUserClick(post.username)} className="text-white font-bold text-sm cursor-pointer hover:underline">{post.username}</h3>
             <span className="text-gray-400 text-xs">{timeAgo(post.createdAt)}</span>
@@ -127,7 +127,7 @@ export function PostCard({ post, currentUser, onUserClick }: PostCardProps & { o
       {/* Post Actions */}
       <div className="p-4">
         <div className="flex items-center gap-4 mb-3">
-          <button onClick={handleLike} className={`flex items-center gap-1.5 transition-colors \${isLiked ? 'text-red-500' : 'text-white hover:text-red-400'}`}>
+          <button onClick={handleLike} className={`flex items-center gap-1.5 transition-colors ${isLiked ? 'text-red-500' : 'text-white hover:text-red-400'}`}>
             <Heart size={24} className={isLiked ? 'fill-current' : ''} />
           </button>
           <button onClick={() => setShowComments(!showComments)} className="text-white hover:text-gray-300 transition-colors">

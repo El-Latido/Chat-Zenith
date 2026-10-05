@@ -8,6 +8,8 @@ export const updateUserProfileInFirebase = async (oldUsername: string, newUserna
     if (!fdb) return null;
     
     try {
+        
+
         if (newUsername !== oldUsername) {
             const existsDoc = await getDoc(doc(fdb, 'users', newUsername));
             if (existsDoc.exists()) throw new Error("El usuario ya existe");
@@ -29,9 +31,9 @@ export const updateUserProfileInFirebase = async (oldUsername: string, newUserna
             
             if (docSnap.exists()) {
                 currentRole = docSnap.data().role || "user";
-                await updateDoc(docRef, { ...data });
+                await setDoc(docRef, { ...data }, { merge: true });
             } else {
-                await setDoc(docRef, { ...data, username: oldUsername, role: currentRole });
+                await setDoc(docRef, { ...data, username: oldUsername, role: currentRole }, { merge: true });
             }
             return currentRole;
         }
@@ -41,9 +43,24 @@ export const updateUserProfileInFirebase = async (oldUsername: string, newUserna
     }
 };
 
+export const ensureHelizabethUserExists = async () => {
+    if (!fdb) return;
+    try {
+        await setDoc(doc(fdb, 'users', 'helizabeth'), {
+            username: 'helizabeth',
+            role: 'admin',
+            statusMessage: 'Elizabeth AI • Asistente Oficial',
+            updatedAt: Date.now()
+        }, { merge: true });
+    } catch (e) {
+        // Ignorar de forma silenciosa para evitar ruido
+    }
+};
+
 export const updateAiProfileInFirebase = async (aiUsername: string, data: any) => {
     if (!fdb) return;
     try {
+        
         await setDoc(doc(fdb, 'users', aiUsername), { ...data, username: aiUsername, role: "admin" }, { merge: true });
     } catch (e) {
         console.error("Error updating AI profile:", e);
@@ -56,5 +73,25 @@ export const saveMessageToFirebase = async (msg: any) => {
         await addDoc(collection(fdb, 'messages'), msg);
     } catch (e) {
         console.error("Error al guardar mensaje en Firebase:", e);
+    }
+};
+
+export const getAiApiConfigFromFirebase = async () => {
+    if (!fdb) return null;
+    try {
+        const snap = await getDoc(doc(fdb, 'system_settings', 'ai_api_config'));
+        if (snap.exists()) return snap.data();
+    } catch (e) {
+        console.error("Error al obtener configuración de API de IA en Firebase:", e);
+    }
+    return null;
+};
+
+export const saveAiApiConfigToFirebase = async (data: any) => {
+    if (!fdb) return;
+    try {
+        await setDoc(doc(fdb, 'system_settings', 'ai_api_config'), data, { merge: true });
+    } catch (e) {
+        console.error("Error al guardar configuración de API de IA en Firebase:", e);
     }
 };

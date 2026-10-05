@@ -81,15 +81,26 @@ export function GamesMenuModal({ onClose, onSelectGame, user }: GamesMenuModalPr
                   <option value={50}>Apuesta: 50 LizCoins (Pozo 100)</option>
                 </select>
                 
-                <button
-                  onClick={() => {
-                    onSelectGame(`pool_${poolBet}`);
-                    onClose();
-                  }}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold transition-transform hover:scale-[1.02] shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2 cursor-pointer mt-1"
-                >
-                  <Play size={16} fill="white" /> Entrar a la Mesa de Pool
-                </button>
+                <div className="flex gap-3 mt-1">
+                  <button
+                    onClick={() => {
+                      onSelectGame(`pool_${poolBet}`);
+                      onClose();
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-[#121B2A] border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 font-bold transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 cursor-pointer text-xs"
+                  >
+                    🤖 vs Elizabeth (IA)
+                  </button>
+                  <button
+                    onClick={() => {
+                      onSelectGame(`poolpvp_${poolBet}`);
+                      onClose();
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 cursor-pointer text-xs"
+                  >
+                    <Swords size={16} /> PvP Global
+                  </button>
+                </div>
               </div>
             </div>
           </div>

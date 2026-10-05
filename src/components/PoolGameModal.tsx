@@ -224,6 +224,41 @@ export function PoolGameModal({ onClose, user, gameId, opponent, bet, isHost }: 
     };
   }, [gameId]);
 
+  // Elizabeth AI Bot Shot when opponent is Elizabeth or bot
+  useEffect(() => {
+    const isBotTurn = (currentTurn === 'Elizabeth' || currentTurn === opponent?.username) && currentTurn !== user.username;
+    if (isBotTurn && !isShooting && !winner) {
+      const timer = setTimeout(() => {
+        const balls = ballsRef.current;
+        const white = balls.find(b => b.id === 0 && !b.isPocketed);
+        const targetBalls = balls.filter(b => b.id !== 0 && !b.isPocketed);
+        if (!white || targetBalls.length === 0) return;
+
+        // Choose random target ball
+        const target = targetBalls[Math.floor(Math.random() * targetBalls.length)];
+        const dx = target.x - white.x;
+        const dy = target.y - white.y;
+        const baseAngle = Math.atan2(dy, dx);
+        const jitter = (Math.random() - 0.5) * 0.14;
+        const finalAngle = baseAngle + jitter;
+        const shotForce = 14 + Math.random() * 8;
+
+        white.vx = Math.cos(finalAngle) * shotForce;
+        white.vy = Math.sin(finalAngle) * shotForce;
+        setIsShooting(true);
+        playSound(580, 'sine', 0.12);
+
+        socket.emit('pool_shot_sync', {
+          gameId,
+          angle: finalAngle,
+          force: shotForce,
+        });
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [currentTurn, isShooting, winner, gameId, user.username, opponent?.username]);
+
   // Main Physics & Render Loop
   useEffect(() => {
     let animId: number;
@@ -342,6 +377,10 @@ export function PoolGameModal({ onClose, user, gameId, opponent, bet, isHost }: 
         if (currentTurn === user.username) {
           const nextPlayer = opponent?.username || 'Oponente';
           socket.emit('pool_change_turn', { gameId, nextTurn: nextPlayer });
+          setCurrentTurn(nextPlayer);
+        } else {
+          socket.emit('pool_change_turn', { gameId, nextTurn: user.username });
+          setCurrentTurn(user.username);
         }
       }
     };
@@ -672,14 +711,28 @@ export function PoolGameModal({ onClose, user, gameId, opponent, bet, isHost }: 
                 <span className="text-xs font-mono text-emerald-400 font-bold w-9 text-right">{power}%</span>
               </div>
 
-              <button
-                onClick={handleShoot}
-                disabled={!isMyTurn || isShooting || !!winner}
-                className="px-6 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-sm shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center gap-2 cursor-pointer transition-transform active:scale-95"
-              >
-                <Play size={16} fill="white" />
-                <span>¡Tirar!</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {(!isMyTurn && (bet === 0 || opponent?.username === 'Elizabeth')) && (
+                  <button
+                    onClick={() => {
+                      setCurrentTurn(user.username);
+                      socket.emit('pool_change_turn', { gameId, nextTurn: user.username });
+                    }}
+                    className="px-3 py-2 rounded-xl bg-purple-600/40 hover:bg-purple-600/60 text-purple-200 border border-purple-500/50 text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1"
+                    title="Tomar el turno para tirar libremente"
+                  >
+                    🎱 Tomar Turno
+                  </button>
+                )}
+                <button
+                  onClick={handleShoot}
+                  disabled={!isMyTurn || isShooting || !!winner}
+                  className="px-6 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-sm shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center gap-2 cursor-pointer transition-transform active:scale-95"
+                >
+                  <Play size={16} fill="white" />
+                  <span>¡Tirar!</span>
+                </button>
+              </div>
             </div>
           </div>
 

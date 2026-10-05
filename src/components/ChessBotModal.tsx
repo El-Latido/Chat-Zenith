@@ -57,7 +57,32 @@ export function ChessBotModal({ onClose, user, gameId, opponent, bet }: ChessBot
 
   
   function onPieceDrop(sourceSquare: string, targetSquare: string) {
-    // Return false to prevent dragging to move, enforcing tap-to-move
+    const myColor = 'w';
+    if (status !== 'playing' || game.turn() !== myColor) return false;
+
+    try {
+      const newGame = new Chess(game.fen());
+      const move = newGame.move({
+        from: sourceSquare as any,
+        to: targetSquare as any,
+        promotion: 'q',
+      });
+      
+      if (move) {
+        setGame(newGame);
+        setMoveFrom('');
+        setOptionSquares({});
+        
+        if (newGame.isGameOver()) {
+          const isDraw = newGame.isDraw() || newGame.isStalemate() || newGame.isThreefoldRepetition();
+          socket.emit('chess_bot_game_over', { gameId, result: isDraw ? 'draw' : 'user_won', winner: user.username });
+          setStatus(isDraw ? 'draw' : 'won');
+        } else {
+          makeBotMove(newGame);
+        }
+        return true;
+      }
+    } catch (_) {}
     return false;
   }
 

@@ -677,7 +677,7 @@ CONOCIMIENTO Y CONTROL INTEGRAL DEL REPOSITORIO Y DE LA APLICACIÓN CHATLIZ:
     - Botón Oculto de Administrador (<ShieldAlert />)
     - Botón de GitHub Admin (<Github />)
     - Botón de Modo Lectura (<BookOpen />)
-    - Calendario (<Calendar />)
+    - Botón de Minijuegos (<Gamepad2 />) (Abre el menú de juegos de Pool 8-Ball Pro y Ajedrez 3D con apuestas de LizCoins, reemplazó al antiguo almanaque)
     - Buzón de Mensajes y Menciones (<MessageSquare />)
     - Amigos y Solicitudes (<UserPlus />)
     - Notificaciones de Likes/Mensajes (<Bell />)
@@ -711,14 +711,29 @@ function getRepositoryFileContext(text: string): string {
   if (!text) return "";
   const lower = text.toLowerCase();
   
-  if (lower.includes("icono") || lower.includes("iconos") || lower.includes("header") || lower.includes("navbar") || lower.includes("barra")) {
+  if (
+    lower.includes("icono") ||
+    lower.includes("iconos") ||
+    lower.includes("header") ||
+    lower.includes("navbar") ||
+    lower.includes("barra") ||
+    lower.includes("almanaque") ||
+    lower.includes("calendario") ||
+    lower.includes("calendar") ||
+    lower.includes("juego") ||
+    lower.includes("juegos") ||
+    lower.includes("pool") ||
+    lower.includes("ajedrez") ||
+    lower.includes("buzon") ||
+    lower.includes("buzón")
+  ) {
     return `\n[CONTEXTO DEL REPOSITORIO - src/App.tsx]:
 Los iconos del Header en src/App.tsx son:
 - ShieldAlert (Admin Panel): <ShieldAlert size={19} className="text-red-400 animate-pulse" />
 - Github (GitHub Admin): <Github size={16} /> (botón con texto "GitHub" que abre setShowGitHubPanel(true))
 - BookOpen (Modo Lectura): <BookOpen size={20} className="text-cyan-400" /> (abre setIsReadingMode(true))
-- Calendar: <Calendar size={22} />
-- MessageSquare (Buzón): <MessageSquare size={22} /> (abre setIsMailboxModalOpen(true))
+- Gamepad2 (Minijuegos): <Gamepad2 size={21} className="text-emerald-400" /> (botón con texto "Juegos" que abre setIsGamesMenuOpen(true) para jugar Pool 8-Ball Pro y Ajedrez 3D en vivo con apuestas de LizCoins. Este botón REEMPLAZÓ COMPLETAMENTE al antiguo almanaque que estaba cerca del buzón)
+- MessageSquare (Buzón): <MessageSquare size={22} /> (abre setIsMailboxModalOpen(true) para ver el buzón de mensajes y menciones)
 - UserPlus (Amigos): <UserPlus size={22} /> (abre setIsFriendsModalOpen(true))
 - Bell (Notificaciones): <Bell size={22} /> (abre setIsNotificationBellOpen(true))
 - User (Config Perfil): <User size={18} /> (abre setIsConfigOpen(true))
@@ -731,8 +746,10 @@ Los iconos de la Barra de Entrada (Input Bar) son:
 - Play/Pause (Radio): <Play size={22} /> / <Pause size={22} />
 - RotateCcw (Historial MP3): <RotateCcw size={22} />
 - Repeat (Modo bucle): <Repeat size={22} />
-Si el usuario te pide quitar un icono, prepara el archivo src/App.tsx o el componente correspondiente con // File: src/App.tsx y el tag [GITHUB_STAGE:{"file":"src/App.tsx","commit":"remover icono de..."}].
-Si te pide agregar un icono, usa un icono válido de 'lucide-react' con estilo Tailwind.\n`;
+NOTA CRÍTICA SOBRE EL ALMANAQUE Y JUEGOS:
+Si el usuario menciona el almanaque cerca del buzón o los juegos de pool y ajedrez:
+Confírmale que el almanaque fue removido definitivamente y reemplazado por el icono de Minijuegos (<Gamepad2 />) al lado del buzón (<MessageSquare />), permitiendo abrir el menú de Pool 8-Ball Pro y Ajedrez 3D.
+Si el usuario te pide preparar el código para corroborar en GitHub, dale el bloque con '// File: src/App.tsx' y la directiva '[GITHUB_STAGE:{"file":"src/App.tsx","commit":"Reemplazar almanaque por icono de Minijuegos (Pool 8-Ball Pro y Ajedrez 3D)"}]'.\n`;
   }
 
   if (lower.includes("instagram") || lower.includes("feed")) {
@@ -6742,6 +6759,49 @@ NUEVO MENSAJE DE ${currentUsername}: "${msg.text}"\nResponde de forma privada co
       };
       if (activeUsers[currentUsername]) {
         activeUsers[currentUsername].lizCoins -= bet;
+      }
+      emitActiveUsers();
+      callback?.({ success: true, gameId });
+    });
+
+    socket.on("accept_pool_invite", async (inviteData: any, callback: any) => {
+      if (!currentUsername) return callback?.({ success: false, error: "No autenticado" });
+      const hostName = inviteData?.host;
+      const bet = Number(inviteData?.bet) || 0;
+      const gameId = inviteData?.gameId;
+      const guestCoins = activeUsers[currentUsername]?.lizCoins || 0;
+      const hostCoins = activeUsers[hostName]?.lizCoins || 0;
+
+      if (guestCoins < bet) {
+        return callback?.({ success: false, error: "No tienes suficientes LizCoins para aceptar el reto." });
+      }
+      if (hostCoins < bet) {
+        return callback?.({ success: false, error: "El anfitrión ya no tiene suficientes LizCoins." });
+      }
+      if (!activeUsers[hostName]) {
+        return callback?.({ success: false, error: "El anfitrión ya no está en línea." });
+      }
+      if (poolGames[gameId]) {
+        return callback?.({ success: false, error: "La mesa de pool ya comenzó." });
+      }
+
+      activeUsers[currentUsername].lizCoins -= bet;
+      activeUsers[hostName].lizCoins -= bet;
+
+      poolGames[gameId] = {
+        id: gameId,
+        host: hostName,
+        guest: currentUsername,
+        bet,
+        currentTurn: hostName,
+      };
+
+      if (activeUsers[hostName]?.socketId) {
+        io.to(activeUsers[hostName].socketId).emit("pool_invite_accepted", {
+          gameId,
+          opponent: currentUsername,
+          bet,
+        });
       }
       emitActiveUsers();
       callback?.({ success: true, gameId });

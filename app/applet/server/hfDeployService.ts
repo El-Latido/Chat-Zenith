@@ -35,7 +35,7 @@ export async function deployToHuggingFaceSpace(
 
   // 2. Recolectar archivos del proyecto Chat-Liz
   const rootDir = process.cwd();
-  const allowedRoots = new Set(["src", "public", "server", "voices", "scripts", "quantum_ai"]);
+  const allowedRoots = new Set(["src", "public", "server", "voices"]);
   const allowedRootFiles = new Set([
     "Dockerfile",
     "README.md",
@@ -48,10 +48,7 @@ export async function deployToHuggingFaceSpace(
     "index.html",
     "metadata.json",
     "components.json",
-    "firebase-applet-config.json",
-    "render.yaml",
-    "tailwind.config.js",
-    "postcss.config.js"
+    "firebase-applet-config.json"
   ]);
 
   const fileList: string[] = [];
